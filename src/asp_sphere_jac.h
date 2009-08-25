@@ -109,16 +109,6 @@ public:
 
 	/*!скалярное произведение в сферических координатах*/
 	double scalar(const double *u, const double *v);
-
-	void check();
-
-	void check_approx();
-
-private:
-	void check0(); //!<печать параметров
-	void check1(); //!<проверка сопряженности
-	void check2(); //!<проверка точности на функции с известным ответом
-	void check3(); //!<построение svd разложений для матрицы J
 };
 
 #endif

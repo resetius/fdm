@@ -50,10 +50,7 @@
  * функции оканчивающиеся на _my это моя реализация,
  *         оканчивающиеся на _sla это из библиотеки LAPACK,
  */
-//#define solve_tdiag_linear(A, B, C, D, n)   solve_tdiag_linear_my(A, B, C, D, n);
-#define solve_tdiag_linear(A, B, C, D, n)   solve_tdiag_linear_sla(A, B, C, D, n);
-#define inverse_general_matrix(A, B, n)     inverse_general_matrix_sla(A, B, n);
-#define inverse_tdiag_matrix(A, B, C, D, n) inverse_tdiag_matrix_sla(A, B, C, D, n);
+#define solve_tdiag_linear(A, B, C, D, n)   solve_tdiag_linear_my(A, B, C, D, n);
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,18 +63,7 @@ extern "C" {
 	/* методом гаусса */
 	void inverse_general_matrix_my(double * Dest,double * Source, int n);
 
-	void solve_tdiag_linear_sla(double *Dest, double * Down,double *Middle,double *Up, int n);
-	void solve_symtdiag_linear_sla(double *Dest, double * D,double *SubD, int n);
-
-	void inverse_general_matrix_sla(double * Dest,double * Source, int n);
-	void inverse_psymmetric_matrix_sla(double * Dest,double * Source, int n);
-	
-	void inverse_tdiag_matrix_sla(double *Dest, double * Down,double *Middle,double *Up, int n);
-	void inverse_symtdiag_matrix_sla(double *Dest, double * D,double *SubD, int n);
-
 	void inverse_tdiag_matrix2_my(double *Dest, double * Source, int n);
-	void inverse_tdiag_matrix2_sla(double *Dest, double * Source, int n);
-	void inverse_symtdiag_matrix2_sla(double *Dest, double * Source, int n);
 
 /*int max1(int,int);*/
 	double*matvect(double*,double*,int);

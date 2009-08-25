@@ -39,13 +39,7 @@
 extern "C" {
 	namespace asp {
 #endif
-	/**
-	 * Обратная к матрице грамма двух систем векторов
-	 * @param m - число векторов в системах
-	 * @param n - размерность пространства
-	 * @param g - обратная к (e1, e2)
-	 */
-	void inverse_gramm_matrix(double * g, const double *e1, const double *e2, int m, int n);
+
 	void gramm_matrix(double * g, const double *e1, const double *e2, int m, int n);
 
 	/**
@@ -294,30 +288,6 @@ extern "C" {
 	/*!заполняет массив случайными числами*/
 	void random_initialize(double *a, int n);
 	void printcopyright();
-
-	/*число обусловленности квадратной матрицы*/
-	double condition_number(double * A, int n);
-
-/*матричные нормы (lapack)*/
-      double dlange_( 
-/*     DLANGE = ( max(abs(A(i,j))), NORM = 'M' or 'm'
- *              (
- *              ( norm1(A),         NORM = '1', 'O' or 'o'
- *              (
- *              ( normI(A),         NORM = 'I' or 'i'
- *              (
- *              ( normF(A),         NORM = 'F', 'f', 'E' or 'e' */
-		  char * NORM, 
-		  /*строк*/
-		  int * M, 
-		  /*толбцов*/
-		  int * N, 
-		  double * A, 
-		  int * LDA, 
-/*  WORK    (workspace) DOUBLE PRECISION array, dimension (MAX(1,LWORK)),
- *          where LWORK >= M when NORM = 'I'; otherwise, WORK is not
- *          referenced. */
-		  double * WORK );
 
 	/*!единица на i'м месте*/
 	void basis(double *vec, int n, int i);

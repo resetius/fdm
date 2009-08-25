@@ -38,7 +38,6 @@
 #include "asp_macros.h"
 #include "asp_gauss.h"
 #include "asp_misc.h"
-#include "asp_qr.h"
 #include "asp_check.h"
 #include "asp_projection.h"
 #include "asp_interpolate.h"

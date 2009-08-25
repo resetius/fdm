@@ -134,38 +134,17 @@ static void printfmasked(const double *A, const char * mask,
 	fclose(f);
 }
 
-void BarVortex::S_step(double *h1, const double *h, int i)
+void BarVortex::S_step(double *h1, const double *h)
 {
 #ifdef _BARVORTEX_PURE_IM
-	d->S_step_im(h1, h, d->Fxy);
+	d->S_step_im(h1, h);
 #else
-	d->S_step(h1, h, d->Fxy);
+	d->S_step(h1, h);
 #endif
 
 #ifdef _BARVORTEX_FILTER
 	d->lapl->filter(h1, h1);
 #endif
-
-
-#ifdef _BARVORTEX_TIME_FILTER
-
-	vector < double > h2(nn);
-	double alpha = 0.0625;
-
-#ifdef _BARVORTEX_PURE_IM
-	d->S_step_im(&h2[0], h1, d->Fxy);
-#else
-	d->S_step(&h2[0], h1, d->Fxy);
-#endif
-
-#ifdef _BARVORTEX_FILTER
-	d->lapl->filter(&h2[0], &h2[0]);
-#endif
-
-	vector_mult_scalar(h1, h1, (1.0 - 2.0 * alpha), nn);
-	vector_sum2(h1, h1, h, alpha, nn);
-	vector_sum2(h1, h1, &h2[0], alpha, nn);
-#endif //_BARVORTEX_TIME_FILTER
 }
 
 void BarVortex::S(double *h1, const double *h) {
@@ -173,9 +152,9 @@ void BarVortex::S(double *h1, const double *h) {
 
 	for (int i = 0; i < d->conf->steps; i++) {
 #ifdef _BARVORTEX_PURE_IM
-		d->S_step_im(h1, h1, d->Fxy);
+		d->S_step_im(h1, h1);
 #else
-		d->S_step(h1, h1, d->Fxy);
+		d->S_step(h1, h1);
 #endif
 	}
 }
@@ -200,27 +179,6 @@ void BarVortex::L_step(double *h1, const double *h, const double * z)
 #ifdef _BARVORTEX_FILTER
 	d->lapl->filter(h1, h1);
 #endif
-
-
-#ifdef _BARVORTEX_TIME_FILTER
-
-	vector < double > h2(nn);
-	double alpha = 0.0625;
-
-#ifdef _BARVORTEX_LINEAR_PURE_IM
-	d->L_step_im(&h2[0], h1, d->Fxy);
-#else
-	d->L_step(&h2[0], h1, d->Fxy);
-#endif
-
-#ifdef _BARVORTEX_FILTER
-	d->lapl->filter(&h2[0], &h2[0]);
-#endif
-
-	vector_mult_scalar(h1, h1, (1.0 - 2.0 * alpha), nn);
-	vector_sum2(h1, h1, h, alpha, nn);
-	vector_sum2(h1, h1, &h2[0], alpha, nn);
-#endif //_BARVORTEX_TIME_FILTER
 }
 
 void BarVortex::L_1_step(double *h1, const double *h, const double * z)
@@ -250,3 +208,9 @@ double BarVortex::scalar(const double *x, const double *y, int n)
 	static double koef = d->d_la * d->d_phi;
 	return ::scalar(x, y, n) * koef;
 }
+
+double BarVortex::norm(const double *x, int n)
+{
+	return sqrt(scalar(x, x, n));
+}
+

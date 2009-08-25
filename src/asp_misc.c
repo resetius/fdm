@@ -1262,24 +1262,6 @@ void gramm_matrix(double * g, const double *e1, const double *e2,
 	}
 }
 
-	/**
-	 * Обратная к матрице грамма двух систем векторов
-	 */
-void inverse_gramm_matrix(double * g, const double *e1, const double *e2, 
-						  int m, int n) 
-{
-	int i, j;
-	for (i = m - 1; i >= 0; --i) {
-		for (j = m - 1; j >= 0; --j) {
-			g[i * m + j] = matrix_cols_scalar(e1, e2, i, j, m, m, n);
-		}
-	}
-
-//	printf("cn of g=%.16le\n", condition_number(g, m));
-
-	inverse_general_matrix(g, g, m);
-}
-
 	/* транспонирование с копированием для прямоугольных матриц.
 	 * @param Dest   - ответ размерности m * n
 	 * @param Source - исходная матрица размерности n * m
@@ -1328,25 +1310,3 @@ void basis(double *vec, int n, int i)
 	vec[i] = 1;
 }
 
-double condition_number(double * A, int n)
-{
-	double * A_1 = malloc(n * n * sizeof(double));
-
-	double  nr1;
-	double  nr2;
-
-	double * work = malloc(n * sizeof(double));
-
-	char * norm = "F";
-
-	inverse_general_matrix_sla(A_1, A, n);
-
-	nr1 = dlange_(norm, &n, &n, A, &n, work);
-	nr2 = dlange_(norm, &n, &n, A_1, &n, work);
-
-	free(A_1); free(work);
-
-	printf("||A||   =%23.16le\n", nr1);
-	printf("||A^-1||=%23.16le\n", nr2);
-	return nr1 * nr2;
-}

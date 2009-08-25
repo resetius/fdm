@@ -154,9 +154,7 @@ public:
 	BarVortexConf *conf; //!<конфиг
 
 	int nn;
-	double *Fxy; //!<права€ часть, завис€ща€ только от x и y
 	double *cor; //!<кориолис
-	double *rel; //!<рельеф
 
 	double *B1; //!<временна€ матрица	
 
@@ -173,9 +171,10 @@ public:
 
 	Private(BarVortexConf& _conf)
 		: SData(_conf.n_phi, _conf.n_la, _conf.full),
-		p(0), conf(&_conf), Fxy(0), cor(0), rel(0), B1(0)
+		p(0), conf(&_conf), cor(0), B1(0)
 	{
 		init();
+		reset();
 		setTau(conf->tau);
 
 		nn = n_phi * n_la;
@@ -183,31 +182,21 @@ public:
 
 	~Private() {
 		if (B1)  delete [] B1;
-		if (rel) delete [] rel;
 		if (cor) delete [] cor;
-		if (Fxy) delete [] Fxy;
 	}
 
-	void reset() {		
-		if (Fxy) delete [] Fxy;
-		if (cor) delete [] cor;
-		if (rel) delete [] rel;
+	void reset() {
+		if (cor) { delete [] cor; cor = 0; }
 
 		nn = n_phi * n_la;
-		Fxy = new double[nn];
 		cor = new double[nn];
-		rel = new double[nn];
 
-		loadForcing();
-		loadRelief();
-		loadCoriolis();		
+		for (int i = 0; i < n_phi; ++i) {
+			for (int j = 0; j < n_la; ++j) {
+				cor[pOff(i, j)] = conf->cor(PHI[i], LA[j], conf);
+			}
+		}
 	}
-
-	void loadForcing();
-
-	void loadRelief();
-
-	void loadCoriolis();
 
 	/*!
 	 \f[ J(u, v) = \frac{1}{cos(\phi)} 
@@ -242,7 +231,7 @@ public:
 	     \frac{\omega^n}{\tau} + (1-\theta)L\omega^n+f(x,y)
 	   \f]
 	 */
-	void take_B(double * dest, const double * omg, const double * F) const
+	void take_B(double * dest, const double * omg, int have_rp) const
 	{
 		int    off;
 		double rp       = 0.0;	
@@ -253,7 +242,7 @@ public:
 			for (int j = 0; j < n_la; ++j) {
 				off  = pOff(i, j);
 				lpl  = lapl->lapl(omg, i, j);
-				if (F) rp  = F[off];
+				if (have_rp) rp  = conf->rp(PHI[i], LA[j], conf);
 
 				dest[off] = omg[off] * tau_1 +
 					(1. - conf->theta) * 
@@ -263,145 +252,11 @@ public:
 		}
 	}
 
-	void L_step_im2(double *dest, const double *h, const double *z) {
-		double *omg     = new double[nn];
-		double *omg_old = new double[nn];
-		double *psi     = new double[nn];
-		double *psi_old = new double[nn];
-		double *os      = new double[nn];
-
-		double *z_lapl = new double[nn];
-
-		double *B1 = new double[nn];
-
-		J_functor < SJacobian > funct1(jac, n_phi, n_la);
-
-		lapl->lapl(omg_old, h);
-		lapl->lapl(z_lapl, z);
-		if (!full) { memset(omg_old, 0, n_la * sizeof(double)); }
-		if (!full) { memset(z_lapl, 0, n_la * sizeof(double)); }
-
-		double norm;
-		int it = 0;
-
-		int s = (full) ? 0 : 1;
-
-		memcpy(psi, h, nn * sizeof(double));
-		memcpy(omg, omg_old, nn * sizeof(double));
-
-		memcpy(B1, omg_old, nn * sizeof(double));
-
-		while (true) {
-			++it;
-			memcpy(psi_old, psi, nn * sizeof(double));
-
-			vector_sum(os, omg, omg_old, nn);
-			vector_mult_scalar(os, os, 0.5, nn);
-
-			vector_sum(psi, psi, h, nn);
-			vector_mult_scalar(psi, psi, 0.5, nn);
-
-			for (int i = s; i < n_phi; ++i) {
-				for (int j = 0; j < n_la; ++j) {
-					int off  = pOff(i, j);
-
-					omg[off] = B1[off] - 
-						tau * funct1(psi, cor, z, os, z_lapl, i, j);
-					omg[off] += conf->sigma * os[off];
-					omg[off] -= conf->mu * lapl->lapl(os, i, j);
-				}
-			}
-
-			if (!full) { memset(omg, 0, n_la * sizeof(double)); }
-			lapl->lapl_1(psi, omg);
-			norm = dist1(psi, psi_old, nn);
-			//norm = dist2(psi, psi_old, nn);
-			if (norm < _BARVORTEX_IM_EPS)
-				break;
-			if (it > _BARVORTEX_IM_MAX_IT) {
-				::printf("%s:%d:%s: it=%d, norm=%.16le\n", __FILE__, __LINE__, __FUNCTION__, it, norm);
-				exit(1);
-			}
-		}
-
-		memcpy(dest, psi, nn * sizeof(double));
-
-		delete [] omg; delete [] omg_old;
-		delete [] psi; delete [] psi_old;
-		delete [] os; delete [] B1;
-	}
-
-	void S_step_im2(double *dest, const double *h, const double *F)
-	{
-		double *omg     = new double[nn];
-		double *omg_old = new double[nn];
-		double *psi     = new double[nn];
-		double *psi_old = new double[nn];
-		double *os      = new double[nn];
-
-		double *B1 = new double[nn];
-
-		lapl->lapl(omg_old, h);
-		if (!full) { memset(omg_old, 0, n_la * sizeof(double)); }
-
-		double norm;
-		int it = 0;
-
-		int s = (full) ? 0 : 1;
-
-		memcpy(psi, h, nn * sizeof(double));
-		memcpy(omg, omg_old, nn * sizeof(double));
-
-		memcpy(B1, omg_old, nn * sizeof(double));
-		vector_sum(B1, B1, F, nn);
-
-		while (true) {
-			++it;
-			memcpy(psi_old, psi, nn * sizeof(double));
-
-			vector_sum(os, omg, omg_old, nn);
-			vector_mult_scalar(os, os, 0.5, nn);
-
-			vector_sum(psi, psi, h, nn);
-			vector_mult_scalar(psi, psi, 0.5, nn);
-
-			for (int i = s; i < n_phi; ++i) {
-				for (int j = 0; j < n_la; ++j) {
-					int off  = pOff(i, j);
-
-					omg[off] = B1[off] - 
-						tau * conf->rho * ( 
-							Jacobian(psi, os, i, j) + 
-							Jacobian(psi, cor, i, j)
-						);
-
-					omg[off] += conf->sigma * os[off];
-					omg[off] -= conf->mu * lapl->lapl(os, i, j);
-				}
-			}
-
-			if (!full) { memset(omg, 0, n_la * sizeof(double)); }
-			lapl->lapl_1(psi, omg);
-			norm = dist1(psi, psi_old, nn);
-			//norm = dist2(psi, psi_old, nn);
-			if (norm < _BARVORTEX_IM_EPS)
-				break;
-			if (it > _BARVORTEX_IM_MAX_IT) {
-				::printf("%s:%d:%s: it=%d, norm=%.16le\n", __FILE__, __LINE__, __FUNCTION__, it, norm);
-				exit(1);
-			}
-		}
-
-		delete [] omg; delete [] omg_old;
-		delete [] psi; delete [] psi_old;
-		delete [] os; delete [] B1;
-	}
-
 	/*!
 	   не€вна€ схема с внутренними итераци€ми
 	   один шаг с правой частью \param f
 	*/
-	void S_step_im(double *dest, const double *h, const double *F)
+	void S_step_im(double *dest, const double *h)
 	{
 //		int    off;
 		double *omg     = new double[nn];
@@ -424,7 +279,7 @@ public:
 	        \frac{\omega^n}{\tau} + (1-\theta)L\omega^n+f(x,y)
 	      \f]
 		 */
-		take_B(B1, omg_old, F);
+		take_B(B1, omg_old, 1);
 
 		double norm;
 		int it = 0;
@@ -557,77 +412,6 @@ public:
 		lapl->lapl_1(h1, B1);
 
 		delete [] B1;
-		delete [] omg;
-	}
-
-	void rpLOp(double *u1, const double *u, const double * z)
-	{
-		double *z_lapl  = new double[nn];
-		double *jp      = new double[nn];
-		double *omg     = new double[nn];
-
-		lapl->lapl(z_lapl, z);
-		if (!full) { memset(z_lapl, 0, n_la * sizeof(double)); }
-		lapl->lapl(omg, u);
-		if (!full) { memset(omg, 0, n_la * sizeof(double)); }
-
-		J_functor < SJacobian > funct1(jac, n_phi, n_la);
-
-		funct1.calc(jp, u1, cor, z, omg, z_lapl);
-
-		vector_mult_scalar(jp, jp, -conf->rho, nn);
-		memcpy(u1, jp, nn * sizeof(double));
-
-		vector_mult_scalar(jp, omg, conf->sigma, nn);
-
-		vector_sum(u1, u1, jp, nn);
-
-		lapl->lapl(omg, omg);
-		vector_mult_scalar(omg, omg, -conf->mu, nn);
-
-		vector_sum(u1, u1, omg, nn);
-
-		memset(u1, 0, n_la * sizeof(double));
-//		lapl->lapl_1(u1, u1);
-
-		delete [] z_lapl;
-		delete [] jp;
-		delete [] omg;
-	}
-
-	void rpLOpT(double *u1, const double *u, const double * z)
-	{
-		double *z_lapl  = new double[nn];
-		double *jp      = new double[nn];
-		double *omg     = new double[nn];
-
-		lapl->lapl(z_lapl, z);
-		if (!full) { memset(z_lapl, 0, n_la * sizeof(double)); }
-		lapl->lapl(omg, u);
-		if (!full) { memset(omg, 0, n_la * sizeof(double)); }
-
-		JT_functor < SJacobian, SLaplacian > 
-			funct1(jac, lapl, n_phi, n_la, full);
-
-		funct1.calc(jp, u1, cor, z, omg, z_lapl);
-
-		vector_mult_scalar(jp, jp, -conf->rho, nn);
-		memcpy(u1, jp, nn * sizeof(double));
-
-		vector_mult_scalar(jp, omg, conf->sigma, nn);
-
-		vector_sum(u1, u1, jp, nn);
-
-		lapl->lapl(omg, omg);
-		vector_mult_scalar(omg, omg, -conf->mu, nn);
-
-		vector_sum(u1, u1, omg, nn);
-
-		memset(u1, 0, n_la * sizeof(double));
-//		lapl->lapl_1(u1, u1);
-
-		delete [] z_lapl;
-		delete [] jp;
 		delete [] omg;
 	}
 

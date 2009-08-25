@@ -42,7 +42,6 @@
 #define _BARVORTEX_ARAKAWA
 
 #define _BARVORTEX_FILTER //?
-//#define _BARVORTEX_TIME_FILTER
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 /**
@@ -72,6 +71,10 @@ struct BarVortexConf
 
 	double rho;
 	double omg;
+
+	typedef double (*rp_t ) (double phi, double lambda, BarVortexConf * conf);
+	rp_t rp;
+	rp_t cor;
 };
 
 class BarVortex
@@ -85,7 +88,7 @@ public:
 
 	virtual ~BarVortex();
 	void S(double *h1, const double *h);
-	void S_step(double *h1, const double *h, int i);
+	void S_step(double *h1, const double *h);
 	void L_step(double *h1, const double *h, const double *z);
 	void LT_step(double *h1, const double *h, const double *z);
 	void L_1_step(double *h1, const double *h, const double *z);
@@ -95,6 +98,7 @@ public:
 	BarVortex(BarVortexConf&);
 	
 	double scalar(const double *x, const double *y, int n);
+	double norm(const double *x, int n);
 };
 
 #endif //_SDS_BAR_H
