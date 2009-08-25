@@ -47,6 +47,7 @@
 #include <math.h>
 #include <iostream>
 #include <time.h>
+#include <string.h>
 
 #include "asp_lib.h"
 #include "sds_bar.h"
