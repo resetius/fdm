@@ -214,3 +214,13 @@ double BarVortex::norm(const double *x, int n)
 	return sqrt(scalar(x, x, n));
 }
 
+double BarVortex::phi(int i)
+{
+	return d->PHI[i];
+}
+
+double BarVortex::lambda(int j)
+{
+	return d->LA[j];
+}
+

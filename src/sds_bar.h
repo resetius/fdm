@@ -68,6 +68,8 @@ struct BarVortexConf
     int n_phi;     //!<разбиение (широта)
     int n_la;      //!<разбиение (долгота).
 	int full;      //!<использовать полную сферу?
+	double k1;
+	double k2;
 
 	double rho;
 	double omg;
@@ -99,6 +101,9 @@ public:
 	
 	double scalar(const double *x, const double *y, int n);
 	double norm(const double *x, int n);
+
+	double phi(int i);
+	double lambda(int i);
 };
 
 #endif //_SDS_BAR_H

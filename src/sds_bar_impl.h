@@ -320,10 +320,8 @@ public:
 					int off  = pOff(i, j);
 					omg[off] = B1[off] -
 						//0.0;
-						conf->rho * ( 
-							Jacobian(psi, os, i, j) + 
-							Jacobian(psi, cor, i, j)
-						);
+						conf->k1 * Jacobian(psi, os, i, j) + 
+						conf->k2 * Jacobian(psi, cor, i, j);
 				}
 			}
 
