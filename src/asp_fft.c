@@ -1,0 +1,686 @@
+/*$Id$*/
+/* Copyright (c) 2005, 2006 Alexey Ozeritsky
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Alexey Ozeritsky.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+#define _USE_MATH_DEFINES
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+
+#include "asp_misc.h"
+#include "asp_macros.h"
+#include "asp_fft.h"
+
+#ifdef _FFTW
+#include "fftw3.h"
+#endif
+
+#define SQRT_M_1_PI 0.56418958354775629
+
+#ifdef _FFTW
+static void sFFT_fftw_2(const fftw_plan p, double *S, double *ss, double dx, int N);
+static void cFFT_fftw_2(const fftw_plan p, double *S, double *ss, double dx, int N);
+#endif
+
+fft * FFT_init(int type, int N)
+{
+	fft * ret;
+	int _n  = N;
+	int deg = 0;
+	int m;
+
+	while (_n % 2 == 0) {
+		_n /= 2; deg++;
+	}
+
+	if (!((1 << deg) == N))
+		return 0;
+
+	ret = malloc(sizeof(fft)); NOMEM(ret);
+
+	ret->N     = N;
+	ret->n     = deg;
+	ret->type  = type;
+	ret->ffCOS = 0;
+	ret->ffSIN = 0;
+	ret->k     = 1;
+	ret->sz    = 2 * N;
+
+	if (type & FFT_COS) {
+		ret->ffCOS = malloc(2 * N * sizeof(double)); NOMEM(ret->ffCOS);
+		for (m = 0; m < 2 * N; ++m) {
+			ret->ffCOS[m] = cos(m * M_PI / (double)N);
+		}
+	}
+
+	if (type & FFT_SIN) {
+		ret->ffSIN = malloc(2 * N * sizeof(double)); NOMEM(ret->ffSIN);
+		for (m = 0; m < 2 * N; ++m) {
+			ret->ffSIN[m] = sin(m * M_PI / (double)N);
+		}
+	}
+
+	//if (type & FFT_PERIODIC) {
+	//	ret->k = 2;
+	//}
+
+	return ret;
+}
+
+void FFT_free(fft * s)
+{
+	if (s->ffSIN) free(s->ffSIN);
+	if (s->ffCOS) free(s->ffCOS);
+	free(s);
+}
+
+      /** обратное использование:
+        dx = d_la * sqrt(M_1_PI)  // шаг * корень из 2/_длина_отрезка(на сфере 2pi)
+        pFFT_1(s, S, dx, n_la, fft);
+        прямое использование:
+        dx = d_la * sqrt(M_1_PI) // корень из 2/_длина_отрезка(на сфере 2pi)
+        pFFT(S, s, dx, n_la, fft);
+      */
+
+	/*!быстрое преобразование Фурье периодической функции.
+	   по значениям функции находим коэфф Фурье.
+	   f(i)->fk
+       Самарский-Николаев, страница 180-181, формулы 65-66
+	  \param S  - ответ
+	  \param s  - начальное условие
+	  \param dx - множитель перед суммой
+	  \param N  - число точек
+	  \param n  - log2(N)
+	*/
+	void pFFT_1(double *S, double *s1, double dx, int N, int n) 
+	{
+		int p, s, j, idx, idx2, vm, k;
+		int N_2 = N / 2;
+		double *a   = malloc((n + 1)*N * sizeof(double));
+		double * y  = malloc((N_2 + 1) * sizeof(double));
+		double *_y  = malloc((N_2 + 1) * sizeof(double));
+
+		memcpy(a, s1, N * sizeof(double));
+
+		for (p = 1; p <= n; p++) {
+			//int idx = _ipow(2, n - p);
+			int idx = 1 << (n - p);
+			for (j = 0; j <= idx - 1; j++) {
+				a[p * N + j]       = a[(p - 1) * N + j] + a[(p - 1) * N + idx + j];
+				a[p * N + idx + j] = a[(p - 1) * N + j] - a[(p - 1) * N + idx + j];
+			}
+		}
+
+		for (s = 1; s <= n - 2; s++) {
+			//idx = _ipow(2, n - s - 1);
+			//vm  = _ipow(2, s);
+			idx = 1 << (n - s - 1);
+			vm  = 1 << s;
+			for (k = 1; k <= idx; k++) {
+				double s1 = 0.0;
+				double s2 = 0.0;
+				for (j = 0; j <= 2 * idx - 1; j++) {
+					s1 += a[s * N + 2 * idx + j] *
+						cos((2 * k - 1) * M_PI * j / (double)(2 * idx));
+						//ffCOS[(2 * k - 1) * vm * n_la + j];
+				}
+				for (j = 1; j <= 2 * idx - 1; j++) {
+					s2 += a[s * N + 2 * idx + j] *
+						sin((2 * k - 1) * M_PI * j / (double)(2 * idx));
+						//ffSIN[(2 * k - 1) * vm * n_la + j];
+				}
+				//idx2 = _ipow(2, s - 1) * (2 * k - 1);
+				idx2 = (1 << (s - 1)) * (2 * k - 1);
+				y[idx2]  = s1;
+				_y[idx2] = s2;
+			}
+		}
+
+		y[N_2]              = a[n * N + 1];
+		//y[_ipow(2, n - 2)]  = a[(n - 1) * N + 2];
+		y[1 << (n - 2)] = a[(n - 1) * N + 2];
+
+		y[0]                = a[n * N + 0];
+		//_y[_ipow(2, n - 2)] = a[(n - 1) * N + 3];
+		_y[1 << (n - 2)] = a[(n - 1) * N + 3];
+
+		for (k = 0; k <= N_2; k++) {
+			S[k] = y[k] * dx;
+		}
+		S[0] *= M_SQRT1_2;
+
+		for (k = 1; k <= N_2 - 1; k++) {
+			S[N - k] = _y[k] * dx;
+		}
+		S[N_2] *= M_SQRT1_2;
+
+		free(a); free(_y); free(y);
+	}
+
+#ifdef _FFTW
+	void pFFT_1_fftw(double *S, double *s1, double dx, int N)
+	{
+		int k;
+		int N_2 = N / 2;
+		//вычисляем нужные + "лишние" значения
+		double * y  = malloc((N + 1) * sizeof(double));
+		double *_y  = malloc((N + 1) * sizeof(double));
+
+		sFFT_fftw(_y, s1, 1.0, N);
+		cFFT_fftw(y,  s1, 1.0, N);
+
+		for (k = 0; k <= N_2; k++) {
+			S[k] = y[k] * dx;
+		}
+		S[0] *= M_SQRT1_2;
+
+		/*for (k = 1; k <= N_2 - 1; k++) {
+			S[N - k] = _y[k] * dx;
+		}
+		S[N_2] *= M_SQRT1_2;*/
+
+		free(y); free(_y);
+	}
+#endif
+
+	void pFFT_2_1(double *S, const double *s1, double dx, fft * ft) 
+	{
+		int p, s, j, idx, idx2, vm, k;
+		int N = ft->N, n = ft->n, sz = ft->sz;
+		double * ffCOS = ft->ffCOS, * ffSIN = ft->ffSIN;
+		int N_2 = N / 2;
+		double *a   = malloc((n + 1)*N * sizeof(double));
+		double * y  = malloc((N_2 + 1) * sizeof(double));
+		double *_y  = malloc((N_2 + 1) * sizeof(double));
+
+		memcpy(a, s1, N * sizeof(double));
+
+		for (p = 1; p <= n; p++) {
+			//int idx = _ipow(2, n - p);
+			idx = 1 << (n - p);
+			for (j = 0; j <= idx - 1; j++) {
+				a[p * N + j]       = a[(p - 1) * N + j] + a[(p - 1) * N + idx + j];
+				a[p * N + idx + j] = a[(p - 1) * N + j] - a[(p - 1) * N + idx + j];
+			}
+		}
+
+		for (s = 1; s <= n - 2; s++) {
+			//idx = _ipow(2, n - s - 1);
+			//vm  = _ipow(2, s);
+			idx = 1 << (n - s - 1);
+			vm  = 1 << s;
+			for (k = 1; k <= idx; k++) {
+				double s1 = 0.0;
+				double s2 = 0.0;
+				for (j = 0; j <= 2 * idx - 1; j++) {
+					s1 += a[s * N + 2 * idx + j] *
+						//cos((2 * k - 1) * M_PI * j / (double)(2 * idx));
+						//ffCOS[(2 * k - 1) * vm * n_la + j];
+						ffCOS[((2 * k - 1) * vm * j) % sz];
+				}
+				for (j = 1; j <= 2 * idx - 1; j++) {
+					s2 += a[s * N + 2 * idx + j] *
+						//sin((2 * k - 1) * M_PI * j / (double)(2 * idx));
+						//ffSIN[(2 * k - 1) * vm * n_la + j];
+						ffSIN[((2 * k - 1) * vm * j) % sz];
+				}
+				//idx2 = _ipow(2, s - 1) * (2 * k - 1);
+				idx2 = (1 << (s - 1)) * (2 * k - 1);
+				y[idx2]  = s1;
+				_y[idx2] = s2;
+			}
+		}
+
+		y[N_2]              = a[n * N + 1];
+		//y[_ipow(2, n - 2)]  = a[(n - 1) * N + 2];
+		y[1 << (n - 2)]  = a[(n - 1) * N + 2];
+
+		y[0]                = a[n * N + 0];
+		//_y[_ipow(2, n - 2)] = a[(n - 1) * N + 3];
+		_y[1 << (n - 2)] = a[(n - 1) * N + 3];
+
+		for (k = 0; k <= N_2; k++) {
+			S[k]     = y[k] * dx;
+		}
+		S[0] *= M_SQRT1_2;
+
+		for (k = 1; k <= N_2 - 1; k++) {
+			S[N - k] = _y[k] * dx;
+		}
+		S[N_2] *= M_SQRT1_2;
+
+		free(a); free(_y); free(y);
+	}
+
+	/*!быстрое преобразование Фурье периодической функции.
+	   по коэфф Фурье находим значения функции.
+	   fk->f(i)
+       Самарский-Николаев, страница 180-181
+	  \param S  - ответ
+	  \param s  - начальное условие
+	  \param dx - множитель перед суммой
+	  \param N  - число точек
+	  \param n  - log2(N)
+	*/
+	void pFFT(double *S, double *s, double dx, int N, int n) {
+		int N_2 = N/2;
+		int k;
+		double *y1 = malloc((N_2 + 1) * sizeof(double));
+		double *y2 = malloc((N_2 + 1) * sizeof(double));
+		double *ss = malloc((N_2 + 1) * sizeof(double));
+
+		ss[0]=s[0]*M_SQRT1_2;
+		memcpy(&ss[1], &s[1], (N_2-1) * sizeof(double));
+
+		ss[N_2]=s[N_2]*M_SQRT1_2;
+
+		cFFT(y1, ss, dx, N/2, n - 1);
+
+		for (k = 1; k <= N_2-1; k++) {
+			ss[k] = s[N-k];
+		}
+		sFFT(y2, ss, dx, N/2, n - 1);
+
+		for (k = 1; k <= N_2 - 1; k ++) {
+			S[k]   = (y1[k] + y2[k]);
+			S[N-k] = (y1[k] - y2[k]);
+		}
+		S[0]   = y1[0]  ;
+		S[N_2] = y1[N_2];
+		free(y1); free(y2); free(ss);
+	}
+#ifdef _FFTW
+	void pFFT_fftw(double *S, double *s, double dx, int N)
+	{
+		int N_2 = N/2;
+		int k;
+		double *y1 = malloc((N_2 + 1) * sizeof(double));
+		double *y2 = malloc((N_2 + 1) * sizeof(double));
+		double *ss = malloc((N_2 + 1) * sizeof(double));
+
+		static fftw_plan p1 = 0;
+		static fftw_plan p2 = 0;
+
+//p1 = fftw_plan_r2r_1d(N_2-1, &s[1], &S[1], FFTW_RODFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
+//p2 = fftw_plan_r2r_1d(N_2+1, &s[0], &S[0], FFTW_REDFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
+
+		ss[0]=s[0]*M_SQRT1_2;
+		memcpy(&ss[1], &s[1], (N_2-1) * sizeof(double));
+
+		ss[N_2]=s[N_2]*M_SQRT1_2;
+
+		if (!p2) {
+			p2 = fftw_plan_r2r_1d(N_2+1, &ss[0], &y1[0], FFTW_REDFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
+		}
+		cFFT_fftw_2(p2, y1, ss, dx, N_2);
+
+		for (k = 1; k <= N_2-1; ++k) {
+			ss[k] = s[N-k];
+		}
+
+		if (!p1) p1 = fftw_plan_r2r_1d(N_2-1, &ss[1], &y2[1], FFTW_RODFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
+		sFFT_fftw_2(p1, y2, ss, dx, N_2);
+
+		for (k = 1; k <= N_2 - 1; ++k) {
+			S[k]   = (y1[k] + y2[k]);
+			S[N-k] = (y1[k] - y2[k]);
+		}
+		S[0]   = y1[0]  ;
+		S[N_2] = y1[N_2];
+		free(y1); free(y2); free(ss);
+	}
+#endif
+
+	void pFFT_2(double *S, double *s, double dx, fft * ft) 
+	{
+		int N = ft->N;
+		int N_2 = N/2;
+		int k;
+		double *y1 = malloc((N_2 + 1) * sizeof(double));
+		double *y2 = malloc((N_2 + 1) * sizeof(double));
+		double *ss = malloc((N_2 + 1) * sizeof(double));
+
+		fft ft2 = *ft;
+
+		ss[0]=s[0]*M_SQRT1_2;
+		memcpy(&ss[1], &s[1], (N_2-1) * sizeof(double));
+
+		ss[N_2]=s[N_2]*M_SQRT1_2;
+
+		//ft->N = N_2; --ft->n; ft->k = 2;
+		ft2.N = N_2;
+		ft2.n = ft->n - 1;
+		ft2.k = 2;
+
+		cFFT_2(y1, ss, dx, &ft2);
+
+		for (k = 1; k <= N_2-1; k++) {
+			ss[k] = s[N-k];
+		}
+		sFFT_2(y2, ss, dx, &ft2);
+
+		//ft->N = N; ++ft->n; ft->k = 1;
+
+		for (k = 1; k <= N_2 - 1; k ++) {
+			S[k]   = (y1[k] + y2[k]);
+			S[N-k] = (y1[k] - y2[k]);
+		}
+		S[0]   = y1[0]  ;
+		S[N_2] = y1[N_2];
+		free(y1); free(y2); free(ss);
+	}
+
+#ifdef _FFTW
+	void sFFT_fftw_2(const fftw_plan p, double *S, double *ss, double dx, int N) {
+		fftw_execute_r2r(p, &ss[1], &S[1]);
+		vector_mult_scalar(&S[1], &S[1], 0.5 * dx, N-1);
+	}
+
+	void sFFT_fftw(double *S, double *ss, double dx, int N) {
+		static fftw_plan p = 0;
+		
+		if (!p) p = fftw_plan_r2r_1d(N-1, &ss[1], &S[1], FFTW_RODFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
+
+		sFFT_fftw_2(p, S, ss, dx, N);
+
+		//fftw_execute(p);
+		//fftw_execute_r2r(p, &ss[1], &S[1]);
+		//vector_mult_scalar(&S[1], &S[1], 0.5 * dx, N-1);
+		//fftw_destroy_plan(p);
+	}
+
+	void cFFT_fftw_2(const fftw_plan p, double *S, double *ss, double dx, int N) {
+		double * tmp = malloc((N+1) * sizeof(double));
+		memcpy(tmp, ss, (N+1) * sizeof(double));
+		vector_mult_scalar(&tmp[1], &tmp[1], 0.5, N-1);
+
+		fftw_execute_r2r(p, &tmp[0], &S[0]);
+		vector_mult_scalar(&S[0], &S[0], dx, N+1);
+
+		free(tmp);
+	}
+
+	void cFFT_fftw(double *S, double *ss, double dx, int N) {
+		static fftw_plan p = 0;
+
+//		double * tmp = malloc((N+1) * sizeof(double));
+//		memcpy(tmp, ss, (N+1) * sizeof(double));
+//		vector_mult_scalar(&tmp[1], &tmp[1], 0.5, N-1);
+
+		if (!p) p = fftw_plan_r2r_1d(N+1, &ss[0], &S[0], FFTW_REDFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
+//		fftw_execute(p);
+
+		cFFT_fftw_2(p, S, ss, dx, N);
+
+//		vector_mult_scalar(&S[0], &S[0], dx, N+1);
+
+//		fftw_destroy_plan(p);
+//		free(tmp);
+	}
+#endif
+	/*!медленное синусное преобразование*/
+	void sFT(double *S, double *s, double dx, int N)
+	{
+		int j, k;
+		for (k = 1; k <= N - 1; ++k) {
+			double sum = 0.0;
+			for (j = 0; j <= N; ++j) {
+				sum += s[j] * sin(k * M_PI * j / ((double)N));
+			}
+			S[k] = dx * sum;
+		}
+	}
+
+	/*! быстрое синусное преобразование.
+	   Самарский-Николаев, страница 180
+	 */
+	void sFFT(double *S, double *ss, double dx, int N, int n) {
+		int p, s, k, j, idx;
+		double * a = malloc(n * N * sizeof(double));
+		memcpy(&a[1], &ss[1], (N - 1) * sizeof(double));
+
+		for (p = 1; p <= n - 1; p++) {
+			//int idx  = _ipow(2, n - p);
+			int idx = 1 << (n - p);
+			for (j = 1; j <= idx - 1; j ++) {
+				a[p * N + j]           = a[(p - 1) * N + j] - a[(p - 1) * N + 2 * idx - j];
+				a[p * N + 2 * idx - j] = a[(p - 1) * N + j] + a[(p - 1) * N + 2 * idx - j];
+				a[p * N + idx]         = a[(p - 1) * N + idx];
+			}
+		}
+
+		for (s = 1; s <= n - 1; s++) {
+			//int idx = _ipow(2, n - s);
+			//int vm  = _ipow(2, s - 1);
+			int idx = 1 << (n - s);
+			int vm  = 1 << (s - 1);
+			for (k = 1; k <= idx; k++) {
+				double y = 0.0;
+				for (j = 1; j <= idx; j++) {
+					y += a[s * N + idx * 2 - j] *
+						sin((2 * k - 1) * M_PI * j / (double)(idx * 2));
+						//ffSIN[(2 * k - 1) * vm * 2 * n_la + j];
+
+				}
+				S[(2 * k - 1) * vm] = y * dx;
+			}
+		}
+		//idx = _ipow(2, n - 1);
+		idx = 1 << (n - 1);
+		S[idx] = a[(n - 1) * N + 1] * dx;// * vm_mult;
+		free(a);
+	}
+
+	/*! быстрое синусное преобразование.
+	   Самарский-Николаев, страница 180
+	 */
+	void sFFT_2(double *S, double *ss, double dx, fft * ft) {
+		int p, s, k, j, idx;
+		int n = ft->n, N = ft->N, nr = ft->k, sz = ft->sz;
+		double * ffSIN = ft->ffSIN;
+		double * a = malloc(n * N * sizeof(double));
+		memcpy(&a[1], &ss[1], (N - 1) * sizeof(double));
+
+		for (p = 1; p <= n - 1; p++) {
+			//int idx  = _ipow(2, n - p);
+			int idx = 1 << (n - p);
+			for (j = 1; j <= idx - 1; j ++) {
+				a[p * N + j]           = a[(p - 1) * N + j] - a[(p - 1) * N + 2 * idx - j];
+				a[p * N + 2 * idx - j] = a[(p - 1) * N + j] + a[(p - 1) * N + 2 * idx - j];
+				a[p * N + idx]         = a[(p - 1) * N + idx];
+			}
+		}
+
+		for (s = 1; s <= n - 1; s++) {
+			//int idx = _ipow(2, n - s);
+			//int vm  = _ipow(2, s - 1);
+			int idx = 1 << (n - s);
+			int vm  = 1 << (s - 1);
+			for (k = 1; k <= idx; k++) {
+				double y = 0.0;
+				for (j = 1; j <= idx; j++) {
+					y += a[s * N + idx * 2 - j] *
+						//sin((2 * k - 1) * M_PI * j / (double)(idx * 2));
+						//ffSIN[(2 * k - 1) * vm * 2 * n_la + j];
+						ffSIN[((2 * k - 1) * vm * nr * j) % sz];
+
+				}
+				S[(2 * k - 1) * vm] = y * dx;
+			}
+		}
+		//idx = _ipow(2, n - 1);
+		idx = 1 << (n - 1);
+		S[idx] = a[(n - 1) * N + 1] * dx;// * vm_mult;
+		free(a);
+	}
+
+	/*!медленное косинусное преобразование*/
+	void cFT(double *S, double *s, double dx, int N)
+	{
+		int j, k;
+		for (k = 0; k <= N; ++k) {
+			double sum = 0.0;
+			for (j = 0; j <= N; ++j) {
+				sum += s[j] * cos(k * M_PI * j / ((double)N));
+			}
+			S[k] = dx * sum;
+		}
+	}
+
+	/*! быстрое косинусное преобразование.
+	   Самарский-Николаев, страница 176, формулы 46-47
+	 */
+	void cFFT(double *S, double *ss, double dx, int N, int n) {
+		int p, s, j, k;
+		int M = N + 1;
+		double *a = malloc((n + 1) * M * sizeof(double));	
+
+		memcpy(&a[0], &ss[0], M * sizeof(double));
+
+		for (p = 1; p <= n; p++) {
+			//int idx  = _ipow(2, n - p);
+			int idx = 1 << (n - p);
+			for (j = 0; j <= idx - 1; j ++) {
+				a[p * M + j]           = a[(p - 1) * M + j] + a[(p - 1) * M + 2 * idx - j];
+				a[p * M + 2 * idx - j] = a[(p - 1) * M + j] - a[(p - 1) * M + 2 * idx - j];
+				a[p * M + idx]         = a[(p - 1) * M + idx];
+			}
+		}
+
+		for (s = 1; s <= n - 1; s++) {
+			//int idx = _ipow(2, n - s);
+			//int vm  = _ipow(2, s - 1);
+			int idx = 1 << (n - s);
+			int vm  = 1 << (s - 1);
+			for (k = 1; k <= idx; k++) {
+				double y = 0.0;
+				for (j = 0; j <= idx - 1; j++) {
+					y += a[s * M + idx * 2 - j] *
+						cos((2 * k - 1) * M_PI * j / (double)(idx * 2));
+						//ffCOS[(2 * k - 1) * vm * 2 * n_la + j];
+				}
+				S[(2 * k - 1) * vm] = y * dx;
+			}
+		}
+		S[0]   = (a[n * M + 0] + a[n * M + 1]) * dx;
+		S[N]   = (a[n * M + 0] - a[n * M + 1]) * dx;
+		S[N/2] =  a[n * M + 2] * dx;
+		free(a);
+	}
+
+	void cFFT_2(double *S, double *ss, double dx, fft * ft) 
+	{
+		int p, s, j, k;
+		int n = ft->n, N = ft->N, nr = ft->k, sz = ft->sz;
+		double * ffCOS = ft->ffCOS;		
+		int M = N + 1;
+		double *a = malloc((n + 1) * M * sizeof(double));	
+
+		memcpy(&a[0], &ss[0], M * sizeof(double));
+
+		for (p = 1; p <= n; p++) {
+			//int idx  = _ipow(2, n - p);
+			int idx = 1 << (n - p);
+			for (j = 0; j <= idx - 1; j ++) {
+				a[p * M + j]           = a[(p - 1) * M + j] + a[(p - 1) * M + 2 * idx - j];
+				a[p * M + 2 * idx - j] = a[(p - 1) * M + j] - a[(p - 1) * M + 2 * idx - j];
+				a[p * M + idx]         = a[(p - 1) * M + idx];
+			}
+		}
+
+		for (s = 1; s <= n - 1; s++) {
+			//int idx = _ipow(2, n - s);
+			//int vm  = _ipow(2, s - 1);
+			int idx = 1 << (n - s);
+			int vm  = 1 << (s - 1);
+			for (k = 1; k <= idx; k++) {
+				double y = 0.0;
+				for (j = 0; j <= idx - 1; j++) {
+					y += a[s * M + idx * 2 - j] *
+						//cos((2 * k - 1) * M_PI * j / (double)(idx * 2));
+						//ffCOS[(2 * k - 1) * vm * 2 * n_la + j];
+						ffCOS[((2 * k - 1) * vm * nr * j) % sz];
+				}
+				S[(2 * k - 1) * vm] = y * dx;
+			}
+		}
+		S[0]   = (a[n * M + 0] + a[n * M + 1]) * dx;
+		S[N]   = (a[n * M + 0] - a[n * M + 1]) * dx;
+		S[N/2] =  a[n * M + 2] * dx;
+		free(a);
+	}
+
+
+	/*!быстрое преобразование Фурье.
+	   Самарский-Николаев, страница 170, формулы 30-31
+	  \param S  - ответ
+	  \param s  - начальное условие
+	  \param dx - множитель перед суммой
+	      d_y * sqrt(2 / l_y) для преобразования значений функции в коэф Фурье
+		и sqrt(2 / l_y) для нахождения функции по коэф Фурье
+	  \param Vm - собственные функции в виде
+	      Vm(m, j) = sqrt(2. / l_y) * sin(M_PI * m * j / n_y)
+		  где l_y - длина отрезка, n_y - число точек
+	  \param N  - число точек
+	  \param n  - log2(N)
+	*/
+	void FFT(double *S, const double *ss, double *Vm, double dx, int N, int n)
+	{
+		int s, k, j, p, idx;
+		double *a = malloc(n * N * sizeof(double));
+		memcpy(&a[1], &ss[1], (N - 1) * sizeof(double));
+
+		for (p = 1; p <= n - 1; p++) {
+			//idx  = _ipow(2, n - p);
+			idx = 1 << (n - p);
+			for (j = 1; j <= idx - 1; j ++) {
+				a[p * N + j]           = a[(p - 1) * N + j] - a[(p - 1) * N + 2 * idx - j];
+				a[p * N + 2 * idx - j] = a[(p - 1) * N + j] + a[(p - 1) * N + 2 * idx - j];
+				a[p * N + idx]         = a[(p - 1) * N + idx];
+			}
+		}
+
+		for (s = 1; s <= n - 1; s++) {
+			//int idx = _ipow(2, n - s);
+			//int vm  = _ipow(2, s - 1);
+			int idx = 1 << (n - s);
+			int vm  = 1 << (s - 1);
+			for (k = 1; k <= idx; k++) {
+				double y = 0.0;
+				for (j = 1; j <= idx; j++) {
+					y += a[s * N + idx * 2 - j] * Vm[(2 * k - 1) * vm * N + j];
+				}
+				S[(2 * k - 1) * vm] = y * dx;
+			}
+		}
+		//idx = _ipow(2, n - 1);
+		idx = 1 << (n - 1);
+		S[idx] = a[(n - 1) * N + 1] * dx;
+		free(a);
+	}
