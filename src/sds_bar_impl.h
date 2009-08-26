@@ -356,7 +356,7 @@ public:
 			if (norm < _BARVORTEX_IM_EPS)
 				break;
 			if (it > _BARVORTEX_IM_MAX_IT) {
-				Logger::Instance().printf("%s:%d:%s: it=%d, norm=%.16le\n", __FILE__, __LINE__, __FUNCTION__, it, norm);
+				printf("%s:%d:%s: it=%d, norm=%.16le\n", __FILE__, __LINE__, __FUNCTION__, it, norm);
 				throw BadArgument("");
 				//exit(1);
 			}

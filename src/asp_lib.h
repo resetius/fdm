@@ -38,21 +38,11 @@
 #include "asp_macros.h"
 #include "asp_gauss.h"
 #include "asp_misc.h"
-#include "asp_check.h"
-#include "asp_projection.h"
-#include "asp_interpolate.h"
-#include "asp_graph.h"
 #include "asp_fft.h"
-#include "asp_signal.h"
 #ifdef __cplusplus
-#include "asp_properties.h"
 #include "asp_excs.h"
-#include "asp_readdir.h"
-#include "asp_templ.hpp"
-#include "asp_sphere_func.hpp"
 #include "asp_sphere_lapl.h"
 #include "asp_sphere_jac.h"
 #include "asp_lapl.h"
-#include "asp_singleton.h"
 #endif
 #endif //_ASP_LIB_H
