@@ -859,6 +859,16 @@ public:
 		delete [] z_lapl;
 		delete [] pt1; delete [] pt2; delete [] pt3;
 	}
+
+	double scalar(const double *x, const double *y, int n)
+	{
+		return lapl->scalar(x, y);
+	}
+
+	double norm(const double *x, int n)
+	{
+		return sqrt(scalar(x, x, n));
+	}
 };
 
 #endif //_SDS_BAR_IMPL_H

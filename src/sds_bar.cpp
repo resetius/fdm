@@ -206,13 +206,12 @@ void BarVortex::L_1_step(double *h1, const double *h, const double * z)
 
 double BarVortex::scalar(const double *x, const double *y, int n)
 {
-	static double koef = d->d_la * d->d_phi;
-	return ::scalar(x, y, n) * koef;
+	return d->scalar(x, y, n);
 }
 
 double BarVortex::norm(const double *x, int n)
 {
-	return sqrt(scalar(x, x, n));
+	return d->norm(x, n);
 }
 
 double BarVortex::phi(int i)
