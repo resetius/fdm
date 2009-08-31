@@ -79,7 +79,7 @@ void test_barvortex()
 	}
 
 //	{
-//		_fprintfmatrix("kornev1_u0_1.txt", &u[0], conf.n_la, conf.n_phi, "%.16lf ");
+//		_fprintfwmatrix("kornev1_u0_1.txt", &u[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 //	}
 
 	while (t < T) {
@@ -90,11 +90,10 @@ void test_barvortex()
 			fprintf(stderr, "t=%le/nr=%le\n", t, bv.norm(&u1[0], n));
 //			char buf[1024];
 //			sprintf(buf, "u_%05d.txt", i);
-			//_fprintfmatrix("kornev1_u1_1.txt", &u1[0], conf.n_la, conf.n_phi, "%.16lf ");
-//			_fprintfmatrix(buf, &u1[0], conf.n_la, conf.n_phi, "%.16lf ");
+//			_fprintfwmatrix(buf, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 			//exit(1);
 
-			fprintfmatrix(stdout, &u1[0], conf.n_la, conf.n_phi, "%.16lf ");
+			fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 			fprintf(stdout, "\n");
 //		}
 
