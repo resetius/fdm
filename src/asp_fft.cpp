@@ -62,7 +62,7 @@ fft * FFT_init(int type, int N)
 	if (!((1 << deg) == N))
 		return 0;
 
-	ret = malloc(sizeof(fft)); NOMEM(ret);
+	ret = (fft*)malloc(sizeof(fft)); NOMEM(ret);
 
 	ret->N     = N;
 	ret->n     = deg;
@@ -73,14 +73,14 @@ fft * FFT_init(int type, int N)
 	ret->sz    = 2 * N;
 
 	if (type & FFT_COS) {
-		ret->ffCOS = malloc(2 * N * sizeof(double)); NOMEM(ret->ffCOS);
+		ret->ffCOS = (double*)malloc(2 * N * sizeof(double)); NOMEM(ret->ffCOS);
 		for (m = 0; m < 2 * N; ++m) {
 			ret->ffCOS[m] = cos(m * M_PI / (double)N);
 		}
 	}
 
 	if (type & FFT_SIN) {
-		ret->ffSIN = malloc(2 * N * sizeof(double)); NOMEM(ret->ffSIN);
+		ret->ffSIN = (double*)malloc(2 * N * sizeof(double)); NOMEM(ret->ffSIN);
 		for (m = 0; m < 2 * N; ++m) {
 			ret->ffSIN[m] = sin(m * M_PI / (double)N);
 		}
@@ -122,9 +122,9 @@ void FFT_free(fft * s)
 	{
 		int p, s, j, idx, idx2, vm, k;
 		int N_2 = N / 2;
-		double *a   = malloc((n + 1)*N * sizeof(double));
-		double * y  = malloc((N_2 + 1) * sizeof(double));
-		double *_y  = malloc((N_2 + 1) * sizeof(double));
+		double *a   = (double*)malloc((n + 1)*N * sizeof(double));
+		double * y  = (double*)malloc((N_2 + 1) * sizeof(double));
+		double *_y  = (double*)malloc((N_2 + 1) * sizeof(double));
 
 		memcpy(a, s1, N * sizeof(double));
 
@@ -189,8 +189,8 @@ void FFT_free(fft * s)
 		int k;
 		int N_2 = N / 2;
 		//вычисляем нужные + "лишние" значения
-		double * y  = malloc((N + 1) * sizeof(double));
-		double *_y  = malloc((N + 1) * sizeof(double));
+		double * y  = (double*)malloc((N + 1) * sizeof(double));
+		double *_y  = (double*)malloc((N + 1) * sizeof(double));
 
 		sFFT_fftw(_y, s1, 1.0, N);
 		cFFT_fftw(y,  s1, 1.0, N);
@@ -215,9 +215,9 @@ void FFT_free(fft * s)
 		int N = ft->N, n = ft->n, sz = ft->sz;
 		double * ffCOS = ft->ffCOS, * ffSIN = ft->ffSIN;
 		int N_2 = N / 2;
-		double *a   = malloc((n + 1)*N * sizeof(double));
-		double * y  = malloc((N_2 + 1) * sizeof(double));
-		double *_y  = malloc((N_2 + 1) * sizeof(double));
+		double *a   = (double*)malloc((n + 1)*N * sizeof(double));
+		double * y  = (double*)malloc((N_2 + 1) * sizeof(double));
+		double *_y  = (double*)malloc((N_2 + 1) * sizeof(double));
 
 		memcpy(a, s1, N * sizeof(double));
 
@@ -291,9 +291,9 @@ void FFT_free(fft * s)
 	void pFFT(double *S, double *s, double dx, int N, int n) {
 		int N_2 = N/2;
 		int k;
-		double *y1 = malloc((N_2 + 1) * sizeof(double));
-		double *y2 = malloc((N_2 + 1) * sizeof(double));
-		double *ss = malloc((N_2 + 1) * sizeof(double));
+		double *y1 = (double*)malloc((N_2 + 1) * sizeof(double));
+		double *y2 = (double*)malloc((N_2 + 1) * sizeof(double));
+		double *ss = (double*)malloc((N_2 + 1) * sizeof(double));
 
 		ss[0]=s[0]*M_SQRT1_2;
 		memcpy(&ss[1], &s[1], (N_2-1) * sizeof(double));
@@ -320,9 +320,9 @@ void FFT_free(fft * s)
 	{
 		int N_2 = N/2;
 		int k;
-		double *y1 = malloc((N_2 + 1) * sizeof(double));
-		double *y2 = malloc((N_2 + 1) * sizeof(double));
-		double *ss = malloc((N_2 + 1) * sizeof(double));
+		double *y1 = (double*)malloc((N_2 + 1) * sizeof(double));
+		double *y2 = (double*)malloc((N_2 + 1) * sizeof(double));
+		double *ss = (double*)malloc((N_2 + 1) * sizeof(double));
 
 		static fftw_plan p1 = 0;
 		static fftw_plan p2 = 0;
@@ -362,9 +362,9 @@ void FFT_free(fft * s)
 		int N = ft->N;
 		int N_2 = N/2;
 		int k;
-		double *y1 = malloc((N_2 + 1) * sizeof(double));
-		double *y2 = malloc((N_2 + 1) * sizeof(double));
-		double *ss = malloc((N_2 + 1) * sizeof(double));
+		double *y1 = (double*)malloc((N_2 + 1) * sizeof(double));
+		double *y2 = (double*)malloc((N_2 + 1) * sizeof(double));
+		double *ss = (double*)malloc((N_2 + 1) * sizeof(double));
 
 		fft ft2 = *ft;
 
@@ -416,7 +416,7 @@ void FFT_free(fft * s)
 	}
 
 	void cFFT_fftw_2(const fftw_plan p, double *S, double *ss, double dx, int N) {
-		double * tmp = malloc((N+1) * sizeof(double));
+		double * tmp = (double*)malloc((N+1) * sizeof(double));
 		memcpy(tmp, ss, (N+1) * sizeof(double));
 		vector_mult_scalar(&tmp[1], &tmp[1], 0.5, N-1);
 
@@ -462,7 +462,7 @@ void FFT_free(fft * s)
 	 */
 	void sFFT(double *S, double *ss, double dx, int N, int n) {
 		int p, s, k, j, idx;
-		double * a = malloc(n * N * sizeof(double));
+		double * a = (double*)malloc(n * N * sizeof(double));
 		memcpy(&a[1], &ss[1], (N - 1) * sizeof(double));
 
 		for (p = 1; p <= n - 1; p++) {
@@ -504,7 +504,7 @@ void FFT_free(fft * s)
 		int p, s, k, j, idx;
 		int n = ft->n, N = ft->N, nr = ft->k, sz = ft->sz;
 		double * ffSIN = ft->ffSIN;
-		double * a = malloc(n * N * sizeof(double));
+		double * a = (double*)malloc(n * N * sizeof(double));
 		memcpy(&a[1], &ss[1], (N - 1) * sizeof(double));
 
 		for (p = 1; p <= n - 1; p++) {
@@ -559,7 +559,7 @@ void FFT_free(fft * s)
 	void cFFT(double *S, double *ss, double dx, int N, int n) {
 		int p, s, j, k;
 		int M = N + 1;
-		double *a = malloc((n + 1) * M * sizeof(double));	
+		double *a = (double*)malloc((n + 1) * M * sizeof(double));	
 
 		memcpy(&a[0], &ss[0], M * sizeof(double));
 
@@ -600,7 +600,7 @@ void FFT_free(fft * s)
 		int n = ft->n, N = ft->N, nr = ft->k, sz = ft->sz;
 		double * ffCOS = ft->ffCOS;		
 		int M = N + 1;
-		double *a = malloc((n + 1) * M * sizeof(double));	
+		double *a = (double*)malloc((n + 1) * M * sizeof(double));	
 
 		memcpy(&a[0], &ss[0], M * sizeof(double));
 
@@ -653,7 +653,7 @@ void FFT_free(fft * s)
 	void FFT(double *S, const double *ss, double *Vm, double dx, int N, int n)
 	{
 		int s, k, j, p, idx;
-		double *a = malloc(n * N * sizeof(double));
+		double *a = (double*)malloc(n * N * sizeof(double));
 		memcpy(&a[1], &ss[1], (N - 1) * sizeof(double));
 
 		for (p = 1; p <= n - 1; p++) {

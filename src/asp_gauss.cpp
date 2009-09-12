@@ -42,6 +42,8 @@
 #include "asp_gauss.h"
 #include "asp_misc.h"
 
+using namespace asp;
+
 /**
  * Обращение матрицы.
  * @param n размерность

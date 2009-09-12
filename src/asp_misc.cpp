@@ -45,6 +45,8 @@
 #include "asp_misc.h"
 #include "asp_gauss.h"
 
+namespace asp {
+
 void printcopyright() {
 	printf("$Id$\n");
 	printf("_____________________________________________________________________\n");
@@ -225,9 +227,9 @@ double scalar(const double *X1, const double *X2, int k) {
 void linear_reflection(double *h1, const double *h, const double *e, 
 					   const double *L, int n, int nx)
 {
-	double * c = malloc(nx * sizeof(double));
-	double *c_ = malloc(nx * sizeof(double));
-	double *hn = malloc(n  * sizeof(double));
+	double * c = (double*)malloc(nx * sizeof(double));
+	double *c_ = (double*)malloc(nx * sizeof(double));
+	double *hn = (double*)malloc(n  * sizeof(double));
 	int i, j, k;
 
 	/*!находим коэф-ты разложения вектора h по базису e
@@ -376,7 +378,7 @@ void matrix_mult_vector(double * Dest, const double * A, const double * v,
 						int n) 
 {
 	int i, k;
-	double * C = malloc(n * sizeof(double));
+	double * C = (double*)malloc(n * sizeof(double));
 
 	for (i = n - 1; i >= 0; --i) {
 		C[i] = 0.0;
@@ -984,7 +986,7 @@ void load_matrix_from_binfile(double **A, int *n, int *m,
 		return;
 	}
 
-	vec = malloc(*m * sz);
+	vec = (double*)malloc(*m * sz);
 
 	do {
 		if (len < *m * sz)
@@ -1018,7 +1020,7 @@ void load_matrix_from_binfile(double **A, int *n, int *m,
 			memcpy(&vec[l / sz], s, sz);
 		}
 		free(str); str = 0;
-		nvec = realloc(M, (i + 1) * *m * sz);
+		nvec = (double*)realloc(M, (i + 1) * *m * sz);
 		if (nvec) {
 			M = nvec;
 		} else {
@@ -1040,8 +1042,8 @@ void load_matrix_from_binfile(double **A, int *n, int *m,
 #define LT_MIN_SIZE 128
 char * _fget_long_string(FILE *f, const char * separator, int *len)
 {
-	char * buf = malloc(LT_MIN_SIZE);
-	char * str = malloc(LT_MIN_SIZE);
+	char * buf = (char*)malloc(LT_MIN_SIZE);
+	char * str = (char*)malloc(LT_MIN_SIZE);
 	char *nstr = 0;
 	int c = 0, i = 0, j = 0;
 	int count;
@@ -1081,7 +1083,7 @@ char * _fget_long_string(FILE *f, const char * separator, int *len)
 				*len = i * LT_MIN_SIZE + count;
 			break;
 		}
-		nstr = realloc(str, (i + 2) * LT_MIN_SIZE);
+		nstr = (char*)realloc(str, (i + 2) * LT_MIN_SIZE);
 		if (nstr) {
 			str = nstr;
 		} else {
@@ -1130,7 +1132,7 @@ void noise_data(double *x, double percent, int n)
 
 void load_matrix_from_txtfile(double **A, int *n, int *m, const char *filename)
 {
-	double * vec = malloc(LT_MIN_SIZE * sizeof(double));
+	double * vec = (double*)malloc(LT_MIN_SIZE * sizeof(double));
 	double * M   = 0;
 	double *nvec = 0;
 	double a;
@@ -1163,7 +1165,7 @@ void load_matrix_from_txtfile(double **A, int *n, int *m, const char *filename)
 		if (sscanf(token, "%lf", &a) == 1) {
 			if (i >= size) {
 				size = 2 * size;
-				nvec = realloc(vec, size * sizeof(double));
+				nvec = (double*)realloc(vec, size * sizeof(double));
 				if (nvec) {
 					vec = nvec;
 				} else {
@@ -1178,7 +1180,7 @@ void load_matrix_from_txtfile(double **A, int *n, int *m, const char *filename)
 	*m = i;
 	free(str);
 
-	M = malloc(*m * sizeof(double));
+	M = (double*)malloc(*m * sizeof(double));
 	memcpy(M, vec, *m * sizeof(double));
 
 	*n = 1;
@@ -1201,7 +1203,7 @@ void load_matrix_from_txtfile(double **A, int *n, int *m, const char *filename)
 		if (i < *m)
 			continue;
 
-		nvec = realloc(M, *m * (*n + 1) * sizeof(double));		
+		nvec = (double*)realloc(M, *m * (*n + 1) * sizeof(double));		
 		if (nvec) {
 			M = nvec;
 			memcpy(&M[*n * *m], vec, *m * sizeof(double));
@@ -1308,5 +1310,6 @@ void basis(double *vec, int n, int i)
 {
 	memset(vec, 0, n * sizeof(double));
 	vec[i] = 1;
+}
 }
 

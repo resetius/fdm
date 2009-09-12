@@ -10,6 +10,7 @@
 
 using namespace std;
 using namespace asp;
+using namespace SDS;
 
 double rp(double phi, double lambda, BarVortexConf * conf)
 {

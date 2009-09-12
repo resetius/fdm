@@ -55,6 +55,7 @@
 using namespace asp;
 
 using namespace std;
+using namespace SDS;
 
 #include "sds_sphere_data.h"
 

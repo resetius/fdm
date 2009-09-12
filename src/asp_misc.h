@@ -35,10 +35,8 @@
  */
 
 #include <stdio.h>
-#ifdef __cplusplus
-extern "C" {
-	namespace asp {
-#endif
+
+namespace asp {
 
 	void gramm_matrix(double * g, const double *e1, const double *e2, int m, int n);
 
@@ -291,9 +289,6 @@ extern "C" {
 
 	/*!единица на i'м месте*/
 	void basis(double *vec, int n, int i);
-#ifdef __cplusplus
-}
 } /*namespace asp*/
-#endif
 #endif
 

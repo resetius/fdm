@@ -153,4 +153,8 @@ typedef unsigned char uchar;
 #define EPS32 1e-15
 #define EPS16 1e-7
 
+#ifdef __cplusplus
+#include "asp_excs.h"
+#endif
+
 #endif //_ASP_MACROS_H
