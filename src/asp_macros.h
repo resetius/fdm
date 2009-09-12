@@ -36,6 +36,9 @@
  */
 
 #include <float.h>
+#ifdef WIN32
+#include <sstream>
+#endif
 
 #ifndef M_PI
 #define M_PI           3.14159265358979323846
@@ -86,7 +89,7 @@
 #endif
 #ifdef __cplusplus
 #define MEMSIZE(a) if(!(a>0)) { \
-	ostringstream str; \
+	std::ostringstream str; \
 	str << "Cannot allocate " << a; \
 	throw BadArgument(str.str().c_str(), __FILE__, __LINE__); \
 	}
@@ -96,7 +99,7 @@
 #endif
 #ifdef __cplusplus
 #define ERR(a,b) if(!a) { \
-	ostringstream str; \
+	std::ostringstream str; \
 	str << "error: " << b << " :"; \
 	throw BadArgument(str.str().c_str(), __FILE__, __LINE__); \
 	}
