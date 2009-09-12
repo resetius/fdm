@@ -35,10 +35,6 @@
  *
  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 //использовать библиотеку fftw?
 //warning: библиотека под GPL лицензией!
 //для коммерческих разработок надо убрать этот define !
@@ -197,9 +193,5 @@ extern "C" {
 	  \param n  - log2(N)
 	*/
 	void FFT(double *S, const double *s, double *Vm, double dx, int N, int n);
-
-#ifdef __cplusplus
-} //extern "C"
-#endif
 
 #endif //_ASP_FFT_H
