@@ -103,6 +103,7 @@ public:
 	
 	double scalar(const double *x, const double *y, int n);
 	double norm(const double *x, int n);
+	double dist(const double * x, const double * y, int n);
 
 	double phi(int i);
 	double lambda(int i);

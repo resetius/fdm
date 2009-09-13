@@ -48,6 +48,7 @@
 #include <iostream>
 #include <time.h>
 #include <string.h>
+#include <vector>
 
 #include "asp_lib.h"
 #include "sds_bar.h"
@@ -213,6 +214,13 @@ double BarVortex::scalar(const double *x, const double *y, int n)
 double BarVortex::norm(const double *x, int n)
 {
 	return d->norm(x, n);
+}
+
+double BarVortex::dist(const double * x, const double * y, int n)
+{
+	vector < double > d(n);
+	vector_diff(&d[0], x, y, n);
+	return norm(&d[0], n);
 }
 
 double BarVortex::phi(int i)
