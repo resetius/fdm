@@ -723,8 +723,6 @@ double SJacobian::scalar(const double *u, const double *v)
 	double sum = 0;
 	int i, j;
 
-#pragma omp parallel for \
-	private (i, j) shared(sum, u, v)
 	for (i = 0; i < d->n_phi; ++i) {
 		rho = d->COS[2 * i];
 		for (j = 0; j < d->n_la; ++j) {

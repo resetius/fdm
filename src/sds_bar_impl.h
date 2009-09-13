@@ -217,7 +217,6 @@ public:
 
 	void Jacobian(double * dst, const double *u, const double *v)
 	{
-#pragma omp parallel for
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
 				dst[pOff(i, j)] = Jacobian(u, v, i, j);
@@ -237,7 +236,6 @@ public:
 		double rp       = 0.0;	
 		double lpl;
 
-#pragma omp parallel for
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
 				off  = pOff(i, j);
@@ -314,7 +312,6 @@ public:
 
 			//для установки краевого условия
 			//начинаем от s!
-#pragma omp parallel for
 			for (int i = s; i < n_phi; ++i) {
 				for (int j = 0; j < n_la; ++j) {
 					int off  = pOff(i, j);
@@ -383,8 +380,6 @@ public:
 		/*!находим \f$\omega_0 = \delta h_0\f$*/
 		lapl->lapl(omg, h);
 		if (!full) { memset(omg, 0, n_la * sizeof(double)); }
-
-#pragma omp parallel for
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
 				off  = pOff(i, j);
@@ -532,7 +527,6 @@ public:
 		if (!full) { memset(z_lapl, 0, n_la * sizeof(double)); }
 		if (!full) { memset(omg_old, 0, n_la * sizeof(double)); }
 
-#pragma omp parallel for
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
 				off  = pOff(i, j);
