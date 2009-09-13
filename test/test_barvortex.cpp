@@ -14,19 +14,35 @@ using namespace SDS;
 
 double rp(double phi, double lambda, BarVortexConf * conf)
 {
-	return -conf->sigma * 180/1.15 * (6*(2*cos(phi)*cos(phi)-1)*sin(phi))/5000;
+	double omg = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./omg;
+	double R   = 6.371e+6;
+	double c   = T0*T0/R/R;
+	double x   = phi;
+
+	double pt1 = -0.5 * (sin(x)*M_PI*x-2*sin(x)*x*x);
+	if (fabs(pt1) > 1e-14) {
+		pt1 /= cos(x);
+	}
+
+	double pt2 = -0.5*(-M_PI+4*x);
+	return -T0/R * 16.0 / M_PI / M_PI * 30.0 * (pt1 + pt2);
 }
 
 double cor(double phi, double lambda, BarVortexConf * conf)
 {
-	return 2.*conf->omg * sin(phi) +  // l
-		0.1 * cos(2*lambda)*sin(2*phi)*sin(2*phi); //h
+	return 2.*sin(phi) +  // l
+		0.5 * cos(2*lambda)*sin(2*phi)*sin(2*phi); //h
 }
 
 double u0(double phi, double lambda)
 {
-	double s = sin(phi);
-	return - 180/1.15 * s * s * s;
+	double omg = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./omg;
+	double R   = 6.371e+6;
+
+	return -T0/R * 16.0 / M_PI / M_PI * 30.0 * 
+		(M_PI/4 * phi * phi - phi * phi * phi / 3);
 }
 
 #define  pOff(i, j) ( i ) * conf.n_la + ( j )
@@ -46,16 +62,17 @@ void test_barvortex()
 {
 	BarVortexConf conf;
 	conf.steps = 1;
+	double R   = 6.371e+6;
 	double H   = 5000;
 	conf.omg   = 2.*M_PI/24./60./60.; // ?
 	double T0  = 1./conf.omg;
-	conf.k1    = 1.0/H;//1.;
-	conf.k2    = T0; //T0
+	conf.k1    = 1.0;
+	conf.k2    = 1.0;
 	conf.tau   = 0.001;
-	conf.sigma = 1./20./2./M_PI/H;
-	conf.mu    = conf.sigma/100.;
-	conf.n_phi = 96;
-	conf.n_la  = 128;
+	conf.sigma = 1.14e-2;
+	conf.mu    = 6.77e-5;
+	conf.n_phi = 24;
+	conf.n_la  = 32;
 	conf.full  = 0;
 	conf.rho   = 1;
 	conf.theta = 0.5;
@@ -66,7 +83,7 @@ void test_barvortex()
 	int n = conf.n_phi * conf.n_la;
 
 	double t = 0;
-	double T = 10;
+	double T = 30 * 2.0 * M_PI;;
 	int i = 0;
 
 	BarVortex bv(conf);
@@ -96,6 +113,7 @@ void test_barvortex()
 
 			fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 			fprintf(stdout, "\n");
+
 //		}
 
 		u1.swap(u);
