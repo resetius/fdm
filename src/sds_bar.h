@@ -97,8 +97,6 @@ public:
 	void LT_step(double *h1, const double *h, const double *z);
 	void L_1_step(double *h1, const double *h, const double *z);
 
-	std::string name() { return "BarVortex"; }
-
 	BarVortex(BarVortexConf&);
 	
 	double scalar(const double *x, const double *y, int n);
