@@ -84,7 +84,6 @@ void printcopyright() {
 double dist(const double *y1, const double *y2,int n) {
 	int i;
 	double n2=0;
-#pragma omp parallel for private(i) shared(n, n2, y1, y2)
 	for (i = n - 1; i >= 0; --i) {
 		n2+=(y1[i]-y2[i])*(y1[i]-y2[i]);
 	}
@@ -97,7 +96,6 @@ double dist1(const double *y1, const double *y2, int n) {
 	int i;
 	double n1 = 0.0;
 	double f;
-#pragma omp parallel for private(i, f) shared(n, n1, y1, y2)
 	for (i = n - 1; i >= 0; --i) {
 		f = fabs(y1[i]-y2[i]);
 		if (f > n1) n1 = f;
@@ -112,7 +110,6 @@ double norm1(const double *x,int n) {
 	int i;
 	double n1=0.0;
 	double f;
-#pragma omp parallel for private(i, f) shared(n, n1, x)
 	for (i = n - 1; i >= 0; --i) {
 		f = fabs(x[i]);
 		if (n1 < f) n1 = f;
@@ -126,7 +123,6 @@ double norm1(const double *x,int n) {
 double norm2(const double *x,int n) {
 	int i;
 	double n2=0.0;
-#pragma omp parallel for private(i) shared(n, n2, x)
 	for (i = n - 1; i >= 0; --i)
 		n2 += x[i] * x[i];
 	n2 = sqrt(n2);
@@ -136,7 +132,6 @@ double norm2(const double *x,int n) {
 void normalize1(double *x, int n) {
 	int i = 0;
 	double nr = norm1(x, n);
-#pragma omp parallel for
 	for (i = 0; i < n; ++i) {
 		x[i] /= nr;
 	}
@@ -145,7 +140,6 @@ void normalize1(double *x, int n) {
 void normalize2(double *x, int n) {
 	int i = 0;
 	double nr = norm2(x, n);
-#pragma omp parallel for
 	for (i = 0; i < n; ++i) {
 		x[i] /= nr;
 	}
@@ -160,7 +154,6 @@ void normilize_(double *x, double a, double b, int n)
 	double a1 = min, b1 = max, a2 = a, b2 = b;
 	double k  = (b2 - a2) / (b1 - a1);
 	double b_ = a2 - k * a1;
-#pragma omp parallel for
 	for (i = 0; i < n; ++i) {
 		//x[i] = normalize_point(x[i], min, max, a, b);
 		x[i] = k * x[i] + b_;
@@ -213,7 +206,6 @@ double find_max(const double *x, int n)
 double scalar(const double *X1, const double *X2, int k) {
 	int i;
 	double sum = 0.0;
-#pragma omp parallel for private(i) shared(k, X1, X2, sum)
 	for (i = k - 1; i >= 0; --i)
 		sum += X1[i] * X2[i];
 	return sum;
@@ -270,7 +262,6 @@ double matrix_cols_scalar(const double *X, const double *Y,
 {
 	int k;
 	double sum = 0.0;
-#pragma omp parallel for private(i) shared(k, sum, nx, ny, X, Y)
 	for (k = n - 1; k >= 0; --k) {
 		sum += X[k * nx + i] * Y[k * ny + j];
 	}
@@ -395,7 +386,6 @@ void matrix_mult_scalar(double * Dest, const double * A, double v, int n)
 {
 	int size = n * n;
 	int i;
-#pragma omp parallel for
 	for (i = size - 1; i >= 0; --i) {
 		Dest[i] = A[i] * v;
 	}
@@ -404,7 +394,6 @@ void matrix_mult_scalar(double * Dest, const double * A, double v, int n)
 void vector_mult_scalar(double * Dest, const double * A, double v, int n)
 {
 	int i;
-#pragma omp parallel for
 	for (i = n - 1; i >= 0; --i) {
 		Dest[i] = A[i] * v;
 	}
@@ -421,7 +410,6 @@ void vector_mult_scalar(double * Dest, const double * A, double v, int n)
 void matrix_sum(double * Dest, const double * A, const double * B, int n) {
 	int size = n * n;
 	int i;
-#pragma omp parallel for
 	for (i = size - 1; i >= 0; --i) {
 		Dest[i] = A[i] + B[i];
 	}
@@ -430,7 +418,6 @@ void matrix_sum(double * Dest, const double * A, const double * B, int n) {
 void vector_sum(double * Dest, const double * A, const double * B, int n) 
 {
 	int i;
-#pragma omp parallel for
 	for (i = n - 1; i >= 0; --i) {
 		Dest[i] = A[i] + B[i];
 	}
@@ -440,7 +427,6 @@ void vector_sum2(double * Dest, const double * A, const double * B,
 				 double c, int n) 
 {
 	int i;
-#pragma omp parallel for
 	for (i = n - 1; i >= 0; --i) {
 		Dest[i] = A[i] + B[i] * c;
 	}
@@ -456,7 +442,6 @@ void vector_sum2(double * Dest, const double * A, const double * B,
 	 */
 void vector_diff(double * Dest, const double * A, const double * B, int n) {
 	int i;
-#pragma omp parallel for
 	for (i = n - 1; i >= 0; --i) {
 		Dest[i] = A[i] - B[i];
 	}

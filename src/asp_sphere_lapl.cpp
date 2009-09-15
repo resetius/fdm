@@ -294,7 +294,6 @@ public:
 	{
 		if (use_fft) {
 			double *s = new double[n_la];
-#pragma omp parallel for
 			for (int i = 0; i < n_phi; ++i) {
 				for (int m = n_la - 1; m >= 0; --m) {
 					s[m] = X[m * n_phi + i];
@@ -307,7 +306,6 @@ public:
 			}
 			delete [] s;
 		} else {
-#pragma omp parallel for
 			for (int i = 0; i < n_phi; i++) {
 				for (int j = 0; j < n_la; j++) {
 					double sum = 0.0;
@@ -342,7 +340,6 @@ public:
 		if (use_fft) {
 			double * s = new double[n_la];
 			double dx  = d_la * SQRT_M_1_PI;
-#pragma omp parallel for
 			for (int i = n_phi - 1; i >= 0; --i) {
 //#ifndef _FFTW
 				pFFT_2_1(s, &U[pOff(i, 0)], dx, ft);
@@ -356,7 +353,6 @@ public:
 			}
 			delete [] s;
 		} else {
-#pragma omp parallel for
 			for (int i = 0; i < n_phi; i++) {
 				for (int m = 0 ; m < n_la; m++) {
 					sum = 0.0;
@@ -490,7 +486,6 @@ public:
 			S = B1;
 		}
 
-#pragma omp parallel for
 		for (int i = n_phi - 1; i >= 0; --i) {
 			for (int j = n_la - 1; j >= 0; --j) {
 				M2[pOff(i, j)] = sphere_laplacian_ij(S, i, j);
@@ -599,7 +594,6 @@ public:
 		//на полусфере в нулевой точке ничего не находим - там краевое условие
 		int si = (full) ? 0 : 1;
 
-#pragma omp parallel for
 		for (m = 0; m < n_la; m++) {
 			for (i = si + 1; i < n_phi - 1; i++) {
 				rho_1 = 1.0 / COS[2 * i];
@@ -768,14 +762,14 @@ void SLaplacian::lapl_phi(double *Dest, const double *M)
 
 void SLaplacian::lapl_1(double * Dest, const double * Source, double mult, double diag, int bc)
 {
-	memcpy(Dest, Source, d->n_la * d->n_phi * sizeof(double));
+	if (Dest != Source) memcpy(Dest, Source, d->n_la * d->n_phi * sizeof(double));
 
 	d->conv_sphere_laplace(Dest, &mult, &diag, true, bc);
 }
 
 void SLaplacian::lapl_1(double * Dest, const double * Source, double * mult, double * diag, int bc)
 {
-	memcpy(Dest, Source, d->n_la * d->n_phi * sizeof(double));
+	if (Dest != Source) memcpy(Dest, Source, d->n_la * d->n_phi * sizeof(double));
 
 	d->conv_sphere_laplace(Dest, mult, diag, false, bc);
 }
