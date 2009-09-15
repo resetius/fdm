@@ -121,6 +121,8 @@ sub insert_data($$$)
 }
 
 my %fields = ();
+$fields{'other'} = `hg id`;
+
 open(PIPE, "./test/fdm_barvortex 2>&1 | ");
 
 my $read_data = 0;
