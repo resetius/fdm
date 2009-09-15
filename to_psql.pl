@@ -4,6 +4,7 @@ use strict;
 
 use DBI;
 use Digest::MD5  qw(md5 md5_hex md5_base64);
+use POSIX;
 
 #print "drivers:\n";
 #my @drivers = DBI->available_drivers;
@@ -26,12 +27,13 @@ my $id = "CREATE SEQUENCE experiment_id_seq";
 my $table1 = "CREATE TABLE experiment (
 	id INT UNIQUE,
 	name VARCHAR(256), -- link to experiment_table
-	t timestamp
+	t TIMESTAMP
 )";
 my $alter = "ALTER TABLE experiment ALTER COLUMN id SET DEFAULT NEXTVAL('experiment_id_seq')";
 
 my $table2 = "CREATE TABLE barvortex_fdm (
 	experiment_id INT, -- link to experiment
+	t TIMESTAMP,
 	domain VARCHAR(256),	
 	mesh_w INT,
 	mesh_h INT,
@@ -87,9 +89,12 @@ sub create_calc_table($) {
 	$dbh->do($table3);
 	if (not $upd) {
 		# todo > fill experiment
-		$dbh->do($ins);
+		my $ts = time();
+		my $time = POSIX::strftime '%Y-%m-%d %H:%M:%S', localtime($ts);
+		$dbh->do($ins,undef,$uniq_table_name,$time);
 	}
 	$dbh->commit();
+	exit;
 	return $uniq_table_name;
 }
 
@@ -101,13 +106,11 @@ sub create_insert_string($)
 	while (my ($key, $value) = each(%$h)) {
 		$s .= "$key,";
 	}
-	chop $s;
-	$s .= ") VALUES(";
+	$s .= "calc_table,t) VALUES(";
 	while (my ($key, $value) = each(%$h)) {
 		$s .= "'$value',";
 	}
-	chop $s;
-	$s .= ")";
+	$s .= "?,?)";
 	print STDERR "=> $s\n";
 	return $s;
 }
