@@ -111,8 +111,8 @@ void test_barvortex()
 //			_fprintfwmatrix(buf, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 			//exit(1);
 
-			fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
-			fprintf(stdout, "\n");
+//			fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+//			fprintf(stdout, "\n");
 
 //		}
 
