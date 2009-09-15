@@ -5,18 +5,18 @@ use strict;
 use DBI;
 use Digest::MD5  qw(md5 md5_hex md5_base64);
 
-print "drivers:\n";
-my @drivers = DBI->available_drivers;
-for my $i (@drivers) {
-	print "$i\n";
-}
-print "---\n";
+#print "drivers:\n";
+#my @drivers = DBI->available_drivers;
+#for my $i (@drivers) {
+#	print STDERR "$i\n";
+#}
+#print "---\n";
 
 my $db_str   = "dbi:Pg:dbname=science";
 my $username = "postgres";
 my $password = "";
 
-my $dbh = DBI->connect($db_str, $username, $password, {PrintError => 0, AutoCommit => 0});
+my $dbh = DBI->connect($db_str, $username, $password, {PrintError => 1, AutoCommit => 0});
 if ($DBI::err != 0) {
 	print $DBI::errstr . "\n";
 	exit($DBI::err);
@@ -32,7 +32,7 @@ my $alter = "ALTER TABLE experiment ALTER COLUMN id SET DEFAULT NEXTVAL('experim
 
 my $table2 = "CREATE TABLE barvortex_fdm (
 	experiment_id INT, -- link to experiment
-	domain_info VARCHAR(256),	
+	domain VARCHAR(256),	
 	mesh_w INT,
 	mesh_h INT,
 	tau FLOAT8,
@@ -51,17 +51,16 @@ my $table2 = "CREATE TABLE barvortex_fdm (
 )";
 my $table2_index = "CREATE INDEX calc_table_idx ON barvortex_fdm(calc_table)";
 
-$dbh->do($id);
-$dbh->do($table1);
-$dbh->do($alter);
-$dbh->do($table2);
-$dbh->do($table2_index);
-$dbh->commit();
+$dbh->do($id); $dbh->commit();
+$dbh->do($table1); $dbh->commit();
+$dbh->do($alter); $dbh->commit();
+$dbh->do($table2); $dbh->commit();
+$dbh->do($table2_index); $dbh->commit();
 
 sub create_uniq_name($) {
 	my ($ins) = @_;
 	my $hash = md5_hex $ins;
-	print "hash => $hash\n";
+	print STDERR "hash => $hash\n";
 	return $hash;
 }
 
@@ -71,6 +70,7 @@ sub create_calc_table($) {
 	my $uniq_table_name = "barvortex_fdm_$uniq_name";
 
 	my $ans = $dbh->selectall_arrayref("SELECT * FROM barvortex_fdm WHERE calc_table=?",undef,$uniq_table_name);
+	$dbh->commit();
 	my $upd = 0;
 	if (scalar @$ans) {
 		print STDERR "updating experiment!\n";
@@ -79,7 +79,6 @@ sub create_calc_table($) {
 		print STDERR "create new experiment!\n";
 	}
 
-	$dbh->begin_work();
 	$dbh->do("DROP TABLE IF EXISTS $uniq_table_name");
 	my $table3 = "CREATE TABLE $uniq_table_name (
 		t FLOAT8,
@@ -91,7 +90,7 @@ sub create_calc_table($) {
 		$dbh->do($ins);
 	}
 	$dbh->commit();
-	return $upd;
+	return $uniq_table_name;
 }
 
 sub create_insert_string($)
@@ -109,13 +108,26 @@ sub create_insert_string($)
 	}
 	chop $s;
 	$s .= ")";
-	print "=> $s\n";
+	print STDERR "=> $s\n";
+	return $s;
+}
+
+sub insert_data($$$)
+{
+	my ($tabname, $t, $v) = @_;
+	my $s = "INSERT INTO $tabname VALUES(?,?)";
+	$dbh->do($s, undef, $t, $v);
+	$dbh->commit();
 }
 
 my %fields = ();
-open(PIPE, "./t.sh 2>&1 | ");
+open(PIPE, "./test/fdm_barvortex 2>&1 | ");
 
 my $read_data = 0;
+my $cur = "";
+my $uniq_table_name;
+my $t = 0;
+
 while(<PIPE>) {
 	if (not $read_data) {
 		if ($_ =~ m/^#([^:]+):(.*)/) {
@@ -123,11 +135,20 @@ while(<PIPE>) {
 		} else {
 			# data begins
 			$read_data = 1;
-			create_calc_table(create_insert_string(\%fields));
+			$uniq_table_name = create_calc_table(create_insert_string(\%fields));
 		}
 	}
 
 	if ($read_data) {
+		if ($_ =~ m/^\n/) {
+			print STDERR "insert $t\n";
+			insert_data($uniq_table_name, $t, $cur);
+			$cur = "";
+		} elsif ($_ =~ m/t=([^;]+)/) {
+			$t = $1;
+		} else {
+			$cur .= $_;
+		}
 	}
 }
 

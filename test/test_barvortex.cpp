@@ -90,6 +90,20 @@ void test_barvortex()
 	vector < double > u(n);
 	vector < double > u1(n);
 
+	fprintf(stderr, "#domain:sphere half\n");
+	fprintf(stderr, "#mesh_w:%d\n", conf.n_la);
+	fprintf(stderr, "#mesh_h:%d\n", conf.n_phi);
+	fprintf(stderr, "#tau:%.16lf\n", conf.tau);
+	fprintf(stderr, "#sigma:%.16lf\n", conf.sigma);
+	fprintf(stderr, "#mu:%.16lf\n", conf.mu);
+	fprintf(stderr, "#k1:%.16lf\n", conf.k1);
+	fprintf(stderr, "#k2:%.16lf\n", conf.k2);
+	fprintf(stderr, "#theta:%.16lf\n", conf.theta);
+	fprintf(stderr, "#rp:kornev1\n");
+	fprintf(stderr, "#coriolis:kornev1\n");
+	fprintf(stderr, "#initial:kornev1\n");
+	fprintf(stderr, "#build:$Id$\n");
+
 	for (int i = 0; i < conf.n_phi; ++i) {
 		for (int j = 0; j < conf.n_la; ++j) {
 			u[pOff(i, j)] = u0(bv.phi(i), bv.lambda(j));
@@ -105,14 +119,14 @@ void test_barvortex()
 		t += conf.tau;
 
 //		if (i % 10000 == 0) {
-			fprintf(stderr, "t=%le/nr=%le\n", t, bv.norm(&u1[0], n));
+			fprintf(stderr, "t=%le; nr=%le\n", t, bv.norm(&u1[0], n));
 //			char buf[1024];
 //			sprintf(buf, "u_%05d.txt", i);
 //			_fprintfwmatrix(buf, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 			//exit(1);
 
-//			fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
-//			fprintf(stdout, "\n");
+			fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+			fprintf(stdout, "\n"); fflush(stdout);
 
 //		}
 
@@ -121,8 +135,14 @@ void test_barvortex()
 	}
 }
 
-int main()
+int main(int argc, char ** argv)
 {
+	fprintf(stderr, "#cmd:");
+	for (int i = 0; i < argc; ++i) {
+		fprintf(stderr, "%s ", argv[i]);
+	}
+	fprintf(stderr, "\n");
 	//set_fpe_except();
 	test_barvortex();
 }
+
