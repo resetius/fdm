@@ -94,7 +94,6 @@ sub create_calc_table($) {
 		$dbh->do($ins,undef,$uniq_table_name,$time);
 	}
 	$dbh->commit();
-	exit;
 	return $uniq_table_name;
 }
 
