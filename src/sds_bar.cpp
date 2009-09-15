@@ -145,9 +145,9 @@ void BarVortex::S_step(double *h1, const double *h)
 	d->S_step(h1, h);
 #endif
 
-#ifdef _BARVORTEX_FILTER
-	d->lapl->filter(h1, h1);
-#endif
+	if (d->conf->filter) {
+		d->lapl->filter(h1, h1);
+	}
 }
 
 void BarVortex::S(double *h1, const double *h) {
@@ -179,30 +179,30 @@ void BarVortex::L_step(double *h1, const double *h, const double * z)
 	d->L_step(h1, h, z);
 #endif
 
-#ifdef _BARVORTEX_FILTER
-	d->lapl->filter(h1, h1);
-#endif
+	if (d->conf->filter) {
+		d->lapl->filter(h1, h1);
+	}
 }
 
 void BarVortex::L_1_step(double *h1, const double *h, const double * z)
 {
-#ifdef _BARVORTEX_FILTER
-	d->lapl->filter_1(h1, h);
-#endif
+	if (d->conf->filter) {
+		d->lapl->filter_1(h1, h);
+	}
 
 	//SDS::L_1_step(h1, h1, z); return;
 #ifdef _BARVORTEX_LINEAR_PURE_IM
-#ifdef _BARVORTEX_FILTER
-	d->L_1_step_im(h1, h1, z);
+	if (d->conf->filter) {
+		d->L_1_step_im(h1, h1, z);
+	} else {
+		d->L_1_step_im(h1, h, z);
+	}
 #else
-	d->L_1_step_im(h1, h, z);
-#endif
-#else
-#ifdef _BARVORTEX_FILTER
-	d->L_1_step_im(h1, h1, z);
-#else
-	d->L_1_step_im(h1, h, z);
-#endif
+	if (d->conf->filter) {
+		d->L_1_step_im(h1, h1, z);
+	} else {
+		d->L_1_step_im(h1, h, z);
+	}
 #endif
 }
 

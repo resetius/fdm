@@ -79,6 +79,7 @@ void test_barvortex()
 
 	conf.cor   = cor;
 	conf.rp    = rp;
+	conf.filter = 1;
 
 	int n = conf.n_phi * conf.n_la;
 
@@ -93,6 +94,7 @@ void test_barvortex()
 	fprintf(stderr, "#domain:sphere half\n");
 	fprintf(stderr, "#mesh_w:%d\n", conf.n_la);
 	fprintf(stderr, "#mesh_h:%d\n", conf.n_phi);
+	fprintf(stderr, "#filter:%d\n", conf.filter);
 	fprintf(stderr, "#tau:%.16lf\n", conf.tau);
 	fprintf(stderr, "#sigma:%.16lf\n", conf.sigma);
 	fprintf(stderr, "#mu:%.16lf\n", conf.mu);

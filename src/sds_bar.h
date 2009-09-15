@@ -41,8 +41,6 @@
 //#define _BARVORTEX_IM_EPS 1e-9
 #define _BARVORTEX_ARAKAWA
 
-#define _BARVORTEX_FILTER //?
-
 namespace SDS {
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -79,6 +77,7 @@ struct BarVortexConf
 	typedef double (*rp_t ) (double phi, double lambda, BarVortexConf * conf);
 	rp_t rp;
 	rp_t cor;
+	int filter;
 };
 
 class BarVortex

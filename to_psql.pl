@@ -46,6 +46,7 @@ my $table2 = "CREATE TABLE barvortex_fdm (
 	rp TEXT,
 	coriolis TEXT,
 	initial TEXT,
+	filter TEXT,
 	build TEXT,
 	other TEXT,
 	cmd TEXT, -- command line
