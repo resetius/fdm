@@ -84,6 +84,7 @@ sub create_calc_table($) {
 
 	$dbh->do("DROP TABLE IF EXISTS $uniq_table_name");
 	my $table3 = "CREATE TABLE $uniq_table_name (
+		step INT UNIQUE,
 		t FLOAT8,
 		nr FLOAT8,
 		mn FLOAT8,
@@ -118,11 +119,11 @@ sub create_insert_string($)
 	return $s;
 }
 
-sub insert_data($$$$$$)
+sub insert_data($$$$$$$)
 {
-	my ($tabname, $t, $nr, $mn, $mx, $v) = @_;
-	my $s = "INSERT INTO $tabname VALUES(?,?,?,?,?)";
-	$dbh->do($s, undef, $t, $nr, $mn, $mx, $v);
+	my ($tabname, $step, $t, $nr, $mn, $mx, $v) = @_;
+	my $s = "INSERT INTO $tabname VALUES(?,?,?,?,?,?)";
+	$dbh->do($s, undef, $step, $t, $nr, $mn, $mx, $v);
 	$dbh->commit();
 }
 
@@ -134,10 +135,11 @@ open(PIPE, "./test/fdm_barvortex 2>&1 | ");
 my $read_data = 0;
 my $cur = "";
 my $uniq_table_name;
-my $t = 0;
-my $nr = 0;
-my $mn = 0;
-my $mx = 0;
+my $t    = 0;
+my $nr   = 0;
+my $mn   = 0;
+my $mx   = 0;
+my $step = 1;
 
 while(<PIPE>) {
 	if (not $read_data) {
@@ -152,9 +154,10 @@ while(<PIPE>) {
 
 	if ($read_data) {
 		if ($_ =~ m/^\n/) {
-			print STDERR "insert $t, $nr, $mn, $mx\n";
-			insert_data($uniq_table_name, $t, $nr, $mn, $mx, $cur);
+			print STDERR "insert $step, $t, $nr, $mn, $mx\n";
+			insert_data($uniq_table_name, $step, $t, $nr, $mn, $mx, $cur);
 			$cur = "";
+			$step += 1;
 		} elsif ($_ =~ m/t=([^;]+); nr=([^;]+); min=([^;]+); max=([^;]+);/) {
 			$t  = $1;
 			$nr = $2;
