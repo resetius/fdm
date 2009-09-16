@@ -85,6 +85,9 @@ sub create_calc_table($) {
 	$dbh->do("DROP TABLE IF EXISTS $uniq_table_name");
 	my $table3 = "CREATE TABLE $uniq_table_name (
 		t FLOAT8,
+		nr FLOAT8,
+		mn FLOAT8,
+		mx FLOAT8,
 		v TEXT
 	)";
 	$dbh->do($table3);
@@ -115,11 +118,11 @@ sub create_insert_string($)
 	return $s;
 }
 
-sub insert_data($$$)
+sub insert_data($$$$$$)
 {
-	my ($tabname, $t, $v) = @_;
-	my $s = "INSERT INTO $tabname VALUES(?,?)";
-	$dbh->do($s, undef, $t, $v);
+	my ($tabname, $t, $nr, $mn, $mx, $v) = @_;
+	my $s = "INSERT INTO $tabname VALUES(?,?,?,?,?)";
+	$dbh->do($s, undef, $t, $nr, $mn, $mx, $v);
 	$dbh->commit();
 }
 
@@ -132,6 +135,9 @@ my $read_data = 0;
 my $cur = "";
 my $uniq_table_name;
 my $t = 0;
+my $nr = 0;
+my $mn = 0;
+my $mx = 0;
 
 while(<PIPE>) {
 	if (not $read_data) {
@@ -146,11 +152,14 @@ while(<PIPE>) {
 
 	if ($read_data) {
 		if ($_ =~ m/^\n/) {
-			print STDERR "insert $t\n";
-			insert_data($uniq_table_name, $t, $cur);
+			print STDERR "insert $t, $nr, $mn, $mx\n";
+			#insert_data($uniq_table_name, $t, $cur);
 			$cur = "";
-		} elsif ($_ =~ m/t=([^;]+)/) {
-			$t = $1;
+		} elsif ($_ =~ m/t=([^;]+); nr=([^;]+); min=([^;]+); max=([^;]+)\n/) {
+			$t  = $1;
+			$nr = $2;
+			$mn = $3;
+			$mx = $4;
 		} else {
 			$cur .= $_;
 		}

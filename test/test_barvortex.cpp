@@ -121,7 +121,10 @@ void test_barvortex()
 		t += conf.tau;
 
 //		if (i % 10000 == 0) {
-			fprintf(stderr, "t=%le; nr=%le\n", t, bv.norm(&u1[0], n));
+			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le\n", 
+					t, bv.norm(&u1[0], n), 
+					find_min(&u1[0], n),
+					find_max(&u1[0], n));
 //			char buf[1024];
 //			sprintf(buf, "u_%05d.txt", i);
 //			_fprintfwmatrix(buf, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
