@@ -153,7 +153,7 @@ while(<PIPE>) {
 	if ($read_data) {
 		if ($_ =~ m/^\n/) {
 			print STDERR "insert $t, $nr, $mn, $mx\n";
-#			insert_data($uniq_table_name, $t, $nr, $mn, $mx, $cur);
+			insert_data($uniq_table_name, $t, $nr, $mn, $mx, $cur);
 			$cur = "";
 		} elsif ($_ =~ m/t=([^;]+); nr=([^;]+); min=([^;]+); max=([^;]+);/) {
 			$t  = $1;
