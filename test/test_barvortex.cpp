@@ -121,7 +121,7 @@ void test_barvortex()
 		t += conf.tau;
 
 //		if (i % 10000 == 0) {
-			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le\n", 
+			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le;\n", 
 					t, bv.norm(&u1[0], n), 
 					find_min(&u1[0], n),
 					find_max(&u1[0], n));
