@@ -85,6 +85,7 @@ void test_barvortex()
 
 	double t = 0;
 	double T = 30 * 2.0 * M_PI;;
+	double nr;
 	int i = 0;
 
 	BarVortex bv(conf);
@@ -121,8 +122,9 @@ void test_barvortex()
 		t += conf.tau;
 
 //		if (i % 10000 == 0) {
+			nr = bv.norm(&u1[0], n);
 			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le;\n", 
-					t, bv.norm(&u1[0], n), 
+					t, nr, 
 					find_min(&u1[0], n),
 					find_max(&u1[0], n));
 //			char buf[1024];
@@ -133,6 +135,9 @@ void test_barvortex()
 			fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 			fprintf(stdout, "\n"); fflush(stdout);
 
+			if (isnan(nr)) {
+				return;
+			}
 //		}
 
 		u1.swap(u);
