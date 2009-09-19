@@ -12,6 +12,16 @@ using namespace std;
 using namespace asp;
 using namespace SDS;
 
+#ifdef WIN32
+#include <float.h>
+#define isnan _isnan
+inline bool isinf(double x)
+{
+	int c = _fpclass(x);
+	return (c == _FPCLASS_NINF || c == _FPCLASS_PINF);
+}
+#endif
+
 double rp(double phi, double lambda, BarVortexConf * conf)
 {
 	double omg = 2.*M_PI/24./60./60.; // ?
