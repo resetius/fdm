@@ -728,6 +728,77 @@ public:
 		}
 #endif
 	}
+
+
+	void conv_baroclin(double* M,
+		double * W1, double * W2, 
+		double * U1, double * U2)
+	{
+		int i, j, m;
+		double rho_1;
+		double d_phi2_rho_1;
+		double cos_phi1_d_phi2_rho;
+		double cos_phi2_d_phi2_rho;
+
+		double * FW1 = new double[n_la * n_phi];
+		double * FW2 = new double[n_la * n_phi];
+
+		double * FU1 = new double[n_la * n_phi];
+		double * FU2 = new double[n_la * n_phi];
+
+		double ** A;
+		double * RP;
+
+		UtoXY(FW1, W1);
+		UtoXY(FW2, W2);
+		UtoXY(FU1, U1);
+		UtoXY(FU2, U2);
+
+		for (m = 0; m < n_la; m++) {
+
+			// n_phi-1 x n_phi-1 submatrix
+			for (i = 2; i < n_phi - 1; i++) {
+				d_phi2_rho_1 = d_phi2_1 * rho_1;
+				cos_phi1_d_phi2_rho = COS[2 * i - 1] * d_phi2_rho_1;
+				cos_phi2_d_phi2_rho = COS[2 * i + 1] * d_phi2_rho_1;
+
+				j = i - 1;
+				//down
+				A[j][j-1] = cos_phi1_d_phi2_rho;
+				//middle
+				A[j][j]     = -cos_phi2_d_phi2_rho
+					          -cos_phi1_d_phi2_rho
+					          -LM[m] * rho_1 * rho_1;
+				//up
+				A[j][j+1]    = cos_phi2_d_phi2_rho;
+				RP[j]        = FW1[m * n_phi + i];
+			}
+			i = 1; j = i - 1;
+			rho_1 = 1.0 / COS[2 * i];
+			d_phi2_rho_1 = d_phi2_1 * rho_1;
+			RP[j] = FW1[m * n_phi + i];
+
+			A[j][j] = -LM[m] * rho_1 * rho_1 -
+				       COS[2 * i + 1] * d_phi2_rho_1 -
+					   COS[2 * i - 1] * d_phi2_rho_1;
+			A[j][j+1] = COS[2 * i + 1] * d_phi2_rho_1;
+
+			i = (n_phi - 1); j = i - 1;
+
+			rho_1 = 1.0 / COS[2 * i];
+			d_phi2_rho_1 = d_phi2_1 * rho_1;
+
+			A[j][j - 1] = COS[2 * i - 1] * d_phi2_rho_1;
+			A[j][j] = (-LM[m] * rho_1 * rho_1 -
+				               COS[2 * i - 1] * d_phi2_rho_1);
+			RP[j] = FW1[m * n_phi + i];
+		}
+
+		delete [] FW1;
+		delete [] FW2;
+		delete [] FU1;
+		delete [] FU2;
+	}
 };
 
 SLaplacian::~SLaplacian()
