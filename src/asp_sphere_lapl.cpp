@@ -56,11 +56,11 @@
 #include "asp_gauss.h"
 
 #ifndef min
-#define min(a, b)  (((a) < (b)) ? (a) : (b)) 
+#define min(a, b)  (((a) < (b)) ? (a) : (b))
 #endif
 
 #ifndef max
-#define max(a, b)  (((a) > (b)) ? (a) : (b)) 
+#define max(a, b)  (((a) > (b)) ? (a) : (b))
 #endif
 
 //#define _SLAPL_DEBUG //включает запись в файлы промежуточных результатов - медленно работает
@@ -126,7 +126,7 @@ static double get_full_time()
 }
 #endif
 
-class SLaplacian::Private: public SSteps 
+class SLaplacian::Private: public SSteps
 {
 public:
 	typedef SLaplacian::Private self;
@@ -138,7 +138,7 @@ public:
     /**
      * предварительное вычисление часто используемых данных
      * в разы ускоряет счет, но памяти ест много
-     */	
+     */
     double* LM;  //!<собственные значения сферического лапласа
     double* VM;  //!<значения собственных функций сферического лапласа
 	double* COS; //!<значения косинусов по широте
@@ -152,13 +152,13 @@ public:
 
 	Private(int _n_phi, int _n_la, bool _full)
 		:  SSteps(_n_phi, _n_la, _full),
-		ft(0), B1(0), LM(0), VM(0), 
+		ft(0), B1(0), LM(0), VM(0),
 		COS(0), Fc(0), MF(0)
 	{
 		checkFFT();
-				
+
 		COS = new double[2 * (n_phi + 1)];
-		
+
 		LM  = new double[n_la];
 		for (int i = 0; i < n_la; i++) {
 			LM[i] = L_m(i);
@@ -230,7 +230,7 @@ public:
 		delete [] LM;
 		delete [] VM;
 		delete [] B1;
-		delete [] COS;		
+		delete [] COS;
 		if (ft) FFT_free(ft);
 		delete [] MF;
 		delete [] Fc;
@@ -290,7 +290,7 @@ public:
      * \param X
      * \param Y
      */
-    void XYtoU(double* U, double* X) 
+    void XYtoU(double* U, double* X)
 	{
 		if (use_fft) {
 			double *s = new double[n_la];
@@ -381,7 +381,7 @@ public:
 		{
 			d_la2_rho2_1 = d_la2_1 * rho_1 * rho_1;
 			/* lambda кордината циклическая, надо рассмотреть условия склейки */
-			pt2 += (M[pOff(i, (j + 1) % n_la)] 
+			pt2 += (M[pOff(i, (j + 1) % n_la)]
 					- 2. * M[pOff(i, j)] +
 					M[pOff(i, (n_la + j - 1) % n_la)]);
 			pt2 *= d_la2_rho2_1;
@@ -443,7 +443,7 @@ public:
 		{
 			d_la2_rho2_1 = d_la2_1 * rho_1 * rho_1;
 			/* lambda кордината циклическая, надо рассмотреть условия склейки */
-			pt2 += (M[pOff(i, (j + 1) % n_la)] 
+			pt2 += (M[pOff(i, (j + 1) % n_la)]
 					- 2. * M[pOff(i, j)] +
 					M[pOff(i, (n_la + j - 1) % n_la)]);
 			pt2 *= d_la2_rho2_1;
@@ -475,10 +475,10 @@ public:
 	 * \param M2 результат
 	 * \param M1 исходная значение
 	 */
-	void sphere_laplacian_matrix(double* M2, const double* M1, int rank = 0, int threads = 1) 
+	void sphere_laplacian_matrix(double* M2, const double* M1, int rank = 0, int threads = 1)
 	{
 		const double * S = M1;
-		
+
 		if (rank == 0)
 		if (M1 == M2) {
 			if (!B1) {B1 = new double[n_phi*n_la];}
@@ -526,13 +526,13 @@ public:
 	}
 
 	//!переносит краевые условия в правую часть
-	void prepare_right_part(double * M, double * mult_factor, 
+	void prepare_right_part(double * M, double * mult_factor,
 		bool flag, int bc)
 	{
 		int i = 1;
 		double k = (flag) ? mult_factor[0] : mult_factor[1];
 		double rho_1 = 1.0 / COS[2 * i] * COS[2 * i - 1];
-		
+
 		if (bc == BC_DIRICHLET) {
 			for (int j = n_la - 1; j >= 0; --j) {
 				M[pOff(1, j)] -= k * rho_1 * d_phi2_1 * M[pOff(0, j)];
@@ -553,7 +553,7 @@ public:
 	 */
 	void conv_sphere_laplace(double* M,
 		double * mult_factor,
-		double * diag, bool flag, int bc, 
+		double * diag, bool flag, int bc,
 		int rank = 0, int threads = 1)
 	{
 		int i, m;
@@ -576,14 +576,14 @@ public:
 
 #ifdef _SLAPL_DEBUG
 		if (full) {
-			_fprintfwmatrix("out/M1_full.out", M, n_phi, n_la, 
+			_fprintfwmatrix("out/M1_full.out", M, n_phi, n_la,
 				max(n_phi, n_la), "%23.16le ");
-			_fprintfwmatrix("out/MF1_full.out", MF, n_la, n_phi, 
+			_fprintfwmatrix("out/MF1_full.out", MF, n_la, n_phi,
 				max(n_phi, n_la), "%23.16le ");
 		} else {
-			_fprintfwmatrix("out/M1_half.out", M, n_phi, n_la, 
+			_fprintfwmatrix("out/M1_half.out", M, n_phi, n_la,
 				max(n_phi, n_la), "%23.16le ");
-			_fprintfwmatrix("out/MF1_half.out", MF, n_la, n_phi, 
+			_fprintfwmatrix("out/MF1_half.out", MF, n_la, n_phi,
 				max(n_phi, n_la), "%23.16le ");
 		}
 #endif
@@ -716,23 +716,70 @@ public:
 
 #ifdef _SLAPL_DEBUG
 		if (full) {
-			_fprintfwmatrix("out/M2_full.out", M, n_phi, n_la, 
+			_fprintfwmatrix("out/M2_full.out", M, n_phi, n_la,
 				max(n_phi, n_la), "%23.16le ");
-			_fprintfwmatrix("out/MF2_full.out", MF, n_la, n_phi, 
+			_fprintfwmatrix("out/MF2_full.out", MF, n_la, n_phi,
 				max(n_phi, n_la), "%23.16le ");
 		} else {
-			_fprintfwmatrix("out/M2_half.out", M, n_phi, n_la, 
+			_fprintfwmatrix("out/M2_half.out", M, n_phi, n_la,
 				max(n_phi, n_la), "%23.16le ");
-			_fprintfwmatrix("out/MF2_half.out", MF, n_la, n_phi, 
+			_fprintfwmatrix("out/MF2_half.out", MF, n_la, n_phi,
 				max(n_phi, n_la), "%23.16le ");
 		}
 #endif
 	}
 
 
+	void conv_laplace_diag_submatrix(double ** A, double * RP, double * F, double lm, int off, double diag)
+	{
+		int i = 0, j = 0;
+		double rho_1;
+		double d_phi2_rho_1;
+		double cos_phi1_d_phi2_rho;
+		double cos_phi2_d_phi2_rho;
+
+		for (i = off + 2; i < off + n_phi - 1; i++)
+		{
+			d_phi2_rho_1 = d_phi2_1 * rho_1;
+			cos_phi1_d_phi2_rho = COS[2 * i - 1] * d_phi2_rho_1;
+			cos_phi2_d_phi2_rho = COS[2 * i + 1] * d_phi2_rho_1;
+			j = i - 1;
+			//down
+			A[j][j-1]    =  cos_phi1_d_phi2_rho;
+			//middle
+			A[j][j]      = - cos_phi2_d_phi2_rho
+				           - cos_phi1_d_phi2_rho
+				           - lm * rho_1 * rho_1
+				           + diag;
+			//up
+			A[j][j+1]    = cos_phi2_d_phi2_rho;
+			RP[j]        = F[i];
+		}
+
+		i = off + 1; j = i - 1;
+		rho_1 = 1.0 / COS[2 * i];
+		d_phi2_rho_1 = d_phi2_1 * rho_1;
+		RP[j] = F[i];
+
+		A[j][j] = -lm * rho_1 * rho_1 -
+			       COS[2 * i + 1] * d_phi2_rho_1 -
+			       COS[2 * i - 1] * d_phi2_rho_1 + diag;
+		A[j][j+1] = COS[2 * i + 1] * d_phi2_rho_1;
+
+		i = (n_phi - 1) + off; j = i - 1;
+
+		rho_1 = 1.0 / COS[2 * i];
+		d_phi2_rho_1 = d_phi2_1 * rho_1;
+
+		A[j][j - 1] = COS[2 * i - 1] * d_phi2_rho_1;
+		A[j][j] = (-lm * rho_1 * rho_1 -
+			               COS[2 * i - 1] * d_phi2_rho_1) + diag;
+		RP[j] = F[i];
+	}
+
 	void conv_baroclin(double* M,
-		double * W1, double * W2, 
-		double * U1, double * U2)
+		const double * W1, const double * W2,
+		const double * U1, const double * U2)
 	{
 		int i, j, m;
 		double rho_1;
@@ -756,42 +803,14 @@ public:
 
 		for (m = 0; m < n_la; m++) {
 
-			// n_phi-1 x n_phi-1 submatrix
-			for (i = 2; i < n_phi - 1; i++) {
-				d_phi2_rho_1 = d_phi2_1 * rho_1;
-				cos_phi1_d_phi2_rho = COS[2 * i - 1] * d_phi2_rho_1;
-				cos_phi2_d_phi2_rho = COS[2 * i + 1] * d_phi2_rho_1;
+			// n_phi-1 x n_phi-1 laplacian submatrix
+			conv_laplace_diag_submatrix(A, RP, &FW1[m * n_phi], LM[m], 0, 1.0 /*?*/);
+			conv_laplace_diag_submatrix(A, RP, &FW2[m * n_phi], LM[m], 0, 1.0 /*?*/);
+			conv_laplace_diag_submatrix(A, RP, &FU1[m * n_phi], LM[m], 0, 1.0 /*?*/);
+			conv_laplace_diag_submatrix(A, RP, &FU2[m * n_phi], LM[m], 0, 1.0 /*?*/);
 
-				j = i - 1;
-				//down
-				A[j][j-1] = cos_phi1_d_phi2_rho;
-				//middle
-				A[j][j]     = -cos_phi2_d_phi2_rho
-					          -cos_phi1_d_phi2_rho
-					          -LM[m] * rho_1 * rho_1;
-				//up
-				A[j][j+1]    = cos_phi2_d_phi2_rho;
-				RP[j]        = FW1[m * n_phi + i];
-			}
-			i = 1; j = i - 1;
-			rho_1 = 1.0 / COS[2 * i];
-			d_phi2_rho_1 = d_phi2_1 * rho_1;
-			RP[j] = FW1[m * n_phi + i];
-
-			A[j][j] = -LM[m] * rho_1 * rho_1 -
-				       COS[2 * i + 1] * d_phi2_rho_1 -
-					   COS[2 * i - 1] * d_phi2_rho_1;
-			A[j][j+1] = COS[2 * i + 1] * d_phi2_rho_1;
-
-			i = (n_phi - 1); j = i - 1;
-
-			rho_1 = 1.0 / COS[2 * i];
-			d_phi2_rho_1 = d_phi2_1 * rho_1;
-
-			A[j][j - 1] = COS[2 * i - 1] * d_phi2_rho_1;
-			A[j][j] = (-LM[m] * rho_1 * rho_1 -
-				               COS[2 * i - 1] * d_phi2_rho_1);
-			RP[j] = FW1[m * n_phi + i];
+			// тут надо решить систему уравнений A X = RP
+			// извлечь из X четыре вектора и совершить обратное преобразование
 		}
 
 		delete [] FW1;
@@ -818,7 +837,7 @@ double SLaplacian::lapl(const double *M, int i, int j)
 
 void SLaplacian::lapl(double *Dest, const double *M)
 {
-	d->sphere_laplacian_matrix(Dest, M);	
+	d->sphere_laplacian_matrix(Dest, M);
 }
 
 void SLaplacian::lapl_la(double *Dest, const double *M)
@@ -836,6 +855,12 @@ void SLaplacian::lapl_1(double * Dest, const double * Source, double mult, doubl
 	if (Dest != Source) memcpy(Dest, Source, d->n_la * d->n_phi * sizeof(double));
 
 	d->conv_sphere_laplace(Dest, &mult, &diag, true, bc);
+}
+
+void SLaplacian::baroclin_1(double * Dest, const double * W1, const double * W2, const double * U1, const double * U2)
+{
+	// нулевые граничные условия!
+	d->conv_baroclin(Dest, W1, W2, U1, U2);
 }
 
 void SLaplacian::lapl_1(double * Dest, const double * Source, double * mult, double * diag, int bc)
@@ -997,7 +1022,7 @@ void SLaplacian::check2() {
 	d->XYtoU(w, v);
 
 	printf("  |XYtoU(UtoXY)|=%le\n", dist1(u, w, nn));
-	
+
 	d->XYtoU(v, u);
 	d->UtoXY(w, v);
 	printf("  |UtoXY(XYtoU)|=%le\n", dist1(u, w, nn));
@@ -1069,7 +1094,7 @@ void SLaplacian::check1()
 	printf("Lapl of \\psi is -6.0 * sin(\\lambda) * sin(2 \\phi)\n");
 	for (int i = 0; i < d->n_phi; i++) {
 		for (int j = 0; j < d->n_la; j++) {
-			uu[_pOff(i, j)] = -6.0 * sin(d->la(j)) * 
+			uu[_pOff(i, j)] = -6.0 * sin(d->la(j)) *
 				sin(2.0 * d->phi(i));
 		}
 	}
