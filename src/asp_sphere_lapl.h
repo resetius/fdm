@@ -137,7 +137,19 @@ public:
 	   \param diag - диагональная добавка (для каждого i)  
     */
 	void lapl_1(double * Dest, const double * Source, double * mult, double * diag, int bc = BC_DIRICHLET);
-	void baroclin_1(double * Dest, const double * W1, const double * W2, const double * U1, const double * U2);
+	void baroclin_1(
+		double * oW1, double * oW2, 
+		double * oU1, double * oU2,
+
+		const double * W1, const double * W2, 
+		const double * U1, const double * U2,
+
+		double mult1, double diag1,
+		double mult2, double diag2,
+		double mult3, double diag3,
+		double mult4, double diag4,
+		double diag_w2, double diag_w1,
+		double diag_w1_2, double diag_w2_2);
 
 	/*!скалярное произведение в сферических координатах*/
 	double scalar(const double *u, const double *v);

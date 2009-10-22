@@ -44,6 +44,78 @@
 
 using namespace asp;
 
+static void gauss_reverse (const double *A, const double *b, double *x, int n, int diagUnit)
+{
+	int j, k;
+
+	for (k = n - 1; k >= 0; k--) {
+		x[k] = b[k];
+		for (j = k + 1; j < n; j++) {
+			x[k] = x[k] - x[j] * A[k*n+j];
+		}
+		if (!diagUnit) {
+			x[k] = x[k] / A[k*n+k];
+		}
+	}
+}
+
+int gauss (const double *A_, const double *b_, double *x, int n)
+{
+	int i, j, k;
+	double p;
+	int imax;
+	double Eps = 1.e-15;
+
+	double *A = (double*)malloc (n * n * sizeof(double));
+	memcpy(A, A_, n * n * sizeof(double));
+
+	double *b = (double*)malloc(n * sizeof(double));
+	memcpy(b, b_, n * sizeof(double));
+
+	for (k = 0; k < n; k++) {
+		imax = k;
+
+		for (i = k + 1; i < n; i++) {
+			if (fabs(A[i*n+k]) > fabs(A[imax*n+k])) imax = i;
+		}
+
+		for (j = k; j < n; j++) {
+			p = A[imax*n+j];
+			A[imax*n+j] = A[k*n+j];
+			A[k*n+j] = p;
+		}
+		p = b[imax];
+		b[imax] = b[k];
+		b[k] = p;
+
+		p = A[k*n+k];
+
+		if (fabs(p) < Eps) {
+			printf("Warning in %s %s : Near-null zero element\n", __FILE__, __FUNCTION__);
+			return -1;
+		}
+
+		for (j = k; j < n; j++) {
+			A[k*n+j] = A[k*n+j] / p;
+		}
+		b[k] = b[k] / p;
+
+		for (i = k + 1; i < n; i++) {
+			p = A[i*n+k];
+			for (j = k; j < n; j++) {
+				A[i*n+j] = A[i*n+j] - A[k*n+j] * p;
+			}
+			b[i] = b[i] - b[k] * p;
+		}
+	}
+
+	gauss_reverse(A, b, x, n, true);
+
+	free(b); free(A);
+
+	return 0;
+}
+
 /**
  * Обращение матрицы.
  * @param n размерность

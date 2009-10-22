@@ -55,6 +55,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+	int gauss (const double *A_, const double *b_, double *x, int n);
+
 	/* решение трехдиаг линейной системы */
 	/* методом гаусса */
 	void solve_tdiag_linear_my(double *Dest, double * Down,double *Middle,double *Up, int n);
