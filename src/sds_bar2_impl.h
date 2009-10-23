@@ -35,6 +35,9 @@
 /*________ задача Баротропного вихря на сфере - реализация ________________*/
 
 #include <assert.h>
+#include <vector>
+
+using namespace std;
 
 /*!
    Функторы линеаризировнного Якобиана
@@ -240,7 +243,7 @@ public:
 			for (int j = 0; j < n_la; ++j) {
 				off  = pOff(i, j);
 				lpl  = lapl->lapl(omg, i, j);
-				if (have_rp) rp  = conf->rp(PHI[i], LA[j], conf);
+				if (have_rp) rp  = conf->rp1(PHI[i], LA[j], conf);
 
 				dest[off] = omg[off] * tau_1 +
 					(1. - conf->theta) * 
@@ -253,159 +256,80 @@ public:
 	/*!
 	   неявная схема с внутренними итерациями
 	   один шаг с правой частью \param f
-	*/
-	void S_step_im(double *dest, const double *h)
+	   */
+	void S_step_im(double *u11, double * u21, const double *u1, const double *u2)
 	{
-//		int    off;
-		double *omg     = new double[nn];
-		double *omg_old = new double[nn];
-		double *psi     = new double[nn];
-		double *psi_old = new double[nn];
-		double *os      = new double[nn];
-		double *B1      = new double[nn];
+		int sz = nn;
 
-		double * bnd    = new double[n_la];
+		// правая часть 1:
+		// -J(0.5(u1+u1), 0.5(w1+w1)+l+h) - J(0.5(u2+u2),w2+w2)+
+		// + w1/tau - 0.5 (1-theta)sigma (w1-w2)+mu(1-theta)(\Delta w1)
+		// правая часть 2:
+		// -J(0.5(u1+u1), 0.5(w2+w2)) - J(0.5(u2+u2), 0.5(w1+w1)+l+h) -
+		// - 0.5 (1-theta)sigma (w1 + w2) + (1-theta) mu \Delta w2
+		// + w2/tau - alpha^2 u2/tau + alpha^2 J(0.5(u1+u1), 0.5(u2+u2)) -
+		// - alpha^2 (1-theta) mu1 w2 +
+		// + alpha^2 sigma1 (1-theta) u2 + alpha^2 f(phi, lambda)
 
-		/*!находим \f$\omega_0 = \delta h_0\f$*/
-		lapl->lapl(omg_old, h);
-		//?
-		if (!full) { memset(omg_old, 0, n_la * sizeof(double)); }
+		vector < double > w1(sz);
+		vector < double > w2(sz);
+		vector < double > dw1(sz);
+		vector < double > dw2(sz);
+		vector < double > FC(sz);
+		vector < double > GC(sz);
 
-		/*!
-		  в B1 кладем результат
-	      \f[
-	        \frac{\omega^n}{\tau} + (1-\theta)L\omega^n+f(x,y)
-	      \f]
-		 */
-		take_B(B1, omg_old, 1);
+		// next
+		vector < double > u1_n(sz);
+		vector < double > u2_n(sz);
+		vector < double > w1_n(sz);
+		vector < double > w2_n(sz);
 
-		double norm;
-		int it = 0;
+		vector < double > u1_n1(sz);
+		vector < double > u2_n1(sz);
 
-		int s = (full) ? 0 : 1;
+		// tmp
+		vector < double > tmp1(sz);
+		vector < double > tmp2(sz);
 
-		memcpy(psi, h, nn * sizeof(double));
-		memcpy(omg, omg_old, nn * sizeof(double));
-//		memcpy(bnd, omg_old, n_la * sizeof(double));
+		// jac inner!
+		vector < double > jac1(sz);
+		vector < double > jac2(sz);
+		vector < double > jac3(sz);
 
-		memset(bnd, 0, n_la * sizeof(double));
+		//
+		vector < double > F(sz);
+		vector < double > G(sz);
 
-		while (true) {
-			++it;
-			memcpy(psi_old, psi, nn * sizeof(double));
+		vector < double > rp(4*sz);
+		vector < double > ans(4*sz);
 
-			/*!
-			  \f[
-			    \frac{\omega^{n+1} + \omega^n}{2}
-			  \f]
-			 */
-			vector_sum(os, omg, omg_old, nn);
-			vector_mult_scalar(os, os, 0.5, nn);
+		lapl->lapl(&w1[0], &u1[0]);
+		lapl->lapl(&w2[0], &u2[0]);
 
-			/*!
-			  \f[
-			    \frac{\omega^{n+1} + \omega^n}{2}
-			  \f]
-			 */
-			vector_sum(psi, psi, h, nn);
-			vector_mult_scalar(psi, psi, 0.5, nn);
+		lapl->lapl(&dw1[0], &w1[0]);
+		lapl->lapl(&dw2[0], &w2[0]);
 
-			//для установки краевого условия
-			//начинаем от s!
-			for (int i = s; i < n_phi; ++i) {
-				for (int j = 0; j < n_la; ++j) {
-					int off  = pOff(i, j);
-					omg[off] = B1[off] -
-						//0.0;
-						conf->k1 * Jacobian(psi, os, i, j) + 
-						conf->k2 * Jacobian(psi, cor, i, j);
-				}
-			}
+		vector_sum1(&FC[0], &w1[0], &w2[0], 
+			-0.5 * (1.0 - conf->theta) * conf->sigma, 
+			0.5 * (1.0 - conf->theta) * conf->sigma, sz);
+		vector_sum1(&FC[0], &FC[0], &dw1[0], 1.0, conf->mu * (1.0 - conf->theta), sz);
+		vector_sum1(&FC[0], &FC[0], &w1[0], 1.0, 1.0 / conf->tau, sz);
 
-			/*вычисляем u с крышкой*/
-//			if (!full) { memset(omg, 0, n_la * sizeof(double));	}
-			//_fprintfwmatrix("out/omg1.out", omg, n_la, n_phi,
-			//	std::max(n_la, n_phi), "%23.16le ");
-			
-//здесь должно быть краевое условие laplace psi?
-			if (!full) { 
-				memcpy(omg, bnd, n_la * sizeof(double));
-			}
+		// w2/tau - 0.5 (1-theta)sigma (w1 + w2) + (1-theta) mu \Delta w2 -
+		// - alpha^2 u2/tau - alpha^2 (1-theta) mu1 w2 + alpha^2 sigma1 (1-theta) u2
+		vector_sum1(&GC[0], &w1[0], &w2[0],
+			-0.5 * (1.0 - conf->theta) * conf->sigma, 
+			-0.5 * (1.0 - conf->theta) * conf->sigma, sz);
+		vector_sum1(&GC[0], &GC[0], &dw2[0], 1.0, conf->mu * (1.0 - conf->theta), sz);
+		vector_sum1(&GC[0], &GC[0], &w2[0], 1.0, 1.0 / conf->tau, sz);
+		vector_sum1(&GC[0], &GC[0], &u2[0], 1.0, -conf->alpha * conf->alpha / conf->tau, sz);
+		vector_sum1(&GC[0], &GC[0], &w2[0], 1.0, -conf->alpha * conf->alpha * conf->mu1 * (1-conf->theta), sz);
+		vector_sum1(&GC[0], &GC[0], &u2[0], 1.0, conf->alpha * conf->alpha * conf->sigma1 * (1-conf->theta), sz);
 
-			lapl->lapl_1(omg, omg, forward_mult, forward_diag);
-//			lapl->lapl_1(omg, omg, forward_mult, forward_diag, SLaplacian::BC_NEUMANN);
-
-			/*нашли омега, чтоб найти psi, надо обратить оператор лапласа*/
-			if (!full) { 
-				//memcpy(bnd, omg, n_la * sizeof(double));
-				memset(omg, 0, n_la * sizeof(double));	
-			}
-			//_fprintfwmatrix("out/omg2.out", omg, n_la, n_phi,
-			//	std::max(n_la, n_phi), "%23.16le ");
-			lapl->lapl_1(psi, omg);
-//			lapl->lapl_1(psi, omg, 1.0, 0.0, SLaplacian::BC_NEUMANN);
-
-			//_fprintfwmatrix("out/psi.out", psi, n_la, n_phi,
-			//	std::max(n_la, n_phi), "%23.16le ");
-
-			norm = dist1(psi, psi_old, nn);
-			//norm = dist2(psi, psi_old, nn);
-			if (norm < _BARVORTEX_IM_EPS)
-				break;
-			if (it > _BARVORTEX_IM_MAX_IT) {
-				printf("%s:%d:%s: it=%d, norm=%.16le\n", __FILE__, __LINE__, __FUNCTION__, it, norm);
-				throw BadArgument("");
-				//exit(1);
-			}
-		}
-
-		memcpy(dest, psi, nn * sizeof(double));
-		delete [] psi_old;
-		delete [] psi;
-		delete [] B1;  delete [] os;
-		delete [] omg; delete [] omg_old;
-
-		delete [] bnd;
-	}
-
-	//явная схема
-	void S_step(double *h1, const double *h, const double *F)
-	{	
-		double * omg = new double[nn];
-		double * B1  = new double[nn];
-		int    off;
-		double rp;
-		double lpl;		
-
-		/*!находим \f$\omega_0 = \delta h_0\f$*/
-		lapl->lapl(omg, h);
-		if (!full) { memset(omg, 0, n_la * sizeof(double)); }
-		for (int i = 0; i < n_phi; ++i) {
-			for (int j = 0; j < n_la; ++j) {
-				off  = pOff(i, j);
-				lpl  = lapl->lapl(omg, i, j);
-				rp  = F[off];
-				rp -= conf->rho * (
-						Jacobian(h, omg, i, j) +
-						Jacobian(h, cor, i, j)
-					);
-
-				B1[off] = omg[off] * 
-					(tau_1 - (1. - conf->theta) * conf->sigma)
-					+ lpl * (1. - conf->theta) * conf->mu
-					+ rp;
-			}
-		}
-
-		/*вычисляем u с крышкой*/
-		if (!full) { memset(B1, 0, n_la * sizeof(double)); }
-		lapl->lapl_1(B1, B1, forward_mult, forward_diag);
-		/*нашли омега, чтоб найти h1, надо обратить оператор лапласа*/
-		if (!full) { memset(B1, 0, n_la * sizeof(double)); }
-		lapl->lapl_1(h1, B1);
-
-		delete [] B1;
-		delete [] omg;
+		memcpy(&u1_n[0], &u1[0], sz * sizeof(double));
+		memcpy(&u2_n[0], &u2[0], sz * sizeof(double));
+		memcpy(&w1_n[0], &w1[0], sz * sizeof(double));
+		memcpy(&w2_n[0], &w2[0], sz * sizeof(double));
 	}
 
 	//неявная схема с внутренними итерациями

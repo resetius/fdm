@@ -65,17 +65,23 @@ struct BaroclinConf
 	double theta;  //!<параметр в полунеявной схеме.
 	double sigma;  //!<параметры задачи.
 	double mu;     //!<параметры задачи.
-    int n_phi;     //!<разбиение (широта)
+
+	double sigma1; //!<параметры задачи.
+	double mu1;    //!<параметры задачи.
+
+	int n_phi;     //!<разбиение (широта)
     int n_la;      //!<разбиение (долгота).
 	int full;      //!<использовать полную сферу?
 	double k1;
 	double k2;
+	double alpha;
 
 	double rho;
 	double omg;
 
 	typedef double (*rp_t ) (double phi, double lambda, BaroclinConf * conf);
-	rp_t rp;
+	rp_t rp1;
+	rp_t rp2;
 	rp_t cor;
 	int filter;
 };
@@ -90,14 +96,16 @@ public:
 	typedef BaroclinConf conf_t;
 
 	virtual ~Baroclin();
-	void S(double *h1, const double *h);
-	void S_step(double *h1, const double *h);
-	void L_step(double *h1, const double *h, const double *z);
-	void LT_step(double *h1, const double *h, const double *z);
-	void L_1_step(double *h1, const double *h, const double *z);
+	void S(double *u11, double * u21, const double *u1, const double *u2);
+
+	void S_step  (double *u11, double * u21, const double *u1, const double *u2);
+	void L_step  (double *u11, double * u21, const double *u1, const double *u2, 
+		const double *z1, const double *z2);
+	void L_1_step(double *u11, double * u21, const double *u1, const double *u2, 
+		const double *z1, const double *z2);
 
 	Baroclin(BaroclinConf&);
-	
+
 	double scalar(const double *x, const double *y, int n);
 	double norm(const double *x, int n);
 	double dist(const double * x, const double * y, int n);

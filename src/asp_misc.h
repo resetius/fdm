@@ -168,6 +168,7 @@ namespace asp {
 	 */
 	void matrix_sum(double * Dest, const double * A, const double * B, int n);
 	void vector_sum(double * Dest, const double * A, const double * B, int n);
+	void vector_sum1(double * Dest, const double * A, const double * B, double k1, double k2, int n);
 	void vector_sum2(double * Dest, const double * A, const double * B, double c, int n);
 
 	/**

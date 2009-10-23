@@ -137,57 +137,46 @@ static void printfmasked(const double *A, const char * mask,
 	fclose(f);
 }
 
-void Baroclin::S_step(double *h1, const double *h)
+void Baroclin::S_step(double *u11, double * u21, const double *u1, const double *u2)
 {
-#ifdef _BARVORTEX_PURE_IM
-	d->S_step_im(h1, h);
-#else
-	d->S_step(h1, h);
-#endif
+	d->S_step_im(u11, u21, u1, u2);
 
 	if (d->conf->filter) {
-		d->lapl->filter(h1, h1);
+		d->lapl->filter(u11, u11);
+		d->lapl->filter(u21, u21);
 	}
 }
 
-void Baroclin::S(double *h1, const double *h) {
-	memcpy(h1, h, d->n_la * d->n_phi * sizeof(double));
+void Baroclin::S(double *u11, double * u21, const double *u1, const double *u2) {
+	memcpy(u11, u1, d->n_la * d->n_phi * sizeof(double));
+	memcpy(u21, u2, d->n_la * d->n_phi * sizeof(double));
 
 	for (int i = 0; i < d->conf->steps; i++) {
-#ifdef _BARVORTEX_PURE_IM
-		d->S_step_im(h1, h1);
-#else
-		d->S_step(h1, h1);
-#endif
+		S_step(u11, u21, u1, u2);
 	}
 }
 
-void Baroclin::LT_step(double *h1, const double *h, const double *z)
-{
-#ifdef _BARVORTEX_LINEAR_PURE_IM
-	d->L_step_t(h1, h, z);
-#else
-	d->L_step_t(h1, h, z);
-#endif
-}
-
-void Baroclin::L_step(double *h1, const double *h, const double * z)
+void Baroclin::L_step(double *u11, double * u21, const double *u1, const double *u2, 
+		const double *z1, const double *z2)
 {
 #ifdef _BARVORTEX_LINEAR_PURE_IM
 	d->L_step_im(h1, h, z);
 #else
-	d->L_step(h1, h, z);
+	d->L_step(u11, u1, z1);
 #endif
 
 	if (d->conf->filter) {
-		d->lapl->filter(h1, h1);
+		d->lapl->filter(u11, u11);
+		d->lapl->filter(u21, u21);
 	}
 }
 
-void Baroclin::L_1_step(double *h1, const double *h, const double * z)
+void Baroclin::L_1_step(double *u11, double * u21, const double *u1, const double *u2, 
+		const double *z1, const double *z2)
 {
 	if (d->conf->filter) {
-		d->lapl->filter_1(h1, h);
+		d->lapl->filter_1(u11, u11);
+		d->lapl->filter_1(u21, u21);
 	}
 
 	//SDS::L_1_step(h1, h1, z); return;
@@ -199,9 +188,9 @@ void Baroclin::L_1_step(double *h1, const double *h, const double * z)
 	}
 #else
 	if (d->conf->filter) {
-		d->L_1_step_im(h1, h1, z);
+		d->L_1_step_im(u11, u11, z1);
 	} else {
-		d->L_1_step_im(h1, h, z);
+		d->L_1_step_im(u11, u1, z1);
 	}
 #endif
 }

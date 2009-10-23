@@ -22,7 +22,24 @@ inline bool isinf(double x)
 }
 #endif
 
-double rp(double phi, double lambda, BaroclinConf * conf)
+double rp1(double phi, double lambda, BaroclinConf * conf)
+{
+	double omg = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./omg;
+	double R   = 6.371e+6;
+	double c   = T0*T0/R/R;
+	double x   = phi;
+
+	double pt1 = -0.5 * (sin(x)*M_PI*x-2*sin(x)*x*x);
+	if (fabs(pt1) > 1e-14) {
+		pt1 /= cos(x);
+	}
+
+	double pt2 = -0.5*(-M_PI+4*x);
+	return -T0/R * 16.0 / M_PI / M_PI * 30.0 * (pt1 + pt2);
+}
+
+double rp2(double phi, double lambda, BaroclinConf * conf)
 {
 	double omg = 2.*M_PI/24./60./60.; // ?
 	double T0  = 1./omg;
@@ -81,26 +98,35 @@ void test_barvortex()
 	conf.tau   = 0.001;
 	conf.sigma = 1.14e-2;
 	conf.mu    = 6.77e-5;
+
+	conf.sigma1= 1.14e-2;
+	conf.mu1   = 6.77e-5;
+
 	conf.n_phi = 24;
 	conf.n_la  = 32;
 	conf.full  = 0;
 	conf.rho   = 1;
 	conf.theta = 0.5;
+	conf.alpha = 1.0;
 
 	conf.cor   = cor;
-	conf.rp    = rp;
+	conf.rp1   = rp1;
+	conf.rp2   = rp2;
 	conf.filter = 1;
 
 	int n = conf.n_phi * conf.n_la;
 
 	double t = 0;
 	double T = 30 * 2.0 * M_PI;;
-	double nr;
+	double nr1;
+	double nr2;
 	int i = 0;
 
 	Baroclin bv(conf);
-	vector < double > u(n);
 	vector < double > u1(n);
+	vector < double > u2(n);
+	vector < double > u11(n);
+	vector < double > u21(n);
 
 	fprintf(stderr, "#domain:sphere half\n");
 	fprintf(stderr, "#mesh_w:%d\n", conf.n_la);
@@ -119,7 +145,8 @@ void test_barvortex()
 
 	for (int i = 0; i < conf.n_phi; ++i) {
 		for (int j = 0; j < conf.n_la; ++j) {
-			u[pOff(i, j)] = u0(bv.phi(i), bv.lambda(j));
+			u1[pOff(i, j)] = u0(bv.phi(i), bv.lambda(j));
+			u2[pOff(i, j)] = u0(bv.phi(i), bv.lambda(j));
 		}
 	}
 
@@ -128,29 +155,31 @@ void test_barvortex()
 //	}
 
 	while (t < T) {
-		bv.S_step(&u1[0], &u[0]);
+		bv.S_step(&u21[0], &u11[0], &u1[0], &u2[0]);
 		t += conf.tau;
 
 //		if (i % 10000 == 0) {
-			nr = bv.norm(&u1[0], n);
-			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le;\n", 
-					t, nr, 
-					find_min(&u1[0], n),
-					find_max(&u1[0], n));
+			nr1 = bv.norm(&u21[0], n);
+			nr2 = bv.norm(&u11[0], n);
+			fprintf(stderr, "t=%le; nr=%le; nr=%le; min=%le; max=%le;\n", 
+					t, nr1, nr2, 
+					find_min(&u11[0], n),
+					find_max(&u11[0], n));
 //			char buf[1024];
 //			sprintf(buf, "u_%05d.txt", i);
 //			_fprintfwmatrix(buf, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 			//exit(1);
 
-			fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
-			fprintf(stdout, "\n"); fflush(stdout);
+//			fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+//			fprintf(stdout, "\n"); fflush(stdout);
 
-			if (isnan(nr)) {
+			if (isnan(nr1) || isnan(nr2)) {
 				return;
 			}
 //		}
 
-		u1.swap(u);
+		u11.swap(u1);
+		u21.swap(u2);
 		i ++;
 	}
 }

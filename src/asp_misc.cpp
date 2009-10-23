@@ -423,6 +423,15 @@ void vector_sum(double * Dest, const double * A, const double * B, int n)
 	}
 }
 
+void vector_sum1(double * Dest, const double * A, const double * B, 
+				 double k1, double k2, int n) 
+{
+	int i;
+	for (i = n - 1; i >= 0; --i) {
+		Dest[i] = k1 * A[i] + k2 * B[i];
+	}
+}
+
 void vector_sum2(double * Dest, const double * A, const double * B, 
 				 double c, int n) 
 {
