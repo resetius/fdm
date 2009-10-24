@@ -137,9 +137,9 @@ static void printfmasked(const double *A, const char * mask,
 	fclose(f);
 }
 
-void Baroclin::S_step(double *u11, double * u21, const double *u1, const double *u2)
+void Baroclin::S_step(double *u11, double * u21, const double *u1, const double *u2, double t)
 {
-	d->S_step_im(u11, u21, u1, u2);
+	d->S_step_im(u11, u21, u1, u2, t);
 
 	if (d->conf->filter) {
 		d->lapl->filter(u11, u11);
@@ -152,7 +152,7 @@ void Baroclin::S(double *u11, double * u21, const double *u1, const double *u2) 
 	memcpy(u21, u2, d->n_la * d->n_phi * sizeof(double));
 
 	for (int i = 0; i < d->conf->steps; i++) {
-		S_step(u11, u21, u11, u21);
+		S_step(u11, u21, u11, u21, 0);
 	}
 }
 

@@ -243,7 +243,7 @@ public:
 			for (int j = 0; j < n_la; ++j) {
 				off  = pOff(i, j);
 				lpl  = lapl->lapl(omg, i, j);
-				if (have_rp) rp  = conf->rp1(PHI[i], LA[j], conf);
+				if (have_rp) rp  = conf->rp1(PHI[i], LA[j], 0, conf);
 
 				dest[off] = omg[off] * tau_1 +
 					(1. - conf->theta) * 
@@ -257,7 +257,7 @@ public:
 	   неявная схема с внутренними итерациями
 	   один шаг с правой частью \param f
 	   */
-	void S_step_im(double *u11, double * u21, const double *u1, const double *u2)
+	void S_step_im(double *u11, double * u21, const double *u1, const double *u2, double t)
 	{
 		int sz = nn;
 		double theta = conf->theta;
@@ -342,10 +342,10 @@ public:
 				double la  = LA[j];
 				int off  = pOff(i, j);
 				if (conf->rp1) {
-					FC[off] += conf->rp1(phi, la, conf);
+					FC[off] += conf->rp1(phi, la, t, conf);
 				}
 				if (conf->rp2) {
-					GC[off] += alpha * alpha * conf->rp2(phi, la, conf);
+					GC[off] += alpha * alpha * conf->rp2(phi, la, t, conf);
 				}
 			}
 		}

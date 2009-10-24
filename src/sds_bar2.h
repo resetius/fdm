@@ -79,10 +79,12 @@ struct BaroclinConf
 	double rho;
 	double omg;
 
-	typedef double (*rp_t ) (double phi, double lambda, BaroclinConf * conf);
+	typedef double (*rp_t ) (double phi, double lambda, double t, BaroclinConf * conf);
+	typedef double (*cor_t ) (double phi, double lambda, BaroclinConf * conf);
+
 	rp_t rp1;
 	rp_t rp2;
-	rp_t cor;
+	cor_t cor;
 	int filter;
 };
 
@@ -98,7 +100,7 @@ public:
 	virtual ~Baroclin();
 	void S(double *u11, double * u21, const double *u1, const double *u2);
 
-	void S_step  (double *u11, double * u21, const double *u1, const double *u2);
+	void S_step  (double *u11, double * u21, const double *u1, const double *u2, double t);
 	void L_step  (double *u11, double * u21, const double *u1, const double *u2, 
 		const double *z1, const double *z2);
 	void L_1_step(double *u11, double * u21, const double *u1, const double *u2, 

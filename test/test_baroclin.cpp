@@ -215,6 +215,9 @@ void test_barvortex()
 	fprintf(stderr, "#tau:%.16lf\n", conf.tau);
 	fprintf(stderr, "#sigma:%.16lf\n", conf.sigma);
 	fprintf(stderr, "#mu:%.16lf\n", conf.mu);
+	fprintf(stderr, "#sigma1:%.16lf\n", conf.sigma1);
+	fprintf(stderr, "#mu1:%.16lf\n", conf.mu1);
+	fprintf(stderr, "#alpha:%.16lf\n", conf.alpha);
 	fprintf(stderr, "#k1:%.16lf\n", conf.k1);
 	fprintf(stderr, "#k2:%.16lf\n", conf.k2);
 	fprintf(stderr, "#theta:%.16lf\n", conf.theta);
@@ -231,7 +234,7 @@ void test_barvortex()
 	}
 
 	while (t < T) {
-		bv.S_step(&u11[0], &u21[0], &u1[0], &u2[0]);
+		bv.S_step(&u11[0], &u21[0], &u1[0], &u2[0], t);
 		t += conf.tau;
 
 //		if (i % 10000 == 0) {
