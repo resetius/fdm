@@ -95,7 +95,7 @@ void test_barvortex()
 	double T0  = 1./conf.omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
-	conf.tau   = 0.001;
+	conf.tau   = 0.0001;
 	conf.sigma = 1.14e-2;
 	conf.mu    = 6.77e-5;
 
@@ -112,7 +112,7 @@ void test_barvortex()
 	conf.cor   = cor;
 	conf.rp1   = rp1;
 	conf.rp2   = rp2;
-	conf.filter = 1;
+	conf.filter = 0;
 
 	int n = conf.n_phi * conf.n_la;
 
@@ -155,12 +155,12 @@ void test_barvortex()
 //	}
 
 	while (t < T) {
-		bv.S_step(&u21[0], &u11[0], &u1[0], &u2[0]);
+		bv.S_step(&u11[0], &u21[0], &u1[0], &u2[0]);
 		t += conf.tau;
 
 //		if (i % 10000 == 0) {
-			nr1 = bv.norm(&u21[0], n);
-			nr2 = bv.norm(&u11[0], n);
+			nr1 = bv.norm(&u11[0], n);
+			nr2 = bv.norm(&u21[0], n);
 			fprintf(stderr, "t=%le; nr=%le; nr=%le; min=%le; max=%le;\n", 
 					t, nr1, nr2, 
 					find_min(&u11[0], n),

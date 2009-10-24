@@ -730,12 +730,11 @@ public:
 	}
 
 
-	void conv_laplace_diag_submatrix(double * A, double * RP, double * F, 
+	void conv_laplace_diag_submatrix(double * A, double * RP, int n, double * F, 
 		double lm, int off, 
 		double mult, double diag)
 	{
-		int i = 0, j = 0;
-		int n = n_phi - 1;
+		int i = 0, j = 0, i1 = 0;
 		double rho_1;
 		double d_phi2_rho_1;
 		double cos_phi1_d_phi2_rho;
@@ -743,11 +742,13 @@ public:
 
 		for (i = off + 2; i < off + n_phi - 1; i++)
 		{
-			rho_1 = 1.0 / COS[2 * i];
+			j  = i - 1;
+			i1 = i - off;
+			rho_1 = 1.0 / COS[2 * i1];
 			d_phi2_rho_1 = d_phi2_1 * rho_1;
-			cos_phi1_d_phi2_rho = COS[2 * i - 1] * d_phi2_rho_1;
-			cos_phi2_d_phi2_rho = COS[2 * i + 1] * d_phi2_rho_1;
-			j = i - 1;
+			cos_phi1_d_phi2_rho = COS[2 * i1 - 1] * d_phi2_rho_1;
+			cos_phi2_d_phi2_rho = COS[2 * i1 + 1] * d_phi2_rho_1;
+
 			//down
 			A[j * n + j-1] =  mult * cos_phi1_d_phi2_rho;
 			//middle
@@ -757,36 +758,35 @@ public:
 				           + diag;
 			//up
 			A[j * n + j+1]  = mult * cos_phi2_d_phi2_rho;
-			RP[j]           = F[i];
+			RP[j]           = F[i1];
 		}
 
-		i = off + 1; j = i - 1;
-		rho_1 = 1.0 / COS[2 * i];
+		i = off + 1; j = i - 1; i1 = i - off;
+		rho_1 = 1.0 / COS[2 * i1];
 		d_phi2_rho_1 = d_phi2_1 * rho_1;
-		RP[j] = F[i];
+		RP[j] = F[i1];
 
 		A[j * n + j] = mult * (-lm * rho_1 * rho_1 -
-			       COS[2 * i + 1] * d_phi2_rho_1 -
-			       COS[2 * i - 1] * d_phi2_rho_1) + diag;
-		A[j * n + 1] = mult * COS[2 * i + 1] * d_phi2_rho_1;
+			       COS[2 * i1 + 1] * d_phi2_rho_1 -
+			       COS[2 * i1 - 1] * d_phi2_rho_1) + diag;
+		A[j * n + j] = mult * COS[2 * i1 + 1] * d_phi2_rho_1 + diag;
 
-		i = (n_phi - 1) + off; j = i - 1;
+		i = (n_phi - 1) + off; j = i - 1; i1 = i - off;
 
-		rho_1 = 1.0 / COS[2 * i];
+		rho_1 = 1.0 / COS[2 * i1];
 		d_phi2_rho_1 = d_phi2_1 * rho_1;
 
-		A[j * n + j - 1] = mult * COS[2 * i - 1] * d_phi2_rho_1;
+		A[j * n + j - 1] = mult * COS[2 * i1 - 1] * d_phi2_rho_1;
 		A[j * n + j] = mult * (-lm * rho_1 * rho_1 -
-			               COS[2 * i - 1] * d_phi2_rho_1) + diag;
-		RP[j] = F[i];
+			               COS[2 * i1 - 1] * d_phi2_rho_1) + diag;
+		RP[j] = F[i1];
 	}
 
-	void add_diag_to_matrix(double * A, 
+	void add_diag_to_matrix(double * A, int n, 
 		int x_off, int y_off, double diag)
 	{
 		int i = 0;
-		int n = n_phi - 1;
-		for (i = 0; i < n; i++)
+		for (i = 0; i < n_phi - 1; i++)
 		{
 			A[(i + y_off) * n + i + x_off] = diag;
 		}
@@ -803,59 +803,65 @@ public:
 		double mult2,     double diag2,
 		double mult3,     double diag3,
 		double mult4,     double diag4,
-		double diag_w2,   double diag_w1,
-		double diag_w1_2, double diag_w2_2)
+
+		double diag_w2,   
+		double diag_w1,
+		double diag_u2,
+		double diag_w1_2, 
+		double diag_w2_2)
 	{
 		int m;
-
-		double * FW1 = new double[n_la * n_phi];
-		double * FW2 = new double[n_la * n_phi];
-
-		double * FU1 = new double[n_la * n_phi];
-		double * FU2 = new double[n_la * n_phi];
-
-		double *  A = new double[(n_phi - 1) * (n_phi - 1)];
-		double * RP = new double[(n_phi - 1)];
-		double * X  = new double[(n_phi - 1)];
-
-		UtoXY(FW1, W1);
-		UtoXY(FW2, W2);
-		UtoXY(FU1, U1);
-		UtoXY(FU2, U2);
-
 		int n = n_phi - 1;
+
+		vector < double > FW1(n_la * n_phi);
+		vector < double > FW2(n_la * n_phi);
+
+		vector < double > FU1(n_la * n_phi);
+		vector < double > FU2(n_la * n_phi);
+
+		vector < double > A(4 * n * 4 * n);
+		vector < double > RP(4 * n);
+		vector < double > X(4 * n);
+
+		if (W1) UtoXY(&FW1[0], W1);
+		if (W2) UtoXY(&FW2[0], W2);
+		if (U1) UtoXY(&FU1[0], U1);
+		if (U2) UtoXY(&FU2[0], U2);
 
 		for (m = 0; m < n_la; m++) 
 		{
 			// n_phi-1 x n_phi-1 laplacian submatrix
-			conv_laplace_diag_submatrix(A, RP, &FW1[m * n_phi], LM[m], 0,     mult1, diag1);
-			conv_laplace_diag_submatrix(A, RP, &FW2[m * n_phi], LM[m], n,     mult2, diag2);
-			conv_laplace_diag_submatrix(A, RP, &FU1[m * n_phi], LM[m], 2 * n, mult3, diag3);
-			conv_laplace_diag_submatrix(A, RP, &FU2[m * n_phi], LM[m], 3 * n, mult4, diag4);
+			double * fw1 = &FW1[m * n_phi];
+			double * fw2 = &FW2[m * n_phi];
+			double * fu1 = &FU1[m * n_phi];
+			double * fu2 = &FU2[m * n_phi];
 
-			add_diag_to_matrix(A, n, 0,     diag_w2);
-			add_diag_to_matrix(A, 0, n,     diag_w1);
-			add_diag_to_matrix(A, 0, 2 * n, diag_w1_2);
-			add_diag_to_matrix(A, n, 3 * n, diag_w2_2);
+			conv_laplace_diag_submatrix(&A[0], &RP[0], 4 * n, fw1, LM[m], 0,     mult1, diag1);
+			conv_laplace_diag_submatrix(&A[0], &RP[0], 4 * n, fw2, LM[m], n,     mult2, diag2);
+			conv_laplace_diag_submatrix(&A[0], &RP[0], 4 * n, fu1, LM[m], 2 * n, mult3, diag3);
+			conv_laplace_diag_submatrix(&A[0], &RP[0], 4 * n, fu2, LM[m], 3 * n, mult4, diag4);
+
+			add_diag_to_matrix(&A[0], 4 * n, n, 0,     diag_w2);
+			add_diag_to_matrix(&A[0], 4 * n, 0, n,     diag_w1);
+			add_diag_to_matrix(&A[0], 4 * n, 3 * n, n, diag_u2);
+			add_diag_to_matrix(&A[0], 4 * n, 0, 2 * n, diag_w1_2);
+			add_diag_to_matrix(&A[0], 4 * n, n, 3 * n, diag_w2_2);
 
 			// тут надо решить систему уравнений A X = RP
 			// извлечь из X четыре вектора и совершить обратное преобразование
-			gauss(A, RP, X, 4 * n);
+
+			_fprintfwmatrix("A.txt", &A[0], 4 * n, 4 * n, 4 * n, "%.1le ");
+			gauss(&A[0], &RP[0], &X[0], 4 * n);
 			memcpy(&FW1[m * n_phi + 1], &X[0],     n * sizeof(double));
 			memcpy(&FW2[m * n_phi + 1], &X[n],     n * sizeof(double));
 			memcpy(&FU1[m * n_phi + 1], &X[2 * n], n * sizeof(double));
 			memcpy(&FU2[m * n_phi + 1], &X[3 * n], n * sizeof(double));
 		}
 
-		XYtoU(oW1, FW1);
-		XYtoU(oW2, FW2);
-		XYtoU(oU1, FU1);
-		XYtoU(oU2, FU2);
-
-		delete [] FW1; delete [] FW2;
-		delete [] FU1; delete [] FU2;
-		delete [] A;   delete [] RP;
-		delete [] X;
+		XYtoU(oW1, &FW1[0]); memset(oW1, 0, n_la * sizeof(double));
+		XYtoU(oW2, &FW2[0]); memset(oW2, 0, n_la * sizeof(double));
+		XYtoU(oU1, &FU1[0]); memset(oU1, 0, n_la * sizeof(double));
+		XYtoU(oU2, &FU2[0]); memset(oU2, 0, n_la * sizeof(double));
 	}
 };
 
@@ -907,14 +913,18 @@ void SLaplacian::baroclin_1(
 							double mult2, double diag2,
 							double mult3, double diag3,
 							double mult4, double diag4,
-							double diag_w2, double diag_w1,
-							double diag_w1_2, double diag_w2_2)
+
+							double diag_w2, 
+							double diag_w1,
+							double diag_u2,
+							double diag_w1_2, 
+							double diag_w2_2)
 {
 	// нулевые граничные условия!
 	d->conv_baroclin(oW1, oW2, oU1, oU2, 
 		W1, W2, U1, U2, 
 		mult1, diag1, mult2, diag2, mult3, diag3, mult4, diag4,
-		diag_w2, diag_w1, diag_w1_2, diag_w2_2);
+		diag_w2, diag_w1, diag_u2, diag_w1_2, diag_w2_2);
 }
 
 void SLaplacian::lapl_1(double * Dest, const double * Source, double * mult, double * diag, int bc)

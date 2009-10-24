@@ -260,6 +260,13 @@ public:
 	void S_step_im(double *u11, double * u21, const double *u1, const double *u2)
 	{
 		int sz = nn;
+		double theta = conf->theta;
+		double alpha = conf->alpha;
+		double mu    = conf->mu;
+		double sigma = conf->sigma;
+		double mu1   = conf->mu1;
+		double sigma1= conf->sigma1;
+		double tau   = conf->tau;
 
 		// права€ часть 1:
 		// -J(0.5(u1+u1), 0.5(w1+w1)+l+h) - J(0.5(u2+u2),w2+w2)+
@@ -291,7 +298,7 @@ public:
 		vector < double > tmp1(sz);
 		vector < double > tmp2(sz);
 
-		// jac inner!
+		// jac
 		vector < double > jac1(sz);
 		vector < double > jac2(sz);
 		vector < double > jac3(sz);
@@ -299,37 +306,114 @@ public:
 		//
 		vector < double > F(sz);
 		vector < double > G(sz);
+		vector < double > Z(sz);
 
-		vector < double > rp(4*sz);
-		vector < double > ans(4*sz);
+		lapl->lapl(&w1[0], &u1[0]);  memset(&w1[0], 0, n_la * sizeof(double));
+		lapl->lapl(&w2[0], &u2[0]);  memset(&w2[0], 0, n_la * sizeof(double));
 
-		lapl->lapl(&w1[0], &u1[0]);
-		lapl->lapl(&w2[0], &u2[0]);
-
-		lapl->lapl(&dw1[0], &w1[0]);
-		lapl->lapl(&dw2[0], &w2[0]);
+		lapl->lapl(&dw1[0], &w1[0]); memset(&dw1[0], 0, n_la * sizeof(double)); 
+		lapl->lapl(&dw2[0], &w2[0]); memset(&dw2[0], 0, n_la * sizeof(double));
 
 		vector_sum1(&FC[0], &w1[0], &w2[0], 
-			-0.5 * (1.0 - conf->theta) * conf->sigma, 
-			0.5 * (1.0 - conf->theta) * conf->sigma, sz);
-		vector_sum1(&FC[0], &FC[0], &dw1[0], 1.0, conf->mu * (1.0 - conf->theta), sz);
-		vector_sum1(&FC[0], &FC[0], &w1[0], 1.0, 1.0 / conf->tau, sz);
+			-0.5 * (1.0 - theta) * sigma, 
+			0.5 * (1.0 - theta) * sigma, sz);
+		vector_sum1(&FC[0], &FC[0], &dw1[0], 1.0, mu * (1.0 - theta), sz);
+		vector_sum1(&FC[0], &FC[0], &w1[0], 1.0, 1.0 / tau, sz);
 
 		// w2/tau - 0.5 (1-theta)sigma (w1 + w2) + (1-theta) mu \Delta w2 -
 		// - alpha^2 u2/tau - alpha^2 (1-theta) mu1 w2 + alpha^2 sigma1 (1-theta) u2
 		vector_sum1(&GC[0], &w1[0], &w2[0],
-			-0.5 * (1.0 - conf->theta) * conf->sigma, 
-			-0.5 * (1.0 - conf->theta) * conf->sigma, sz);
-		vector_sum1(&GC[0], &GC[0], &dw2[0], 1.0, conf->mu * (1.0 - conf->theta), sz);
-		vector_sum1(&GC[0], &GC[0], &w2[0], 1.0, 1.0 / conf->tau, sz);
-		vector_sum1(&GC[0], &GC[0], &u2[0], 1.0, -conf->alpha * conf->alpha / conf->tau, sz);
-		vector_sum1(&GC[0], &GC[0], &w2[0], 1.0, -conf->alpha * conf->alpha * conf->mu1 * (1-conf->theta), sz);
-		vector_sum1(&GC[0], &GC[0], &u2[0], 1.0, conf->alpha * conf->alpha * conf->sigma1 * (1-conf->theta), sz);
+			-0.5 * (1.0 - theta) * sigma, 
+			-0.5 * (1.0 - theta) * sigma, sz);
+		vector_sum1(&GC[0], &GC[0], &dw2[0], 1.0, mu * (1.0 - theta), sz);
+		vector_sum1(&GC[0], &GC[0], &w2[0], 1.0, 1.0 / tau, sz);
+		vector_sum1(&GC[0], &GC[0], &u2[0], 1.0, -alpha * alpha / tau, sz);
+		vector_sum1(&GC[0], &GC[0], &w2[0], 1.0, -alpha * alpha * mu1 * (1-theta), sz);
+		vector_sum1(&GC[0], &GC[0], &u2[0], 1.0, alpha * alpha * sigma1 * (1-theta), sz);
 
 		memcpy(&u1_n[0], &u1[0], sz * sizeof(double));
 		memcpy(&u2_n[0], &u2[0], sz * sizeof(double));
 		memcpy(&w1_n[0], &w1[0], sz * sizeof(double));
 		memcpy(&w2_n[0], &w2[0], sz * sizeof(double));
+
+		for (int i = 0; i < n_phi; ++i) {
+			for (int j = 0; j < n_la; ++j) {
+				double phi = PHI[i];
+				double la  = LA[j];
+				int off  = pOff(i, j);
+				if (conf->rp1) {
+					FC[i] += conf->rp1(phi, la, conf);
+				}
+				if (conf->rp2) {
+					GC[i] += alpha * alpha * conf->rp2(phi, la, conf);
+				}
+			}
+		}
+
+		for (int it = 0; it < 20; ++it) {
+			// - J(0.5(u1+u1), 0.5(w1+w1)+l+h) - J(0.5(u2+u2),w2+w2)
+			// J(0.5(u1+u1), 0.5(w1+w1)+l+h)
+			vector_sum1(&tmp1[0], &u1[0], &u1_n[0], 1.0 - theta, theta, sz);
+			vector_sum1(&tmp2[0], &w1[0], &w1_n[0], 1.0 - theta, theta, sz);
+			vector_sum(&tmp2[0], &tmp2[0], &cor[0], sz);
+			jac->J(&jac1[0], &tmp1[0], &tmp2[0]);
+			// J(0.5(u2+u2),w2+w2)
+			vector_sum1(&tmp1[0], &u2[0], &u2_n[0], 1.0 - theta, theta, sz);
+			vector_sum1(&tmp2[0], &w2[0], &w2_n[0], 1.0 - theta, theta, sz);
+			jac->J(&jac2[0], &tmp1[0], &tmp2[0]);
+
+			vector_sum1(&F[0], &jac1[0], &jac2[0], -1.0, -1.0, sz);
+
+			// -J(0.5(u1+u1), 0.5(w2+w2)) - J(0.5(u2+u2), 0.5(w1+w1)+l+h) +
+			// + alpha^2 J(0.5(u1+u1), 0.5(u2+u2))
+			vector_sum1(&tmp1[0], &u1[0], &u1_n[0], 1.0 - theta, theta, sz);
+			vector_sum1(&tmp2[0], &w2[0], &w2_n[0], 1.0 - theta, theta, sz);
+			jac->J(&jac1[0], &tmp1[0], &tmp2[0]);
+			vector_sum1(&tmp1[0], &u2[0], &u2_n[0], 1.0 - theta, theta, sz);
+			vector_sum1(&tmp2[0], &w1[0], &w1_n[0], 1.0 - theta, theta, sz);
+			vector_sum(&tmp2[0], &tmp2[0], &cor[0], sz);
+			jac->J(&jac2[0], &tmp1[0], &tmp2[0]);
+			vector_sum1(&tmp1[0], &u1[0], &u1_n[0], 1.0 - theta, theta, sz);
+			vector_sum1(&tmp2[0], &u2[0], &u2_n[0], 1.0 - theta, theta, sz);
+			jac->J(&jac3[0], &tmp1[0], &tmp2[0]);
+			vector_sum1(&G[0], &jac1[0], &jac2[0], -1.0, -1.0, sz);
+			vector_sum1(&G[0], &G[0], &jac3[0], 1.0, alpha * alpha, sz);
+
+			//memcpy(&F[0], &FC[0], sz * sizeof(double));
+			//memcpy(&G[0], &GC[0], sz * sizeof(double));
+			vector_sum(&F[0], &F[0], &FC[0], sz);
+			vector_sum(&G[0], &G[0], &GC[0], sz);
+
+			memset(&F[0], 0, n_la * sizeof(double));
+			memset(&G[0], 0, n_la * sizeof(double));
+
+			lapl->baroclin_1(&w1_n[0], &w2_n[0], &u1_n1[0], &u2_n1[0],
+				&F[0], &G[0], &Z[0], &Z[0], 
+				-mu * theta, 1.0 / tau + 0.5 * theta * sigma,
+				-mu * theta, 1.0 / tau + 0.5 * theta * sigma + alpha * alpha * theta * mu1,
+				-1.0, 0.0,
+				-1.0, 0.0,
+
+				-0.5 * sigma * theta,
+				 0.5 * theta * sigma,
+				-alpha * alpha / tau - alpha * alpha * theta * sigma1,
+				1.0,
+				1.0
+				);
+
+			double nr1 = p->dist(&u1_n1[0], &u1_n[0], sz);
+			double nr2 = p->dist(&u2_n1[0], &u2_n[0], sz);
+			double nr  = std::max(nr1, nr2);
+			u1_n1.swap(u1_n);
+			u2_n1.swap(u2_n);
+
+			if (nr < 1e-8) {
+				break;
+			}
+		}
+
+		memcpy(u11, &u1_n[0], sz * sizeof(double));
+		memcpy(u21, &u2_n[0], sz * sizeof(double));
 	}
 
 	//не€вна€ схема с внутренними итераци€ми

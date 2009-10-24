@@ -148,8 +148,12 @@ public:
 		double mult2, double diag2,
 		double mult3, double diag3,
 		double mult4, double diag4,
-		double diag_w2, double diag_w1,
-		double diag_w1_2, double diag_w2_2);
+
+		double diag_w2, 
+		double diag_w1,
+		double diag_u2,
+		double diag_w1_2, 
+		double diag_w2_2);
 
 	/*!скалярное произведение в сферических координатах*/
 	double scalar(const double *u, const double *v);
