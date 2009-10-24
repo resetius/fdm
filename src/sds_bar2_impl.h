@@ -342,10 +342,10 @@ public:
 				double la  = LA[j];
 				int off  = pOff(i, j);
 				if (conf->rp1) {
-					FC[i] += conf->rp1(phi, la, conf);
+					FC[off] += conf->rp1(phi, la, conf);
 				}
 				if (conf->rp2) {
-					GC[i] += alpha * alpha * conf->rp2(phi, la, conf);
+					GC[off] += alpha * alpha * conf->rp2(phi, la, conf);
 				}
 			}
 		}
@@ -357,6 +357,7 @@ public:
 			vector_sum1(&tmp2[0], &w1[0], &w1_n[0], 1.0 - theta, theta, sz);
 			vector_sum(&tmp2[0], &tmp2[0], &cor[0], sz);
 			jac->J(&jac1[0], &tmp1[0], &tmp2[0]);
+			//_fprintfwmatrix("jac.txt", &jac1[0], n_phi, n_la, n_la, "%.1le ");
 			// J(0.5(u2+u2),w2+w2)
 			vector_sum1(&tmp1[0], &u2[0], &u2_n[0], 1.0 - theta, theta, sz);
 			vector_sum1(&tmp2[0], &w2[0], &w2_n[0], 1.0 - theta, theta, sz);
@@ -395,11 +396,15 @@ public:
 				-1.0, 0.0,
 
 				-0.5 * sigma * theta,
-				 0.5 * theta * sigma,
+				 0.5 * sigma * theta,
 				-alpha * alpha / tau - alpha * alpha * theta * sigma1,
 				1.0,
 				1.0
 				);
+
+//			lapl->lapl(&tmp1[0], &u1_n1[0]);  memset(&tmp1[0], 0, n_la * sizeof(double));
+//			lapl->lapl_1(&tmp2[0], &w1_n[0]); memset(&tmp2[0], 0, n_la * sizeof(double));
+//			lapl->lapl_1(&u2_n1[0], &w2_n[0]);
 
 			double nr1 = p->dist(&u1_n1[0], &u1_n[0], sz);
 			double nr2 = p->dist(&u2_n1[0], &u2_n[0], sz);

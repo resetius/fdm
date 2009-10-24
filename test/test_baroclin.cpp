@@ -107,11 +107,11 @@ void test_barvortex()
 	conf.full  = 0;
 	conf.rho   = 1;
 	conf.theta = 0.5;
-	conf.alpha = 1.0;
+	conf.alpha = 1.0;//1.0
 
 	conf.cor   = cor;
-	conf.rp1   = rp1;
-	conf.rp2   = rp2;
+	conf.rp1   = 0;
+	conf.rp2   = 0;
 	conf.filter = 0;
 
 	int n = conf.n_phi * conf.n_la;

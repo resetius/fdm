@@ -769,7 +769,7 @@ public:
 		A[j * n + j] = mult * (-lm * rho_1 * rho_1 -
 			       COS[2 * i1 + 1] * d_phi2_rho_1 -
 			       COS[2 * i1 - 1] * d_phi2_rho_1) + diag;
-		A[j * n + j] = mult * COS[2 * i1 + 1] * d_phi2_rho_1 + diag;
+		A[j * n + j + 1] = mult * COS[2 * i1 + 1] * d_phi2_rho_1 + diag;
 
 		i = (n_phi - 1) + off; j = i - 1; i1 = i - off;
 
@@ -850,18 +850,23 @@ public:
 			// тут надо решить систему уравнений A X = RP
 			// извлечь из X четыре вектора и совершить обратное преобразование
 
-			_fprintfwmatrix("A.txt", &A[0], 4 * n, 4 * n, 4 * n, "%.1le ");
+			//_fprintfwmatrix("A.txt", &A[0], 4 * n, 4 * n, 4 * n, "%.1le ");
 			gauss(&A[0], &RP[0], &X[0], 4 * n);
+
 			memcpy(&FW1[m * n_phi + 1], &X[0],     n * sizeof(double));
 			memcpy(&FW2[m * n_phi + 1], &X[n],     n * sizeof(double));
 			memcpy(&FU1[m * n_phi + 1], &X[2 * n], n * sizeof(double));
 			memcpy(&FU2[m * n_phi + 1], &X[3 * n], n * sizeof(double));
 		}
 
-		XYtoU(oW1, &FW1[0]); memset(oW1, 0, n_la * sizeof(double));
-		XYtoU(oW2, &FW2[0]); memset(oW2, 0, n_la * sizeof(double));
-		XYtoU(oU1, &FU1[0]); memset(oU1, 0, n_la * sizeof(double));
-		XYtoU(oU2, &FU2[0]); memset(oU2, 0, n_la * sizeof(double));
+		XYtoU(oW1, &FW1[0]); 
+		memset(oW1, 0, n_la * sizeof(double));
+		XYtoU(oW2, &FW2[0]); 
+		memset(oW2, 0, n_la * sizeof(double));
+		XYtoU(oU1, &FU1[0]); 
+		memset(oU1, 0, n_la * sizeof(double));
+		XYtoU(oU2, &FU2[0]); 
+		memset(oU2, 0, n_la * sizeof(double));
 	}
 };
 
