@@ -22,6 +22,81 @@ inline bool isinf(double x)
 }
 #endif
 
+double u1_t (double x, double y, double t)
+{
+	return x*sin(y+t)*ipow(cos(x),4);
+}
+
+double u2_t (double x, double y, double t)
+{
+	return x*cos(y+t)*ipow(cos(x),4);
+}
+
+double rp_f1(double x, double y, double t, BaroclinConf * conf)
+{
+	double sigma = conf->sigma;
+	double mu    = conf->mu;
+	double sigma1= conf->sigma;
+	double mu1   = conf->mu;
+	double alpha = conf->alpha;
+	
+	return -45*mu*sin(y+t)*x-(9./2.)*sigma*
+		ipow(cos(x),3)*sin(y+t)*sin(x)+(9./2.)*sigma*
+		ipow(cos(x),3)*sin(x)*cos(y+t)-10*sigma*
+		ipow(cos(x),4)*x*sin(y+t)+10*sigma*
+		ipow(cos(x),4)*x*cos(y+t)+(15./2.)*sigma*
+		ipow(cos(x),2)*x*sin(y+t)-(15./2.)*sigma*
+		ipow(cos(x),2)*x*cos(y+t)-360*mu*sin(y+t)*sin(x)*
+		ipow(cos(x),3)+147*mu*sin(y+t)*sin(x)*cos(x)-400*mu*sin(y+t)*x*
+		ipow(cos(x),4)+390*mu*sin(y+t)*x*
+		ipow(cos(x),2)-20*x*cos(y+t)*
+		ipow(cos(x),4)-9*cos(y+t)*
+		ipow(cos(x),3)*sin(x)+15*x*cos(y+t)*
+		ipow(cos(x),2);
+}
+
+double rp_g1(double x, double y, double t, BaroclinConf * conf)
+{
+	double sigma = conf->sigma;
+	double mu    = conf->mu;
+	double sigma1= conf->sigma;
+	double mu1   = conf->mu;
+	double alpha = conf->alpha;
+
+	double alpha2 = alpha * alpha;
+	double r = 20*x*sin(y+t)*
+		ipow(cos(x),4)+9*sin(y+t)*
+		ipow(cos(x),3)*sin(x)-15*x*sin(y+t)*
+		ipow(cos(x),2)+390*mu*cos(y+t)*x*
+		ipow(cos(x),2)-10*sigma*
+		ipow(cos(x),4)*x*cos(y+t)-(9./2.)*sigma*
+		ipow(cos(x),3)*sin(y+t)*sin(x)-alpha2*
+		ipow(cos(x),7)*x-45*mu*cos(y+t)*x+18*
+		ipow(cos(x),6)*
+		ipow(cos(y+t),2)*sin(x)-9*
+		ipow(cos(x),6)*sin(x)+9*x*
+		ipow(cos(x),5)-(9./2.)*sigma*
+		ipow(cos(x),3)*sin(x)*cos(y+t)-30*x*x*
+		ipow(cos(x),4)*sin(x)-18*x*
+		ipow(cos(x),5)*
+		ipow(cos(y+t),2)+alpha2*
+		ipow(cos(x),4)*x*sin(y+t)+(15./2.)*sigma*
+		ipow(cos(x),2)*x*sin(y+t)+(15./2.)*sigma*
+		ipow(cos(x),2)*x*cos(y+t)-400*mu*cos(y+t)*x*
+		ipow(cos(x),4)+147*mu*cos(y+t)*sin(x)*cos(x)+60*x*x*
+		ipow(cos(x),4)*
+		ipow(cos(y+t),2)*sin(x)-360*mu*cos(y+t)*sin(x)*
+		ipow(cos(x),3)-10*sigma*
+		ipow(cos(x),4)*x*sin(y+t)+4*alpha2*
+		ipow(cos(x),6)*x*x*sin(x)-9*alpha2*
+		ipow(cos(x),3)*mu1*cos(y+t)*sin(x)-20*alpha2*
+		ipow(cos(x),4)*mu1*cos(y+t)*x+15*alpha2*
+		ipow(cos(x),2)*mu1*cos(y+t)*x-alpha2*
+		ipow(cos(x),4)*sigma1*x*cos(y+t);
+	r /= alpha2;
+	return r;
+}
+
 double rp1(double phi, double lambda, BaroclinConf * conf)
 {
 	double omg = 2.*M_PI/24./60./60.; // ?
@@ -62,6 +137,11 @@ double cor(double phi, double lambda, BaroclinConf * conf)
 		0.5 * cos(2*lambda)*sin(2*phi)*sin(2*phi); //h
 }
 
+double zero_cor(double phi, double lambda, BaroclinConf * conf)
+{
+	return 0;
+}
+
 double u0(double phi, double lambda)
 {
 	double omg = 2.*M_PI/24./60./60.; // ?
@@ -99,8 +179,8 @@ void test_barvortex()
 	conf.sigma = 1.14e-2;
 	conf.mu    = 6.77e-5;
 
-	conf.sigma1= 1.14e-2;
-	conf.mu1   = 6.77e-5;
+	conf.sigma1= conf.sigma;
+	conf.mu1   = conf.mu;
 
 	conf.n_phi = 24;
 	conf.n_la  = 32;
@@ -109,9 +189,9 @@ void test_barvortex()
 	conf.theta = 0.5;
 	conf.alpha = 1.0;//1.0
 
-	conf.cor   = cor;
-	conf.rp1   = 0;
-	conf.rp2   = 0;
+	conf.cor    = cor;
+	conf.rp1    = rp_f1;
+	conf.rp2    = rp_g1;
 	conf.filter = 0;
 
 	int n = conf.n_phi * conf.n_la;
@@ -145,14 +225,10 @@ void test_barvortex()
 
 	for (int i = 0; i < conf.n_phi; ++i) {
 		for (int j = 0; j < conf.n_la; ++j) {
-			u1[pOff(i, j)] = u0(bv.phi(i), bv.lambda(j));
-			u2[pOff(i, j)] = u0(bv.phi(i), bv.lambda(j));
+			u1[pOff(i, j)] = u1_t(bv.phi(i), bv.lambda(j), 0);
+			u2[pOff(i, j)] = u2_t(bv.phi(i), bv.lambda(j), 0);
 		}
 	}
-
-//	{
-//		_fprintfwmatrix("kornev1_u0_1.txt", &u[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
-//	}
 
 	while (t < T) {
 		bv.S_step(&u11[0], &u21[0], &u1[0], &u2[0]);
