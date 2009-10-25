@@ -345,7 +345,11 @@ public:
 					FC[off] += conf->rp1(phi, la, t, conf);
 				}
 				if (conf->rp2) {
-					GC[off] += alpha * alpha * conf->rp2(phi, la, t, conf);
+					if (alpha == 0) {
+						GC[off] += conf->rp2(phi, la, t, conf);
+					} else {
+						GC[off] += alpha * alpha * conf->rp2(phi, la, t, conf);
+					}
 				}
 			}
 		}
@@ -390,8 +394,11 @@ public:
 
 			lapl->baroclin_1(&w1_n[0], &w2_n[0], &u1_n1[0], &u2_n1[0],
 				&F[0], &G[0], &Z[0], &Z[0], 
+
 				-mu * theta, 1.0 / tau + 0.5 * theta * sigma,
-				-mu * theta, 1.0 / tau + 0.5 * theta * sigma + alpha * alpha * theta * mu1,
+				-mu * theta, 1.0 / tau + 0.5 * theta * sigma + 
+				 alpha * alpha * theta * mu1,
+
 				-1.0, 0.0,
 				-1.0, 0.0,
 

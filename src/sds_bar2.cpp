@@ -85,7 +85,7 @@ Baroclin::~Baroclin()
 	delete d;
 }
 
-void stat(int nn, double * d, char * mask)
+static void stat(int nn, double * d, char * mask)
 {
 	int i;
 

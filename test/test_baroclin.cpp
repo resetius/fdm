@@ -97,6 +97,52 @@ double rp_g1(double x, double y, double t, BaroclinConf * conf)
 	return r;
 }
 
+double rp_f2(double x, double y, double t, BaroclinConf * conf)
+{
+	double sigma = conf->sigma;
+	double mu    = conf->mu;
+	double sigma1= conf->sigma;
+	double mu1   = conf->mu;
+	double alpha = conf->alpha;
+
+	return -9*cos(y+t)*
+		ipow(cos(x),3)*sin(x)-20*x*cos(y+t)*
+		ipow(cos(x),4)+15*x*cos(y+t)*
+		ipow(cos(x),2)-(9./2.)*sigma*
+		ipow(cos(x),3)*sin(y+t)*sin(x)+(9./2.)*sigma*
+		ipow(cos(x),3)*sin(x)*cos(y+t)-10*sigma*
+		ipow(cos(x),4)*x*sin(y+t)+10*sigma*
+		ipow(cos(x),4)*x*cos(y+t)+(15./2.)*sigma*
+		ipow(cos(x),2)*x*sin(y+t)-(15./2.)*sigma*
+		ipow(cos(x),2)*x*cos(y+t)-360*mu*sin(y+t)*sin(x)*
+		ipow(cos(x),3)+147*mu*sin(y+t)*sin(x)*cos(x)-400*mu*sin(y+t)*x*
+		ipow(cos(x),4)+390*mu*sin(y+t)*x*
+		ipow(cos(x),2)-45*mu*sin(y+t)*x;
+}
+
+double rp_g2(double x, double y, double t, BaroclinConf * conf)
+{
+	double sigma = conf->sigma;
+	double mu    = conf->mu;
+	double sigma1= conf->sigma;
+	double mu1   = conf->mu;
+	double alpha = conf->alpha;
+
+	return -15*x*sin(y+t)*
+		ipow(cos(x),2)+20*x*sin(y+t)*
+		ipow(cos(x),4)+9*sin(y+t)*
+		ipow(cos(x),3)*sin(x)-(9./2.)*sigma*
+		ipow(cos(x),3)*sin(x)*cos(y+t)-10*sigma*
+		ipow(cos(x),4)*x*sin(y+t)-10*sigma*
+		ipow(cos(x),4)*x*cos(y+t)-(9./2.)*sigma*
+		ipow(cos(x),3)*sin(y+t)*sin(x)+(15./2.)*sigma*
+		ipow(cos(x),2)*x*sin(y+t)+(15./2.)*sigma*
+		ipow(cos(x),2)*x*cos(y+t)-360*mu*cos(y+t)*sin(x)*
+		ipow(cos(x),3)+147*mu*cos(y+t)*sin(x)*cos(x)-400*mu*cos(y+t)*x*
+		ipow(cos(x),4)+390*mu*cos(y+t)*x*
+		ipow(cos(x),2)-45*mu*cos(y+t)*x;
+}
+
 double rp1(double phi, double lambda, BaroclinConf * conf)
 {
 	double omg = 2.*M_PI/24./60./60.; // ?
@@ -165,6 +211,16 @@ void set_fpe_except()
 }
 #endif
 
+template < typename T >
+void proj(double * u, Baroclin & bv, BaroclinConf & conf, T rp, double t)
+{
+	for (int i = 0; i < conf.n_phi; ++i) {
+		for (int j = 0; j < conf.n_la; ++j) {
+			u[pOff(i, j)] = rp(bv.phi(i), bv.lambda(j), t);
+		}
+	}
+}
+
 void test_barvortex()
 {
 	BaroclinConf conf;
@@ -182,16 +238,21 @@ void test_barvortex()
 	conf.sigma1= conf.sigma;
 	conf.mu1   = conf.mu;
 
-	conf.n_phi = 24;
-	conf.n_la  = 32;
+	conf.n_phi = 48;
+	conf.n_la  = 64;
 	conf.full  = 0;
 	conf.rho   = 1;
 	conf.theta = 0.5;
-	conf.alpha = 1.0;//1.0
 
-	conf.cor    = cor;
+	conf.alpha  = 1.0;
 	conf.rp1    = rp_f1;
 	conf.rp2    = rp_g1;
+
+//	conf.alpha  = 0.0;
+//	conf.rp1    = rp_f2;
+//	conf.rp2    = rp_g2;
+
+	conf.cor    = zero_cor;
 	conf.filter = 0;
 
 	int n = conf.n_phi * conf.n_la;
@@ -207,6 +268,8 @@ void test_barvortex()
 	vector < double > u2(n);
 	vector < double > u11(n);
 	vector < double > u21(n);
+	vector < double > u1r(n);
+	vector < double > u2r(n);
 
 	fprintf(stderr, "#domain:sphere half\n");
 	fprintf(stderr, "#mesh_w:%d\n", conf.n_la);
@@ -226,36 +289,26 @@ void test_barvortex()
 	fprintf(stderr, "#initial:kornev1\n");
 	fprintf(stderr, "#build:$Id$\n");
 
-	for (int i = 0; i < conf.n_phi; ++i) {
-		for (int j = 0; j < conf.n_la; ++j) {
-			u1[pOff(i, j)] = u1_t(bv.phi(i), bv.lambda(j), 0);
-			u2[pOff(i, j)] = u2_t(bv.phi(i), bv.lambda(j), 0);
-		}
-	}
+	proj(&u1[0], bv, conf, u1_t, 0);
+	proj(&u2[0], bv, conf, u2_t, 0);
 
 	while (t < T) {
 		bv.S_step(&u11[0], &u21[0], &u1[0], &u2[0], t);
 		t += conf.tau;
 
-//		if (i % 10000 == 0) {
-			nr1 = bv.norm(&u11[0], n);
-			nr2 = bv.norm(&u21[0], n);
-			fprintf(stderr, "t=%le; nr=%le; nr=%le; min=%le; max=%le;\n", 
-					t, nr1, nr2, 
-					find_min(&u11[0], n),
-					find_max(&u11[0], n));
-//			char buf[1024];
-//			sprintf(buf, "u_%05d.txt", i);
-//			_fprintfwmatrix(buf, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
-			//exit(1);
+		proj(&u1r[0], bv, conf, u1_t, t);
+		proj(&u2r[0], bv, conf, u2_t, t);
 
-//			fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
-//			fprintf(stdout, "\n"); fflush(stdout);
+		nr1 = bv.dist(&u11[0], &u1r[0], n);
+		nr2 = bv.dist(&u21[0], &u2r[0], n);
+		fprintf(stderr, "t=%le; nr=%le; nr=%le; min=%le; max=%le;\n", 
+				t, nr1, nr2, 
+				find_min(&u11[0], n),
+				find_max(&u11[0], n));
 
-			if (isnan(nr1) || isnan(nr2)) {
-				return;
-			}
-//		}
+		if (isnan(nr1) || isnan(nr2)) {
+			return;
+		}
 
 		u11.swap(u1);
 		u21.swap(u2);

@@ -730,7 +730,7 @@ public:
 	}
 
 
-	void conv_laplace_diag_submatrix(double * A, double * RP, int n, double * F, 
+	void add_diag_submatrix_to_matrix(double * A, double * RP, int n, double * F, 
 		double lm, int off, 
 		double mult, double diag)
 	{
@@ -769,7 +769,7 @@ public:
 		A[j * n + j] = mult * (-lm * rho_1 * rho_1 -
 			       COS[2 * i1 + 1] * d_phi2_rho_1 -
 			       COS[2 * i1 - 1] * d_phi2_rho_1) + diag;
-		A[j * n + j + 1] = mult * COS[2 * i1 + 1] * d_phi2_rho_1 + diag;
+		A[j * n + j + 1] = mult * COS[2 * i1 + 1] * d_phi2_rho_1;
 
 		i = (n_phi - 1) + off; j = i - 1; i1 = i - off;
 
@@ -836,10 +836,10 @@ public:
 			double * fu1 = &FU1[m * n_phi];
 			double * fu2 = &FU2[m * n_phi];
 
-			conv_laplace_diag_submatrix(&A[0], &RP[0], 4 * n, fw1, LM[m], 0,     mult1, diag1);
-			conv_laplace_diag_submatrix(&A[0], &RP[0], 4 * n, fw2, LM[m], n,     mult2, diag2);
-			conv_laplace_diag_submatrix(&A[0], &RP[0], 4 * n, fu1, LM[m], 2 * n, mult3, diag3);
-			conv_laplace_diag_submatrix(&A[0], &RP[0], 4 * n, fu2, LM[m], 3 * n, mult4, diag4);
+			add_diag_submatrix_to_matrix(&A[0], &RP[0], 4 * n, fw1, LM[m], 0,     mult1, diag1);
+			add_diag_submatrix_to_matrix(&A[0], &RP[0], 4 * n, fw2, LM[m], n,     mult2, diag2);
+			add_diag_submatrix_to_matrix(&A[0], &RP[0], 4 * n, fu1, LM[m], 2 * n, mult3, diag3);
+			add_diag_submatrix_to_matrix(&A[0], &RP[0], 4 * n, fu2, LM[m], 3 * n, mult4, diag4);
 
 			add_diag_to_matrix(&A[0], 4 * n, n, 0,     diag_w2);
 			add_diag_to_matrix(&A[0], 4 * n, 0, n,     diag_w1);
