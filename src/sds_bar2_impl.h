@@ -47,11 +47,9 @@ public:
 	int nn;
 	double *cor; //!<кориолис
 
-	double *B1; //!<временная матрица	
-
 	Private(BaroclinConf& _conf)
 		: SData(_conf.n_phi, _conf.n_la, _conf.full),
-		p(0), conf(&_conf), cor(0), B1(0)
+		p(0), conf(&_conf), cor(0)
 	{
 		init();
 		reset();
@@ -60,8 +58,7 @@ public:
 	}
 
 	~Private() {
-		if (B1)  delete [] B1;
-		if (cor) delete [] cor;
+		delete [] cor;
 	}
 
 	void reset() {
