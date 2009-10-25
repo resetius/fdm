@@ -1,6 +1,7 @@
 #include <math.h>
 #include <string.h>
 #include <vector>
+#include <stdlib.h>
 
 #include "asp_excs.h"
 #include "asp_macros.h"
