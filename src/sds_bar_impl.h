@@ -112,27 +112,25 @@ public:
 		assert(h1 != h);
 
 		int nn = n1_ * n2_;
-		double * p_lapl = new double[nn];
-		double * tmp    = new double[nn];
+		vector < double > p_lapl(nn);
+		vector < double > tmp(nn);
 		memset(h1, 0, nn * sizeof(double));
 #ifdef _BARVORTEX_ARAKAWA
-		impl_->JT(tmp, h, cor);
-		impl_->JT(p_lapl, z, h);
-		if (!full_) { memset(p_lapl, 0, n2_ * sizeof(double)); }
-		lapl_->lapl(p_lapl, p_lapl);
-		impl_->JT(h1, h, z_lapl);
+		impl_->JT(&tmp[0], h, &cor[0]);
+		impl_->JT(&p_lapl[0], z, h);
+		if (!full_) { memset(&p_lapl[0], 0, n2_ * sizeof(double)); }
+		lapl_->lapl(&p_lapl[0], &p_lapl[0]);
+		impl_->JT(h1, h, &z_lapl[0]);
 #else
-		impl_->J1T(tmp, h, cor, 1);
-		impl_->J1T(p_lapl, z, h, 2);
-		if (!full_) { memset(p_lapl, 0, n2_ * sizeof(double)); }
-		lapl_->lapl(p_lapl, p_lapl);
+		impl_->J1T(&tmp[0], h, &cor[0], 1);
+		impl_->J1T(&p_lapl[0], z, h, 2);
+		if (!full_) { memset(&p_lapl[0], 0, n2_ * sizeof(double)); }
+		lapl_->lapl(&p_lapl[0], &p_lapl[0]);
 		impl_->J1T(h1, h, z_lapl, 1);
 #endif
-		if (!full_) { memset(p_lapl, 0, n2_ * sizeof(double)); }
-		vector_sum(h1, h1, p_lapl, nn);
-		vector_sum(h1, h1, tmp, nn);
-		delete [] p_lapl;
-		delete [] tmp;
+		if (!full_) { memset(&p_lapl[0], 0, n2_ * sizeof(double)); }
+		vector_sum(h1, h1, &p_lapl[0], nn);
+		vector_sum(h1, h1, &tmp[0], nn);
 	}
 };
 
@@ -154,9 +152,7 @@ public:
 	BarVortexConf *conf; //!<конфиг
 
 	int nn;
-	double *cor; //!<кориолис
-
-	double *B1; //!<временная матрица	
+	vector < double > cor; //!<кориолис
 
 	void setTau(double _tau) {
 		tau   = _tau;
@@ -171,7 +167,7 @@ public:
 
 	Private(BarVortexConf& _conf)
 		: SData(_conf.n_phi, _conf.n_la, _conf.full),
-		p(0), conf(&_conf), cor(0), B1(0)
+		p(0), conf(&_conf)
 	{
 		init();
 		reset();
@@ -180,16 +176,9 @@ public:
 		nn = n_phi * n_la;
 	}
 
-	~Private() {
-		if (B1)  delete [] B1;
-		if (cor) delete [] cor;
-	}
-
 	void reset() {
-		if (cor) { delete [] cor; cor = 0; }
-
 		nn = n_phi * n_la;
-		cor = new double[nn];
+		cor.resize(nn);
 
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
@@ -257,19 +246,19 @@ public:
 	void S_step_im(double *dest, const double *h)
 	{
 //		int    off;
-		double *omg     = new double[nn];
-		double *omg_old = new double[nn];
-		double *psi     = new double[nn];
-		double *psi_old = new double[nn];
-		double *os      = new double[nn];
-		double *B1      = new double[nn];
+		vector < double > omg     (nn);
+		vector < double > omg_old (nn);
+		vector < double > psi     (nn);
+		vector < double > psi_old (nn);
+		vector < double > os      (nn);
+		vector < double > B1      (nn);
 
-		double * bnd    = new double[n_la];
+		vector < double > bnd    (n_la);
 
 		/*!находим \f$\omega_0 = \delta h_0\f$*/
-		lapl->lapl(omg_old, h);
+		lapl->lapl(&omg_old[0], h);
 		//?
-		if (!full) { memset(omg_old, 0, n_la * sizeof(double)); }
+		if (!full) { memset(&omg_old[0], 0, n_la * sizeof(double)); }
 
 		/*!
 		  в B1 кладем результат
@@ -277,38 +266,38 @@ public:
 	        \frac{\omega^n}{\tau} + (1-\theta)L\omega^n+f(x,y)
 	      \f]
 		 */
-		take_B(B1, omg_old, 1);
+		take_B(&B1[0], &omg_old[0], 1);
 
 		double norm;
 		int it = 0;
 
 		int s = (full) ? 0 : 1;
 
-		memcpy(psi, h, nn * sizeof(double));
-		memcpy(omg, omg_old, nn * sizeof(double));
+		memcpy(&psi[0], h, nn * sizeof(double));
+		memcpy(&omg[0], &omg_old[0], nn * sizeof(double));
 //		memcpy(bnd, omg_old, n_la * sizeof(double));
 
-		memset(bnd, 0, n_la * sizeof(double));
+		memset(&bnd[0], 0, n_la * sizeof(double));
 
 		while (true) {
 			++it;
-			memcpy(psi_old, psi, nn * sizeof(double));
+			memcpy(&psi_old[0], &psi[0], nn * sizeof(double));
 
 			/*!
 			  \f[
 			    \frac{\omega^{n+1} + \omega^n}{2}
 			  \f]
 			 */
-			vector_sum(os, omg, omg_old, nn);
-			vector_mult_scalar(os, os, 0.5, nn);
+			vector_sum(&os[0], &omg[0], &omg_old[0], nn);
+			vector_mult_scalar(&os[0], &os[0], 0.5, nn);
 
 			/*!
 			  \f[
 			    \frac{\omega^{n+1} + \omega^n}{2}
 			  \f]
 			 */
-			vector_sum(psi, psi, h, nn);
-			vector_mult_scalar(psi, psi, 0.5, nn);
+			vector_sum(&psi[0], &psi[0], h, nn);
+			vector_mult_scalar(&psi[0], &psi[0], 0.5, nn);
 
 			//для установки краевого условия
 			//начинаем от s!
@@ -317,8 +306,8 @@ public:
 					int off  = pOff(i, j);
 					omg[off] = B1[off] -
 						//0.0;
-						conf->k1 * Jacobian(psi, os, i, j) + 
-						conf->k2 * Jacobian(psi, cor, i, j);
+						conf->k1 * Jacobian(&psi[0], &os[0], i, j) + 
+						conf->k2 * Jacobian(&psi[0], &cor[0], i, j);
 				}
 			}
 
@@ -329,26 +318,24 @@ public:
 			
 //здесь должно быть краевое условие laplace psi?
 			if (!full) { 
-				memcpy(omg, bnd, n_la * sizeof(double));
+				memcpy(&omg[0], &bnd[0], n_la * sizeof(double));
 			}
 
-			lapl->lapl_1(omg, omg, forward_mult, forward_diag);
-//			lapl->lapl_1(omg, omg, forward_mult, forward_diag, SLaplacian::BC_NEUMANN);
+			lapl->lapl_1(&omg[0], &omg[0], forward_mult, forward_diag);
 
 			/*нашли омега, чтоб найти psi, надо обратить оператор лапласа*/
 			if (!full) { 
 				//memcpy(bnd, omg, n_la * sizeof(double));
-				memset(omg, 0, n_la * sizeof(double));	
+				memset(&omg[0], 0, n_la * sizeof(double));	
 			}
 			//_fprintfwmatrix("out/omg2.out", omg, n_la, n_phi,
 			//	std::max(n_la, n_phi), "%23.16le ");
-			lapl->lapl_1(psi, omg);
-//			lapl->lapl_1(psi, omg, 1.0, 0.0, SLaplacian::BC_NEUMANN);
+			lapl->lapl_1(&psi[0], &omg[0]);
 
 			//_fprintfwmatrix("out/psi.out", psi, n_la, n_phi,
 			//	std::max(n_la, n_phi), "%23.16le ");
 
-			norm = dist1(psi, psi_old, nn);
+			norm = dist1(&psi[0], &psi_old[0], nn);
 			//norm = dist2(psi, psi_old, nn);
 			if (norm < _BARVORTEX_IM_EPS)
 				break;
@@ -359,35 +346,30 @@ public:
 			}
 		}
 
-		memcpy(dest, psi, nn * sizeof(double));
-		delete [] psi_old;
-		delete [] psi;
-		delete [] B1;  delete [] os;
-		delete [] omg; delete [] omg_old;
-
-		delete [] bnd;
+		memcpy(dest, &psi[0], nn * sizeof(double));
 	}
 
 	//явная схема
 	void S_step(double *h1, const double *h, const double *F)
 	{	
-		double * omg = new double[nn];
-		double * B1  = new double[nn];
+		vector < double > omg (nn);
+		vector < double > B1(nn);
+
 		int    off;
 		double rp;
 		double lpl;		
 
 		/*!находим \f$\omega_0 = \delta h_0\f$*/
-		lapl->lapl(omg, h);
-		if (!full) { memset(omg, 0, n_la * sizeof(double)); }
+		lapl->lapl(&omg[0], h);
+		if (!full) { memset(&omg[0], 0, n_la * sizeof(double)); }
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
 				off  = pOff(i, j);
-				lpl  = lapl->lapl(omg, i, j);
+				lpl  = lapl->lapl(&omg[0], i, j);
 				rp  = F[off];
 				rp -= conf->rho * (
-						Jacobian(h, omg, i, j) +
-						Jacobian(h, cor, i, j)
+						Jacobian(h, &omg[0], i, j) +
+						Jacobian(h, &cor[0], i, j)
 					);
 
 				B1[off] = omg[off] * 
@@ -398,92 +380,89 @@ public:
 		}
 
 		/*вычисляем u с крышкой*/
-		if (!full) { memset(B1, 0, n_la * sizeof(double)); }
-		lapl->lapl_1(B1, B1, forward_mult, forward_diag);
+		if (!full) { memset(&B1[0], 0, n_la * sizeof(double)); }
+		lapl->lapl_1(&B1[0], &B1[0], forward_mult, forward_diag);
 		/*нашли омега, чтоб найти h1, надо обратить оператор лапласа*/
-		if (!full) { memset(B1, 0, n_la * sizeof(double)); }
-		lapl->lapl_1(h1, B1);
-
-		delete [] B1;
-		delete [] omg;
+		if (!full) { memset(&B1[0], 0, n_la * sizeof(double)); }
+		lapl->lapl_1(h1, &B1[0]);
 	}
 
 	//неявная схема с внутренними итерациями
 	void L_step_im(double *u1, const double *u_, 
 		const double * z, int maxIt = _BARVORTEX_IM_MAX_IT)
 	{
-		double *z_lapl  = new double[nn];
+		vector < double > z_lapl(nn);
 		
-		double *pt1 = new double[nn]; //лаплас, умноженный на коэф
-		double *pt2 = new double[nn]; //лаплас в квадрате, умноженный на коэф
-		double *pt3 = new double[nn]; //якобиан, умноженный на коэф
-		double *omg = new double[nn]; //лаплас
-		double *u   = new double[nn];
-		double * bnd    = new double[n_la];
+		vector < double > pt1(nn); //лаплас, умноженный на коэф
+		vector < double > pt2(nn); //лаплас в квадрате, умноженный на коэф
+		vector < double > pt3(nn); //якобиан, умноженный на коэф
+		vector < double > omg(nn); //лаплас
+		vector < double > u  (nn);
+		vector < double > bnd(n_la);
 
 		J_functor < SJacobian > funct1(jac, n_phi, n_la);
 
-		memcpy(u, u_, nn * sizeof(double));
+		memcpy(&u[0], u_, nn * sizeof(double));
 
-		lapl->lapl(z_lapl, z);
-		lapl->lapl(pt1, u); //первая часть - лаплас, умноженный на коэф, 
+		lapl->lapl(&z_lapl[0], z);
+		lapl->lapl(&pt1[0], &u[0]); //первая часть - лаплас, умноженный на коэф, 
 		//установка краевых условий
 
 //?
-		if (!full) { memset(z_lapl, 0, n_la * sizeof(double)); }
-		if (!full) { memset(pt1, 0, n_la * sizeof(double)); }
+		if (!full) { memset(&z_lapl[0], 0, n_la * sizeof(double)); }
+		if (!full) { memset(&pt1[0], 0, n_la * sizeof(double)); }
 
-		memcpy(omg, pt1, nn * sizeof(double)); //сохраняем лаплас - понадобится в pt3
+		memcpy(&omg[0], &pt1[0], nn * sizeof(double)); //сохраняем лаплас - понадобится в pt3
 		
-		lapl->lapl(pt2, pt1);
+		lapl->lapl(&pt2[0], &pt1[0]);
 		//(1-\theta)*lapl^2
-		vector_mult_scalar(pt2, pt2, 
+		vector_mult_scalar(&pt2[0], &pt2[0], 
 			(1. - conf->theta) * conf->mu, nn);
 
 		//(tau^{-1}-(1-\thetha)*sigma)*lapl
-		vector_mult_scalar(pt1, pt1, 
+		vector_mult_scalar(&pt1[0], &pt1[0], 
 			tau_1 - (1. - conf->theta) * conf->sigma, nn);
 
 		int it = 0;
 		double norm;
 
-		double * omg_n = new double[nn];
-		double * u1_o  = new double[nn];
+		vector < double > omg_n(nn);
+		vector < double > u1_o (nn);
 
-		memcpy(u1, u, nn * sizeof(double));
-		memcpy(omg_n, omg, nn * sizeof(double));
+		memcpy(&u1[0], &u[0], nn * sizeof(double));
+		memcpy(&omg_n[0], &omg[0], nn * sizeof(double));
 
 //		memcpy(bnd, omg, n_la * sizeof(double));
-		memset(bnd, 0, n_la * sizeof(double));
+		memset(&bnd[0], 0, n_la * sizeof(double));
 
 		while (true) {
 			++it;
-			memcpy(u1_o, u1, nn * sizeof(double));
+			memcpy(&u1_o[0], &u1[0], nn * sizeof(double));
 
-			vector_sum(u1, u1_o, u, nn);
-			vector_mult_scalar(u1, u1, 0.5, nn);
+			vector_sum(&u1[0], &u1_o[0], &u[0], nn);
+			vector_mult_scalar(&u1[0], &u1[0], 0.5, nn);
 
-			vector_sum(omg_n, omg_n, omg, nn);
-			vector_mult_scalar(omg_n, omg_n, 0.5, nn);
+			vector_sum(&omg_n[0], &omg_n[0], &omg[0], nn);
+			vector_mult_scalar(&omg_n[0], &omg_n[0], 0.5, nn);
 
-			funct1.calc(pt3, u1, cor, z, omg_n, z_lapl);
-			vector_mult_scalar(pt3, pt3, -conf->rho, nn);
+			funct1.calc(&pt3[0], &u1[0], &cor[0], &z[0], &omg_n[0], &z_lapl[0]);
+			vector_mult_scalar(&pt3[0], &pt3[0], -conf->rho, nn);
 
 			memset(u1, 0, nn * sizeof(double));
-			vector_sum(u1, u1, pt1, nn);
-			vector_sum(u1, u1, pt2, nn);
-			vector_sum(u1, u1, pt3, nn);
+			vector_sum(u1, u1, &pt1[0], nn);
+			vector_sum(u1, u1, &pt2[0], nn);
+			vector_sum(u1, u1, &pt3[0], nn);
 			
 			//if (!full) { memset(u1, 0, n_la * sizeof(double)); }
 
-			if (!full) { memcpy(u1, bnd, n_la * sizeof(double)); }
+			if (!full) { memcpy(&u1[0], &bnd[0], n_la * sizeof(double)); }
 
-			lapl->lapl_1(omg_n, u1, forward_mult, forward_diag);
+			lapl->lapl_1(&omg_n[0], u1, forward_mult, forward_diag);
 
-			if (!full) { memset(omg_n, 0, n_la * sizeof(double)); }
-			lapl->lapl_1(u1, omg_n);
+			if (!full) { memset(&omg_n[0], 0, n_la * sizeof(double)); }
+			lapl->lapl_1(u1, &omg_n[0]);
 
-			norm = dist1(u1, u1_o, nn);
+			norm = dist1(&u1[0], &u1_o[0], nn);
 			//norm = dist2(u1, u1_o, nn);
 			//if (norm < maxIt)
 			if (norm < _BARVORTEX_IM_EPS)
@@ -494,12 +473,6 @@ public:
 				//exit(1);
 			}
 		}
-
-		delete [] z_lapl; delete [] u;
-		delete [] pt1; delete [] pt2; delete [] pt3;
-		delete [] omg; delete [] omg_n; delete [] u1_o;
-
-		delete [] bnd;
 	}
 
 	//неявная схема с внутренними итерациями
@@ -507,30 +480,30 @@ public:
 		const double * z, int maxIt = _BARVORTEX_IM_MAX_IT)
 	{
 		int    off;
-		double * omg    = new double[nn];
-		double *omg_old = new double[nn];
-		double *psi     = new double[nn];
-		double *psi_old = new double[nn];
-		double *z_lapl  = new double[nn];
-		double *os      = new double[nn];
-		double *B1      = new double[nn];	
-		double *h       = new double[nn];
+		vector < double > omg     (nn);
+		vector < double > omg_old (nn);
+		vector < double > psi     (nn);
+		vector < double > psi_old (nn);
+		vector < double > z_lapl  (nn);
+		vector < double > os      (nn);
+		vector < double > B1      (nn);	
+		vector < double > h       (nn);
 		//double rp       = 0.0;	
 		//double k        = (1.0 - conf->theta);
 		double lpl;
 
-		memcpy(h, h_, nn * sizeof(double));
+		memcpy(&h[0], h_, nn * sizeof(double));
 		/*!находим \f$\omega_0 = \delta h_0\f$*/
-		lapl->lapl(omg_old, h);
-		lapl->lapl(z_lapl, z);
+		lapl->lapl(&omg_old[0], &h[0]);
+		lapl->lapl(&z_lapl[0], &z[0]);
 		//установка краевых условий
-		if (!full) { memset(z_lapl, 0, n_la * sizeof(double)); }
-		if (!full) { memset(omg_old, 0, n_la * sizeof(double)); }
+		if (!full) { memset(&z_lapl[0], 0, n_la * sizeof(double)); }
+		if (!full) { memset(&omg_old[0], 0, n_la * sizeof(double)); }
 
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
 				off  = pOff(i, j);
-				lpl  = lapl->lapl(omg_old, i, j);
+				lpl  = lapl->lapl(&omg_old[0], i, j);
 
 				B1[off] = omg_old[off] * 
 					(tau_1 + ( conf->theta) * conf->sigma)
@@ -541,17 +514,17 @@ public:
 		double norm;
 		int it = 0;
 
-		memcpy(psi, h, nn * sizeof(double));
-		memcpy(omg, omg_old, nn * sizeof(double));
+		memcpy(&psi[0], &h[0], nn * sizeof(double));
+		memcpy(&omg[0], &omg_old[0], nn * sizeof(double));
 		while (true) {
 			++it;
-			memcpy(psi_old, psi, nn * sizeof(double));
+			memcpy(&psi_old[0], &psi[0], nn * sizeof(double));
 
-			vector_sum(os, omg, omg_old, nn);
-			vector_mult_scalar(os, os, 0.5, nn);
+			vector_sum(&os[0], &omg[0], &omg_old[0], nn);
+			vector_mult_scalar(&os[0], &os[0], 0.5, nn);
 
-			vector_sum(psi, psi, h, nn);		
-			vector_mult_scalar(psi, psi, 0.5, nn);
+			vector_sum(&psi[0], &psi[0], &h[0], nn);
+			vector_mult_scalar(&psi[0], &psi[0], 0.5, nn);
 
 			for (int i = 0; i < n_phi; ++i) {
 				for (int j = 0; j < n_la; ++j) {
@@ -559,21 +532,21 @@ public:
 					omg[off] = B1[off] + 
 						(conf->rho) * 
 						(
-							Jacobian(z, os, i, j) + 
-							Jacobian(psi, z_lapl, i, j) + 
-							Jacobian(psi, cor, i, j)
+							Jacobian(z, &os[0], i, j) + 
+							Jacobian(&psi[0], &z_lapl[0], i, j) + 
+							Jacobian(&psi[0], &cor[0], i, j)
 						);
 				}
 			}
 
 			/*вычисляем u с крышкой*/
-			if (!full) { memset(omg, 0, n_la * sizeof(double));	}
-			lapl->lapl_1(omg, omg, backward_mult, backward_diag);
+			if (!full) { memset(&omg[0], 0, n_la * sizeof(double));	}
+			lapl->lapl_1(&omg[0], &omg[0], backward_mult, backward_diag);
 			/*нашли омега, чтоб найти h1, надо обратить оператор лапласа*/
-			if (!full) { memset(omg, 0, n_la * sizeof(double));	}
-			lapl->lapl_1(psi, omg);
+			if (!full) { memset(&omg[0], 0, n_la * sizeof(double));	}
+			lapl->lapl_1(&psi[0], &omg[0]);
 
-			norm = dist1(psi, psi_old, nn);
+			norm = dist1(&psi[0], &psi_old[0], nn);
 			//norm = dist2(psi, psi_old, nn);
 			if (norm < _BARVORTEX_IM_EPS)
 				break;
@@ -584,161 +557,152 @@ public:
 			}
 		}
 
-		memcpy(dest, psi, nn * sizeof(double));
-		delete [] psi_old; delete [] psi;
-		delete [] B1;  delete [] os;
-		delete [] omg; delete [] omg_old;
-		delete [] z_lapl; delete [] h;
+		memcpy(dest, &psi[0], nn * sizeof(double));
 	}
 
 	//явная схема
 	void L_step(double *u1, const double *u, const double * z)
 	{
-		double *z_lapl  = new double[nn];
+		vector < double > z_lapl(nn);
 		
-		double *pt1 = new double[nn]; //лаплас, умноженный на коэф
-		double *pt2 = new double[nn]; //лаплас в квадрате, умноженный на коэф
-		double *pt3 = new double[nn]; //якобиан, умноженный на коэф
+		vector < double > pt1 (nn); //лаплас, умноженный на коэф
+		vector < double > pt2 (nn); //лаплас в квадрате, умноженный на коэф
+		vector < double > pt3 (nn); //якобиан, умноженный на коэф
 
 		J_functor < SJacobian > funct1(jac, n_phi, n_la);
 
-		lapl->lapl(z_lapl, z);
-		lapl->lapl(pt1, u); //первая часть - лаплас, умноженный на коэф, 
+		lapl->lapl(&z_lapl[0], z);
+		lapl->lapl(&pt1[0], u); //первая часть - лаплас, умноженный на коэф, 
 
 		//установка краевых условий
-		if (!full) { memset(z_lapl, 0, n_la * sizeof(double)); }
-		if (!full) { memset(pt1, 0, n_la * sizeof(double)); }
+		if (!full) { memset(&z_lapl[0], 0, n_la * sizeof(double)); }
+		if (!full) { memset(&pt1[0], 0, n_la * sizeof(double)); }
 
 		//умножаем позже, так как лаплас пока нужен
 //		memset(pt3, 0, nn * sizeof(double));
-		funct1.calc(pt3, u, cor, z, pt1, z_lapl);
-		vector_mult_scalar(pt3, pt3, -conf->rho, nn);
+		funct1.calc(&pt3[0], &u[0], &cor[0], z, &pt1[0], &z_lapl[0]);
+		vector_mult_scalar(&pt3[0], &pt3[0], -conf->rho, nn);
 
 //		memset(pt2, 0, nn * sizeof(double));
-		lapl->lapl(pt2, pt1);
-		vector_mult_scalar(pt2, pt2, 
+		lapl->lapl(&pt2[0], &pt1[0]);
+		vector_mult_scalar(&pt2[0], &pt2[0], 
 			(1. - conf->theta) * conf->mu, nn);
 
-		vector_mult_scalar(pt1, pt1, 
+		vector_mult_scalar(&pt1[0], &pt1[0], 
 			tau_1 - (1. - conf->theta) * conf->sigma, nn);
 
 		memset(u1, 0, nn * sizeof(double));
-		vector_sum(u1, u1, pt1, nn);
-		vector_sum(u1, u1, pt2, nn);
-		vector_sum(u1, u1, pt3, nn);
+		vector_sum(u1, u1, &pt1[0], nn);
+		vector_sum(u1, u1, &pt2[0], nn);
+		vector_sum(u1, u1, &pt3[0], nn);
 
 		if (!full) { memset(u1, 0, n_la * sizeof(double)); }
 		lapl->lapl_1(u1, u1, forward_mult, forward_diag);
 		if (!full) { memset(u1, 0, n_la * sizeof(double)); }
 		lapl->lapl_1(u1, u1);
-
-		delete [] z_lapl;
-		delete [] pt1; delete [] pt2; delete [] pt3;
 	}
 
 	//явная схема, сопряженная задача
 	void L_step_t(double *v1, const double *v, const double * z)
 	{
-		double *z_lapl  = new double[nn];
+		vector < double > z_lapl(nn);
 		
-		double *pt1 = new double[nn]; //лаплас, умноженный на коэф
-		double *pt2 = new double[nn]; //лаплас в квадрате, умноженный на коэф
-		double *pt3 = new double[nn]; //якобиан, умноженный на коэф
+		vector < double > pt1 (nn); //лаплас, умноженный на коэф
+		vector < double > pt2 (nn); //лаплас в квадрате, умноженный на коэф
+		vector < double > pt3 (nn); //якобиан, умноженный на коэф
 
 		JT_functor < SJacobian, SLaplacian > 
 			funct2(jac, lapl, n_phi, n_la, full);
 
-		lapl->lapl(z_lapl, z);
-		if (!full) { memset(z_lapl, 0, n_la * sizeof(double)); }
+		lapl->lapl(&z_lapl[0], z);
+		if (!full) { memset(&z_lapl[0], 0, n_la * sizeof(double)); }
 
 		lapl->lapl_1(v1, v);
 		lapl->lapl_1(v1, v1, forward_mult, forward_diag);
 
-		lapl->lapl(pt1, v1);
-		if (!full) { memset(pt1, 0, n_la * sizeof(double)); }
-		vector_mult_scalar(pt1, pt1, 
+		lapl->lapl(&pt1[0], v1);
+		if (!full) { memset(&pt1[0], 0, n_la * sizeof(double)); }
+		vector_mult_scalar(&pt1[0], &pt1[0], 
 			tau_1 - (1. - conf->theta) * conf->sigma, nn);
 
-		lapl->lapl(pt2, v1);
-		if (!full) { memset(pt2, 0, n_la * sizeof(double)); }
-		lapl->lapl(pt2, pt2);
-		if (!full) { memset(pt2, 0, n_la * sizeof(double)); }
+		lapl->lapl(&pt2[0], v1);
+		if (!full) { memset(&pt2[0], 0, n_la * sizeof(double)); }
+		lapl->lapl(&pt2[0], &pt2[0]);
+		if (!full) { memset(&pt2[0], 0, n_la * sizeof(double)); }
 
-		vector_mult_scalar(pt2, pt2, 
+		vector_mult_scalar(&pt2[0], &pt2[0], 
 			(1. - conf->theta) * conf->mu, nn);
 
-		funct2.calc(pt3, v1, cor, z, 0, z_lapl);
-		vector_mult_scalar(pt3, pt3, -conf->rho, nn);
+		funct2.calc(&pt3[0], v1, &cor[0], z, 0, &z_lapl[0]);
+		vector_mult_scalar(&pt3[0], &pt3[0], -conf->rho, nn);
 
 		memset(v1, 0, nn * sizeof(double));
-		vector_sum(v1, v1, pt1, nn);
-		vector_sum(v1, v1, pt2, nn);
-		vector_sum(v1, v1, pt3, nn);
+		vector_sum(v1, v1, &pt1[0], nn);
+		vector_sum(v1, v1, &pt2[0], nn);
+		vector_sum(v1, v1, &pt3[0], nn);
 		if (!full) { memset(v1, 0, n_la * sizeof(double)); }
-
-		delete [] z_lapl; delete [] pt1; delete [] pt2; delete [] pt3;
 	}
 
 	//неявная схема, сопряженная задача
 	void L_step_im_t(double *v1, const double *v, 
 		const double * z, int maxIt = _BARVORTEX_IM_MAX_IT)
 	{
-		double *z_lapl  = new double[nn];
+		vector < double > z_lapl(nn);
 		
-		double *pt1 = new double[nn]; //лаплас, умноженный на коэф
-		double *pt2 = new double[nn]; //лаплас в квадрате, умноженный на коэф
-		double *pt3 = new double[nn]; //якобиан, умноженный на коэф
+		vector < double > pt1 (nn); //лаплас, умноженный на коэф
+		vector < double > pt2 (nn); //лаплас в квадрате, умноженный на коэф
+		vector < double > pt3 (nn); //якобиан, умноженный на коэф
 
-		double * v1_new = new double[nn];
-		double * v1_old = new double[nn];
-		double * tmp    = new double[nn];
+		vector < double > v1_new(nn);
+		vector < double > v1_old(nn);
+		vector < double > tmp   (nn);
 
 		JT_functor < SJacobian, SLaplacian > 
 			funct2(jac, lapl, n_phi, n_la, full);
 
-		lapl->lapl(z_lapl, z);
-		if (!full) { memset(z_lapl, 0, n_la * sizeof(double)); }
+		lapl->lapl(&z_lapl[0], z);
+		if (!full) { memset(&z_lapl[0], 0, n_la * sizeof(double)); }
 
-		lapl->lapl_1(tmp, v);
-		lapl->lapl_1(v1, tmp, forward_mult, forward_diag);
+		lapl->lapl_1(&tmp[0], v);
+		lapl->lapl_1(v1, &tmp[0], forward_mult, forward_diag);
 
-		lapl->lapl(pt1, v1);
-		if (!full) { memset(pt1, 0, n_la * sizeof(double)); }
-		vector_mult_scalar(pt1, pt1, 
+		lapl->lapl(&pt1[0], v1);
+		if (!full) { memset(&pt1[0], 0, n_la * sizeof(double)); }
+		vector_mult_scalar(&pt1[0], &pt1[0], 
 			tau_1 - (1. - conf->theta) * conf->sigma, nn);
 
-		lapl->lapl(pt2, v1);
-		if (!full) { memset(pt2, 0, n_la * sizeof(double)); }
-		lapl->lapl(pt2, pt2);
-		if (!full) { memset(pt2, 0, n_la * sizeof(double)); }
-		vector_mult_scalar(pt2, pt2, 
+		lapl->lapl(&pt2[0], v1);
+		if (!full) { memset(&pt2[0], 0, n_la * sizeof(double)); }
+		lapl->lapl(&pt2[0], &pt2[0]);
+		if (!full) { memset(&pt2[0], 0, n_la * sizeof(double)); }
+		vector_mult_scalar(&pt2[0], &pt2[0], 
 			(1. - conf->theta) * conf->mu, nn);
 
 		//параметры явной схемы
 		//__________________________________________________________
-		double *pt11   = new double[nn]; //лаплас, умноженный на коэф
-		double *pt21   = new double[nn]; //лаплас в квадрате, умноженный на коэф
-		double *pt31   = new double[nn]; //якобиан, умноженный на коэф
-		double *omg    = new double[nn]; //лаплас
-		double * omg_n = new double[nn];
-		double * u1_o  = new double[nn];
-		double * u1    = new double[nn];
+		vector < double > pt11   (nn); //лаплас, умноженный на коэф
+		vector < double > pt21   (nn); //лаплас в квадрате, умноженный на коэф
+		vector < double > pt31   (nn); //якобиан, умноженный на коэф
+		vector < double > omg    (nn); //лаплас
+		vector < double > omg_n  (nn);
+		vector < double > u1_o   (nn);
+		vector < double > u1     (nn);
 
 		const double * u  = v;
 
 		J_functor < SJacobian > funct1(jac, n_phi, n_la);
-		lapl->lapl(pt11, u); //первая часть - лаплас, умноженный на коэф, 
+		lapl->lapl(&pt11[0], u); //первая часть - лаплас, умноженный на коэф, 
 		//установка краевых условий		
-		if (!full) { memset(pt11, 0, n_la * sizeof(double)); }
-		memcpy(omg, pt11, nn * sizeof(double)); //сохраняем лаплас - понадобится в pt3
-		lapl->lapl(pt21, pt11);
-		vector_mult_scalar(pt21, pt21, 
+		if (!full) { memset(&pt11[0], 0, n_la * sizeof(double)); }
+		memcpy(&omg[0], &pt11[0], nn * sizeof(double)); //сохраняем лаплас - понадобится в pt3
+		lapl->lapl(&pt21[0], &pt11[0]);
+		vector_mult_scalar(&pt21[0], &pt21[0], 
 			(1. - conf->theta) * conf->mu, nn);
 
-		vector_mult_scalar(pt11, pt11, 
+		vector_mult_scalar(&pt11[0], &pt11[0], 
 			tau_1 - (1. - conf->theta) * conf->sigma, nn);
-		memcpy(u1, u, nn * sizeof(double));
-		memcpy(omg_n, omg, nn * sizeof(double));
+		memcpy(&u1[0], u, nn * sizeof(double));
+		memcpy(&omg_n[0], &omg[0], nn * sizeof(double));
 		//__________________________________________________________
 
 
@@ -746,50 +710,50 @@ public:
 
 		double norm;
 		int it = 0;
-		memcpy(v1_new, v1, nn * sizeof(double));
+		memcpy(&v1_new[0], v1, nn * sizeof(double));
 		while (true) {
 			++it;
 
 			//______________________________________________________
 			//явная часть
-			memcpy(u1_o, u1, nn * sizeof(double));
+			memcpy(&u1_o[0], &u1[0], nn * sizeof(double));
 
-			vector_sum(u1, u1_o, u, nn);
-			vector_mult_scalar(u1, u1, 0.5, nn);
+			vector_sum(&u1[0], &u1_o[0], &u[0], nn);
+			vector_mult_scalar(&u1[0], &u1[0], 0.5, nn);
 
-			vector_sum(omg_n, omg_n, omg, nn);
-			vector_mult_scalar(omg_n, omg_n, 0.5, nn);
+			vector_sum(&omg_n[0], &omg_n[0], &omg[0], nn);
+			vector_mult_scalar(&omg_n[0], &omg_n[0], 0.5, nn);
 
-			funct1.calc(pt31, u1, cor, z, omg_n, z_lapl);
-			vector_mult_scalar(pt31, pt31, -conf->rho, nn);
+			funct1.calc(&pt31[0], &u1[0], &cor[0], &z[0], &omg_n[0], &z_lapl[0]);
+			vector_mult_scalar(&pt31[0], &pt31[0], -conf->rho, nn);
 
-			memset(u1, 0, nn * sizeof(double));
-			vector_sum(u1, u1, pt11, nn);
-			vector_sum(u1, u1, pt21, nn);
-			vector_sum(u1, u1, pt31, nn);
-			if (!full) { memset(u1, 0, n_la * sizeof(double)); }
-			lapl->lapl_1(omg_n, u1, forward_mult, forward_diag);
-			if (!full) { memset(omg_n, 0, n_la * sizeof(double)); }
-			lapl->lapl_1(u1, omg_n);
+			memset(&u1[0], 0, nn * sizeof(double));
+			vector_sum(&u1[0], &u1[0], &pt11[0], nn);
+			vector_sum(&u1[0], &u1[0], &pt21[0], nn);
+			vector_sum(&u1[0], &u1[0], &pt31[0], nn);
+			if (!full) { memset(&u1[0], 0, n_la * sizeof(double)); }
+			lapl->lapl_1(&omg_n[0], &u1[0], forward_mult, forward_diag);
+			if (!full) { memset(&omg_n[0], 0, n_la * sizeof(double)); }
+			lapl->lapl_1(&u1[0], &omg_n[0]);
 			//______________________________________________________
 
-			memcpy(v1_old, v1_new, nn * sizeof(double));
-			lapl->lapl_1(u1_o, u1_o);
-			lapl->lapl_1(u1_o, u1_o, forward_mult, forward_diag);
+			memcpy(&v1_old[0], &v1_new[0], nn * sizeof(double));
+			lapl->lapl_1(&u1_o[0], &u1_o[0]);
+			lapl->lapl_1(&u1_o[0], &u1_o[0], forward_mult, forward_diag);
 
-			vector_sum(v1_new, u1_o, v1, nn);
-			vector_mult_scalar(v1_new, v1_new, 0.5, nn);
+			vector_sum(&v1_new[0], &u1_o[0], &v1[0], nn);
+			vector_mult_scalar(&v1_new[0], &v1_new[0], 0.5, nn);
 
-			funct2.calc(pt3, v1_new, cor, z, 0, z_lapl);
-			vector_mult_scalar(pt3, pt3, -conf->rho, nn);
+			funct2.calc(&pt3[0], &v1_new[0], &cor[0], z, 0, &z_lapl[0]);
+			vector_mult_scalar(&pt3[0], &pt3[0], -conf->rho, nn);
 
-			memset(v1_new, 0, nn * sizeof(double));
-			vector_sum(v1_new, v1_new, pt1, nn);
-			vector_sum(v1_new, v1_new, pt2, nn);
-			vector_sum(v1_new, v1_new, pt3, nn);
-			if (!full) { memset(v1_new, 0, n_la * sizeof(double)); }
+			memset(&v1_new[0], 0, nn * sizeof(double));
+			vector_sum(&v1_new[0], &v1_new[0], &pt1[0], nn);
+			vector_sum(&v1_new[0], &v1_new[0], &pt2[0], nn);
+			vector_sum(&v1_new[0], &v1_new[0], &pt3[0], nn);
+			if (!full) { memset(&v1_new[0], 0, n_la * sizeof(double)); }
 
-			norm = dist1(v1_new, v1_old, nn);
+			norm = dist1(&v1_new[0], &v1_old[0], nn);
 			//norm = dist2(v1_new, v1_old, nn);
 			if (norm < _BARVORTEX_IM_EPS)
 				break;			
@@ -800,13 +764,7 @@ public:
 			}
 		}
 
-		memcpy(v1, v1_new, nn * sizeof(double));
-
-		delete [] z_lapl; delete [] pt1; delete [] pt2; delete [] pt3;
-		delete [] v1_old; delete [] v1_new;
-
-		delete [] tmp;
-		delete [] pt11; delete [] pt21; delete [] pt31; delete [] omg;
+		memcpy(&v1[0], &v1_new[0], nn * sizeof(double));
 	}
 
 	//явная схема
@@ -814,44 +772,41 @@ public:
 	//J берется от другого значения
 	void L_1_step(double *u1, const double *u, const double * z)
 	{
-		double *z_lapl  = new double[nn];
+		vector < double > z_lapl(nn);
 		
-		double *pt1 = new double[nn]; //лаплас, умноженный на коэф
-		double *pt2 = new double[nn]; //лаплас в квадрате, умноженный на коэф
-		double *pt3 = new double[nn]; //якобиан, умноженный на коэф
+		vector < double > pt1 (nn); //лаплас, умноженный на коэф
+		vector < double > pt2 (nn); //лаплас в квадрате, умноженный на коэф
+		vector < double > pt3 (nn); //якобиан, умноженный на коэф
 
 		J_functor < SJacobian > funct1(jac, n_phi, n_la);
 
-		lapl->lapl(z_lapl, z);
-		lapl->lapl(pt1, u); //первая часть - лаплас, умноженный на коэф, 
+		lapl->lapl(&z_lapl[0], z);
+		lapl->lapl(&pt1[0], u); //первая часть - лаплас, умноженный на коэф, 
 
 		//установка краевых условий
-		if (!full) { memset(z_lapl, 0, n_la * sizeof(double)); }
-		if (!full) { memset(pt1, 0, n_la * sizeof(double)); }
+		if (!full) { memset(&z_lapl[0], 0, n_la * sizeof(double)); }
+		if (!full) { memset(&pt1[0], 0, n_la * sizeof(double)); }
 
 		//умножаем позже, так как лаплас пока нужен
-		funct1.calc(pt3, u, cor, z, pt1, z_lapl);
-		vector_mult_scalar(pt3, pt3, conf->rho, nn);
+		funct1.calc(&pt3[0], u, &cor[0], z, &pt1[0], &z_lapl[0]);
+		vector_mult_scalar(&pt3[0], &pt3[0], conf->rho, nn);
 
-		lapl->lapl(pt2, pt1);
-		vector_mult_scalar(pt2, pt2, 
+		lapl->lapl(&pt2[0], &pt1[0]);
+		vector_mult_scalar(&pt2[0], &pt2[0], 
 			( - conf->theta) * conf->mu, nn);
 
-		vector_mult_scalar(pt1, pt1, 
+		vector_mult_scalar(&pt1[0], &pt1[0], 
 			tau_1 + ( conf->theta) * conf->sigma, nn);
 
 		memset(u1, 0, nn * sizeof(double));
-		vector_sum(u1, u1, pt1, nn);
-		vector_sum(u1, u1, pt2, nn);
-		vector_sum(u1, u1, pt3, nn);
+		vector_sum(u1, u1, &pt1[0], nn);
+		vector_sum(u1, u1, &pt2[0], nn);
+		vector_sum(u1, u1, &pt3[0], nn);
 
 		if (!full) { memset(u1, 0, n_la * sizeof(double)); }
 		lapl->lapl_1(u1, u1, backward_mult, backward_diag);
 		if (!full) { memset(u1, 0, n_la * sizeof(double)); }
 		lapl->lapl_1(u1, u1);
-
-		delete [] z_lapl;
-		delete [] pt1; delete [] pt2; delete [] pt3;
 	}
 
 	double scalar(const double *x, const double *y, int n)

@@ -158,28 +158,9 @@ public:
 	/*!скалярное произведение в сферических координатах*/
 	double scalar(const double *u, const double *v);
 
-	/*!
-	   проверка
-	 */
-	void check();
-
 	void filter(double *Dest, const double * Source);
 	void filter_1(double *Dest, const double * Source);
 
-	/*!вызывает check1()*/
-	void check_approx();
-
-private:
-	/*!печать начальных данных*/
-	void check0();
-	/*!проверка аппроксимации для известной функции*/
-	void check1();
-	/*!проверка функций XYtoU/UtoXY на обратимость*/
-	void check2();
-	/*!проверка на самосопряженность*/
-	void check3();
-	/*!проверка Lapl_1(Lapl)*/
-	void check4();
 };
 
 #endif //_SPHERE_LAPL_H

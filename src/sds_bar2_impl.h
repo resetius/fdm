@@ -45,11 +45,11 @@ public:
 	BaroclinConf *conf; //!<конфиг
 
 	int nn;
-	double *cor; //!<кориолис
+	vector < double > cor; //!<кориолис
 
 	Private(BaroclinConf& _conf)
 		: SData(_conf.n_phi, _conf.n_la, _conf.full),
-		p(0), conf(&_conf), cor(0)
+		p(0), conf(&_conf)
 	{
 		init();
 		reset();
@@ -57,15 +57,9 @@ public:
 		nn = n_phi * n_la;
 	}
 
-	~Private() {
-		delete [] cor;
-	}
-
 	void reset() {
-		if (cor) { delete [] cor; cor = 0; }
-
 		nn = n_phi * n_la;
-		cor = new double[nn];
+		cor.resize(nn);
 
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {

@@ -1,5 +1,6 @@
 #include <math.h>
 #include <string.h>
+#include <vector>
 
 #include "asp_excs.h"
 #include "asp_macros.h"
@@ -16,35 +17,29 @@
 #define _pOff(i, j) ( i ) * (d->n_y + 1) + ( j )
 
 using namespace asp;
+using namespace std;
 
 class conv_diags {
 public:
-	double* A;
-	double* B;
-	double* C;
-	double* RP;
-	conv_diags(int n) {
-		A = new double[n];/*                     */
-		B = new double[n];/*    diags            */
-		C = new double[n];/*                     */
-		RP = new double[n];/*    right part      */
+	std::vector < double > A;
+	std::vector < double > B;
+	std::vector < double > C;
+	std::vector < double > RP;
+
+	conv_diags(int n): A(n), B(n), C(n), RP(n) 
+	{
 	}
 
-	~conv_diags() {
-		delete [] A;
-		delete [] B;
-		delete [] C;
-		delete [] RP;
-	}
+	~conv_diags() {}
 };
 
 class Laplacian2D::Private: public SqSteps
 {
 	/* предварительное вычисление часто используемых данных
 	 * в разы ускор€ет счет, но пам€ти ест много */
-	double * LM; /*!<собственные значени€ лапласа на пр€моугольнике*/
-	double * VM; /*!<значени€ собственных функций лапласа на пр€моугольнике*/
-	
+	vector < double > LM; /*!<собственные значени€ лапласа на пр€моугольнике*/
+	vector < double > VM; /*!<значени€ собственных функций лапласа на пр€моугольнике*/
+
 	int fft;      //!<степень дл€ FFT метода
 	bool use_fft; //!<используем FFT
 
@@ -68,13 +63,13 @@ public:
 		vm_mult = sqrt(2. / ly);
 
 
-        LM = new double[n_y];
+        LM.resize(n_y);
 
 		for (int i = 1; i < n_y; i++) {
 			LM[i] = L_m(i);
 		}
 
-        VM = new double[n_y * (n_y+1)];
+        VM.resize(n_y * (n_y+1));
 
 		for (int m = 1; m < n_y; m++) {
 			for (int j = 0; j < n_y; j++) {
@@ -84,8 +79,6 @@ public:
 	}
 
 	~Private() {
-		delete [] VM;
-		delete [] LM;
 		if (d1) delete d1;
 	}
 
@@ -96,14 +89,13 @@ public:
      */
     void UtoXY(double* X, const double* U) {
 		if (use_fft) {
-			double *s = new double[n_y + 1];
+			vector < double >s(n_y + 1);
 			for (int i = 0; i <= n_x; i++) {
-				FFT(s, &U[pOff(i, 0)], VM, d_y * vm_mult, n_y, fft);
+				FFT(&s[0], &U[pOff(i, 0)], &VM[0], d_y * vm_mult, n_y, fft);
 				for (int m = 1; m < n_y; m++) {
 					X[(m - 1) * np + i] = s[m];
 				}
 			}
-			delete [] s;
 		} else {
 			double sum;
 			for (int m = 1; m < n_y; m++) {
@@ -126,7 +118,7 @@ public:
      */
     void XYtoU(double* U, const double* X) {
 		if (use_fft) {			
-			double *s = new double[n_y + 1];
+			vector < double > s (n_y + 1);
 			for (int i = 0; i <= n_x; i++) {
 				s[0]  = 0.0;
 				for (int m = 1; m < n_y; m++) {
@@ -134,9 +126,8 @@ public:
 				}
 				s[n_y] = 0.0;
 
-				FFT(&U[pOff(i, 0)], s, VM, 1.0 * vm_mult, n_y, fft);
+				FFT(&U[pOff(i, 0)], &s[0], &VM[0], 1.0 * vm_mult, n_y, fft);
 			}
-			delete [] s;
 		} else {
 			double sum;
 			for (int i = 0; i <= n_x; i++) {
@@ -263,7 +254,7 @@ public:
 		double diag) 
 	{
         if (d1 == 0) d1 = new conv_diags(n_x+1);
-		double * MF = new double[np * (n_y + 1)];
+		vector < double > MF(np * (n_y + 1));
 
 		//на Y кра€х ноль
 		/*for (int j = 0; j <= n_y; j++) {
@@ -278,7 +269,7 @@ public:
 		}
 
 		//use_fft = 0;
-		UtoXY(MF, M);
+		UtoXY(&MF[0], M);
 
         for (int m = 1; m < n_y; m++) {
             for (int i = 1; i <= n_x - 1; i++) {
@@ -306,14 +297,12 @@ public:
                 d1->C[i] *= mult_factor;
             }
 
-			solve_tdiag_linear(d1->RP, d1->A, d1->B, d1->C, n_x + 1);
+			solve_tdiag_linear(&d1->RP[0], &d1->A[0], &d1->B[0], &d1->C[0], n_x + 1);
 
-			memcpy(&MF[(m - 1) * (n_x + 1)], d1->RP, (n_x + 1) * sizeof(double));
+			memcpy(&MF[(m - 1) * (n_x + 1)], &d1->RP[0], (n_x + 1) * sizeof(double));
         }
 
-		XYtoU(M, MF);
-
-		delete [] MF;
+		XYtoU(M, &MF[0]);
     }
 };
 
@@ -333,10 +322,9 @@ void Laplacian2D::lapl(double * Dest, const double * M)
 		d->laplacian_matrix(Dest, M);
 	} else {
 		int nn = (d->n_x + 1) * (d->n_y + 1);
-		double * tmp = new double[nn];
-		d->laplacian_matrix(tmp, M);
-		memcpy(Dest, tmp, nn * sizeof(double));
-		delete [] tmp;
+		vector < double > tmp(nn);
+		d->laplacian_matrix(&tmp[0], M);
+		memcpy(Dest, &tmp[0], nn * sizeof(double));
 	}
 }
 
@@ -365,7 +353,7 @@ void Laplacian::lapl(double * Dest, const double * M)
 {
 	double * tmp;
 	if (Dest == M) {
-		tmp = new double[n_x];
+		tmp = (double*)malloc(n_x * sizeof(double));
 	} else {
 		tmp = Dest;
 	}
@@ -376,7 +364,7 @@ void Laplacian::lapl(double * Dest, const double * M)
 
 	if (Dest == M) {
 		memcpy(Dest, tmp, n_x * sizeof(double));
-		delete [] tmp;
+		free(tmp);
 	}
 }
 

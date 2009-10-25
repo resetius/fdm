@@ -33,6 +33,8 @@
  * Параметры сферической сетки -- шаги, число точек и тп
  */
 
+#include <vector>
+
 struct SData: public SSteps {
 	SLaplacian * lapl; //!<сферический оператор Лапласа
 	SJacobian  * jac;  //!<сферический якобиан
@@ -45,8 +47,8 @@ struct SData: public SSteps {
 	double backward_mult;
 	double backward_diag;
 
-	double* LA;  //!<координаты по lambda
-	double*PHI;  //!<координаты по phi
+	std::vector < double > LA;  //!<координаты по lambda
+	std::vector < double > PHI;  //!<координаты по phi
 
 	SData(int n_phi, int n_la, bool full)
 		: SSteps(n_phi, n_la, full),
@@ -56,8 +58,6 @@ struct SData: public SSteps {
 
 	virtual ~SData()
 	{
-		if (LA)  delete [] LA;
-		if (PHI) delete [] PHI;
 		delete lapl;	
 		delete jac;
 	}
@@ -67,8 +67,8 @@ struct SData: public SSteps {
 		lapl = new SLaplacian(n_phi, n_la, full);
 		jac  = new SJacobian(n_phi, n_la, full);
 
-		LA  = new double[n_la]; NOMEM(LA);
-		PHI = new double[n_phi]; NOMEM(PHI);
+		LA.resize(n_la); 
+		PHI.resize(n_phi);
 		for (int i = 0; i < n_la; i++) {
 			LA[i] = (double)i * d_la;
 		}

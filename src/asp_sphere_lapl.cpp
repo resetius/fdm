@@ -79,23 +79,16 @@ using namespace asp;
 /*чтобы постоянно не выделять память*/
 class conv_diags {
 public:
-	double* A;
-	double* B;
-	double* C;
-	double* RP;
-	conv_diags(int n) {
-		A = new double[n];/*                     */
-		B = new double[n];/*    diags            */
-		C = new double[n];/*                     */
-		RP = new double[n];/*    right part      */
+	std::vector < double > A;
+	std::vector < double > B;
+	std::vector < double > C;
+	std::vector < double > RP;
+
+	conv_diags(int n): A(n), B(n), C(n), RP(n) 
+	{
 	}
 
-	~conv_diags() {
-		delete [] A;
-		delete [] B;
-		delete [] C;
-		delete [] RP;
-	}
+	~conv_diags() {}
 };
 
 #ifdef _WIN32
@@ -134,21 +127,21 @@ public:
 	//int fft; //!<степень для быстрого преобразования Фурье
 	fft * ft;
 
-	double *B1;
+	vector < double > B1;
     /**
      * предварительное вычисление часто используемых данных
      * в разы ускоряет счет, но памяти ест много
      */
-    double* LM;  //!<собственные значения сферического лапласа
-    double* VM;  //!<значения собственных функций сферического лапласа
-	double* COS; //!<значения косинусов по широте
+    vector < double > LM;  //!<собственные значения сферического лапласа
+    vector < double > VM;  //!<значения собственных функций сферического лапласа
+	vector < double > COS; //!<значения косинусов по широте
 
-	double *Fc; //!<коэф-та фильтрации
+	vector < double > Fc; //!<коэф-та фильтрации
 
 	bool use_fft;
 
 	vector < conv_diags * > d1;
-	double * MF;
+	vector < double > MF;
 
 	Private(int _n_phi, int _n_la, bool _full)
 		:  SSteps(_n_phi, _n_la, _full),
@@ -157,9 +150,9 @@ public:
 	{
 		checkFFT();
 
-		COS = new double[2 * (n_phi + 1)];
+		COS.resize(2 * (n_phi + 1));
 
-		LM  = new double[n_la];
+		LM.resize(n_la);
 		for (int i = 0; i < n_la; i++) {
 			LM[i] = L_m(i);
 		}
@@ -179,7 +172,7 @@ public:
 		//printf("sum=%lf\n", sum);
 
 		if (!use_fft) {
-			VM = new double[n_la * n_la];
+			VM.resize(n_la * n_la);
 
 			for (int m = 0; m < n_la; m++) {
 				for (int j = 0; j < n_la; j++) {
@@ -188,7 +181,8 @@ public:
 			}
 		}
 
-		MF = new double[n_phi * n_la];
+		B1.resize(n_phi*n_la);
+		MF.resize(n_phi * n_la);
 		d1.push_back(new conv_diags(n_phi));
 		init_filter();
 	}
@@ -202,7 +196,7 @@ public:
 		//double p = 1.0;
 		//double p = d_la / d_phi;
 
-		Fc = new double[n_phi * n_la];
+		Fc.resize(n_phi * n_la);
 
 		for (int i = 0; i < n_phi; ++i) {
 			//?
@@ -228,13 +222,7 @@ public:
 
 	~Private()
 	{
-		delete [] LM;
-		delete [] VM;
-		delete [] B1;
-		delete [] COS;
 		if (ft) FFT_free(ft);
-		delete [] MF;
-		delete [] Fc;
 
 		for (vector < conv_diags * >::iterator it  = d1.begin();
 			it != d1.end(); ++it)
@@ -294,18 +282,17 @@ public:
     void XYtoU(double* U, const double* X)
 	{
 		if (use_fft) {
-			double *s = new double[n_la];
+			vector < double > s(n_la);
 			for (int i = 0; i < n_phi; ++i) {
 				for (int m = n_la - 1; m >= 0; --m) {
 					s[m] = X[m * n_phi + i];
 				}
 #ifndef _FFTW
-				pFFT_2(&U[pOff(i, 0)], s, SQRT_M_1_PI, ft);
+				pFFT_2(&U[pOff(i, 0)], &s[0], SQRT_M_1_PI, ft);
 #else
 				pFFT_fftw(&U[pOff(i, 0)], s, SQRT_M_1_PI, n_la);
 #endif
 			}
-			delete [] s;
 		} else {
 			for (int i = 0; i < n_phi; i++) {
 				for (int j = 0; j < n_la; j++) {
@@ -339,11 +326,11 @@ public:
 		double sum;
 
 		if (use_fft) {
-			double * s = new double[n_la];
+			vector < double > s(n_la);
 			double dx  = d_la * SQRT_M_1_PI;
 			for (int i = n_phi - 1; i >= 0; --i) {
 //#ifndef _FFTW
-				pFFT_2_1(s, &U[pOff(i, 0)], dx, ft);
+				pFFT_2_1(&s[0], &U[pOff(i, 0)], dx, ft);
 //#else
 //not checked
 //				pFFT_1_fftw(s, &U[pOff(i, 0)], dx, n_la);
@@ -352,7 +339,6 @@ public:
 					X[m * n_phi + i] = s[m];
 				}
 			}
-			delete [] s;
 		} else {
 			for (int i = 0; i < n_phi; i++) {
 				for (int m = 0 ; m < n_la; m++) {
@@ -482,9 +468,8 @@ public:
 
 		if (rank == 0)
 		if (M1 == M2) {
-			if (!B1) {B1 = new double[n_phi*n_la];}
-			memcpy(B1, M1, n_phi*n_la * sizeof(double));
-			S = B1;
+			memcpy(&B1[0], M1, n_phi*n_la * sizeof(double));
+			S = &B1[0];
 		}
 
 		for (int i = n_phi - 1; i >= 0; --i) {
@@ -498,9 +483,8 @@ public:
 	void sphere_laplacian_lambda_matrix(double* M2, const double* M1) {
 		const double * S = M1;
 		if (M1 == M2) {
-			if (!B1) {B1 = new double[n_phi*n_la]; NOMEM(B1);}
-			memcpy(B1, M1, n_phi*n_la * sizeof(double));
-			S = B1;
+			memcpy(&B1[0], M1, n_phi*n_la * sizeof(double));
+			S = &B1[0];
 		}
 
 		for (int i = n_phi - 1; i >= 0; --i) {
@@ -514,9 +498,8 @@ public:
 	void sphere_laplacian_phi_matrix(double* M2, const double* M1) {
 		const double * S = M1;
 		if (M1 == M2) {
-			if (!B1) {B1 = new double[n_phi*n_la]; NOMEM(B1);}
-			memcpy(B1, M1, n_phi*n_la * sizeof(double));
-			S = B1;
+			memcpy(&B1[0], M1, n_phi*n_la * sizeof(double));
+			S = &B1[0];
 		}
 
 		for (int i = n_phi - 1; i >= 0; --i) {
@@ -573,7 +556,7 @@ public:
 			prepare_right_part(M, mult_factor, flag, bc);
 		}
 
-		UtoXY(MF, M);
+		UtoXY(&MF[0], M);
 
 #ifdef _SLAPL_DEBUG
 		if (full) {
@@ -705,7 +688,7 @@ public:
 			memset(&MF[0], 0, n_phi * sizeof(double));
 		}
 
-		XYtoU(M, MF);
+		XYtoU(M, &MF[0]);
 
 		//if (!full && bc == BC_NEUMANN) {
 		//	double k = (flag) ? mult_factor[0] : mult_factor[1];
@@ -955,277 +938,28 @@ double SLaplacian::scalar(const double *u, const double *v)
 
 void SLaplacian::filter(double *Dest, const double * Source)
 {
-	d->UtoXY(d->MF, Source);
+	d->UtoXY(&d->MF[0], Source);
 
-	double * X = d->MF;
+	double * X = &d->MF[0];
 	for (int i = 0; i < d->n_phi; ++i) {
 		for (int m = 1; m < d->n_la; ++m) {
 			X[m * d->n_phi + i] *= d->Fc[m * d->n_phi + i];
 		}
 	}
 
-	d->XYtoU(Dest, d->MF);
+	d->XYtoU(Dest, &d->MF[0]);
 }
 
 void SLaplacian::filter_1(double *Dest, const double * Source)
 {
-	d->UtoXY(d->MF, Source);
+	d->UtoXY(&d->MF[0], Source);
 
-	double * X = d->MF;
+	double * X = &d->MF[0];
 	for (int i = 0; i < d->n_phi; ++i) {
 		for (int m = 1; m < d->n_la; ++m) {
 			X[m * d->n_phi + i] /= d->Fc[m * d->n_phi + i];
 		}
 	}
 
-	d->XYtoU(Dest, d->MF);
-}
-
-/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-/*~~~~~~~~~~~~~Внутренние проверки ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-void SLaplacian::check() {
-	//check0(); //печать параметров
-	//check1(); //проверка Lapl на известный ответ
-	//check2(); //XYtoU/UtoXY
-	//check3(); //самосопряженность
-	check4(); //Lapl(Lapl_1)
-}
-
-void SLaplacian::check4()
-{
-	int nn = d->n_la * d->n_phi;
-	double * C = new double[nn];
-	double * A = new double[nn];
-	double * B = new double[nn];
-
-
-	printf("checking Lapl(Lapl_1)\n");
-	random_initialize(A, nn);
-
-	int n1 = d->n_phi;
-	int n2 = d->n_la;
-
-	double t1 = get_full_time();
-	lapl(B, A);
-	vector_mult_scalar(B, B, 10, nn);
-	double t2 = get_full_time();
-
-	printf("  Lapl Work time:%lf\n", (t2 - t1));
-
-//	_fprintfwmatrix("out/check4_start.out", A, n1, n2, max(n1, n2), "%.3le ");
-//	_fprintfwmatrix("out/check4_laplas.out", B, n1, n2, max(n1, n2), "%.3le ");
-
-	t1 = get_full_time();
-	//установка краевого условия
-	memcpy(B, A, d->n_la * sizeof(double));
-	//vector_mult_scalar(B, B, 10, d->n_la);
-	lapl_1(B, B, 10);
-	t2 = get_full_time();
-	printf("  Lapl_1 Work time:%lf\n", (t2 - t1));
-
-//	_fprintfwmatrix("out/check4_laplas_1.out", B, n1, n2, max(n1, n2), "%.3le ");
-	printf("  |Lapl(Lapl_1)|=%.16le\n",dist1(B, A, nn));
-
-	delete [] A; delete [] B; delete [] C;
-}
-
-/*!проверка на самосопряженность*/
-void SLaplacian::check3() {
-	int nn = d->n_la * d->n_phi;
-	double * u  = new double[nn];
-	double * u1 = new double[nn];
-	double * v  = new double[nn];
-	double * v1 = new double[nn];
-
-	double nr1, nr2;
-
-	printf("checking conjugacy ... \n");
-
-	random_initialize(u, nn);
-	random_initialize(v, nn);
-
-	printf("  checking conjugacy of \\Delta_{\\lambda}... \n");
-
-	lapl_la(u1, u);
-	lapl_la(v1, v);
-	nr1 = scalar(u1, v);
-	nr2 = scalar(u, v1);
-	printf("    (Lu,v)=%.16le\n", nr1);
-	printf("    (u,LTv)=%.16le\n", nr2);
-	printf("    |(Lu,v)-(u,LTv)|=%.16le\n", fabs(nr1 - nr2));
-
-	printf("  checking conjugacy of \\Delta_{\\phi}... \n");
-
-	lapl_phi(u1, u);
-	lapl_phi(v1, v);
-	nr1 = scalar(u1, v);
-	nr2 = scalar(u, v1);
-	printf("    (Lu,v)=%.16le\n", nr1);
-	printf("    (u,LTv)=%.16le\n", nr2);
-	printf("    |(Lu,v)-(u,LTv)|=%.16le\n", fabs(nr1 - nr2));
-
-	printf("  checking conjugacy of full \\Delta... \n");
-
-	lapl(u1, u);
-	lapl(v1, v);
-	nr1 = scalar(u1, v);
-	nr2 = scalar(u, v1);
-	printf("    (Lu,v)=%.16le\n", nr1);
-	printf("    (u,LTv)=%.16le\n", nr2);
-	printf("    |(Lu,v)-(u,LTv)|=%.16le\n", fabs(nr1 - nr2));
-
-	delete [] u; delete [] u1; delete [] v; delete [] v1;
-}
-
-/*!проверка функций XYtoU/UtoXY на обратимость*/
-void SLaplacian::check2() {
-	int nn = d->n_la * d->n_phi;
-	double * u = new double[nn];
-	double * v = new double[nn];
-	double * w = new double[nn];
-
-	printf("checking XYtoU(UtoXY), UtoXY(XYtoU) ...\n");
-
-	random_initialize(u, nn);
-	d->UtoXY(v, u);
-	d->XYtoU(w, v);
-
-	printf("  |XYtoU(UtoXY)|=%le\n", dist1(u, w, nn));
-
-	d->XYtoU(v, u);
-	d->UtoXY(w, v);
-	printf("  |UtoXY(XYtoU)|=%le\n", dist1(u, w, nn));
-
-	delete [] u;
-	delete [] w;
-}
-
-void SLaplacian::check_approx()
-{
-	check1();
-}
-
-void SLaplacian::check1()
-{
-	int nn = d->n_la * d->n_phi;
-	double * u = new double[nn];
-	double *uu = new double[nn];
-	double * v = new double[nn];
-
-	printf("checking lapl of known func ... \n");
-	//static double * buf = 0;
-	//if (buf == 0) {
-	//	buf = new double[nn * 4];
-	//	for (int i = 0; i < 4 * nn; ++i) {
-	//		//buf[i] = (double)rand() /(double)RAND_MAX;
-	//		buf[i] = 1;
-	//	}
-	//}
-
-	//int k = 0;
-	//if (d->full) {
-	//for (int i = d->n_phi/2; i < d->n_phi; i++) {
-	//	for (int j = 0; j < d->n_la; j++) {
-	//		//u[_pOff(i, j)] = sin(d->la(j)) * sin(2.0 * d->phi(i));
-	//		u[_pOff(i, j)] = buf[k++];
-	//	}
-	//}
-
-	//for (int i = 0; i < d->n_phi/2; i++) {
-	//	for (int j = 0; j < d->n_la; j++) {
-	//		//u[_pOff(i, j)] = sin(d->la(j)) * sin(2.0 * d->phi(i));
-	//		u[_pOff(i, j)] = buf[k++];
-	//		//u[_pOff(i, j)] = 0; //k++;
-	//	}
-	//}
-
-	//} else {
-	//for (int i = 0; i < d->n_phi; i++) {
-	//	for (int j = 0; j < d->n_la; j++) {
-	//		//u[_pOff(i, j)] = sin(d->la(j)) * sin(2.0 * d->phi(i));
-	//		u[_pOff(i, j)] = buf[k++];
-	//	}
-	//}
-	//}
-
-	printf("Known func is \\psi = sin(\\lambda) * sin(2 \\phi)\n");
-
-	for (int i = 0; i < d->n_phi; i++) {
-		for (int j = 0; j < d->n_la; j++) {
-			u[_pOff(i, j)] = sin(d->la(j)) * sin(2.0 * d->phi(i));
-			//u[_pOff(i, j)] = sin(d->la(j)) * sin(2.0 * d->phi(i));
-			//u[_pOff(i, j)] = sin(d->la(j)) + sin(2.0 * d->phi(i));
-			//u[_pOff(i, j)] = buf[k++];
-			//u[_pOff(i, j)] = buf[k++];
-		}
-	}
-
-	printf("Lapl of \\psi is -6.0 * sin(\\lambda) * sin(2 \\phi)\n");
-	for (int i = 0; i < d->n_phi; i++) {
-		for (int j = 0; j < d->n_la; j++) {
-			uu[_pOff(i, j)] = -6.0 * sin(d->la(j)) *
-				sin(2.0 * d->phi(i));
-		}
-	}
-
-	lapl(v, u);
-
-	/*if (d->full) {
-		for (int j = 0; j < d->n_la; ++j) {
-			v[_pOff(d->n_phi/2-1,j)]=0;
-		}
-	}*/
-
-	int n1 = d->n_phi;
-	int n2 = d->n_la;
-	if (d->full) {
-		_fprintfwmatrix("out/start_full.out", u, n1, n2, max(n1, n2), "%.3le ");
-		_fprintfwmatrix("out/laplas_full.out", v, n1, n2, max(n1, n2), "%.3le ");
-		_fprintfwmatrix("out/laplas_real_full.out", uu, n1, n2, max(n1, n2), "%.3le ");
-	} else {
-		_fprintfwmatrix("out/start_half.out", u, n1, n2, max(n1, n2), "%.3le ");
-		_fprintfwmatrix("out/laplas_half.out", v, n1, n2, max(n1, n2), "%.3le ");
-		_fprintfwmatrix("out/laplas_real_half.out", uu, n1, n2, max(n1, n2), "%.3le ");
-	}
-
-	double norm_koef = sqrt(d->d_phi * d->d_la);
-	printf("  lapl nr2=%le\n", norm_koef * dist2(uu, v, d->n_la * d->n_phi));
-	printf("  lapl nr2 (without phi=0)=%le\n", norm_koef * dist2(&uu[d->n_la], &v[d->n_la], d->n_la * (d->n_phi - 1)));
-	printf("  lapl inside nr1=%le\n", _matrix_inside_diff(uu, v, d->n_phi, d->n_la));
-	printf("  h1=%.16le\n", d->d_phi);
-	printf("  h2=%.16le\n", d->d_la);
-	printf("  h1^2=%.16le\n", d->d_phi2);
-	printf("  h2^2=%.16le\n", d->d_la2);
-	printf("  h1^2+h2^2=%.16le\n", d->d_la2 + d->d_phi2);
-
-	//для обращения нужно краевое условие
-	if (!d->full) {
-		for (int j = 0; j < d->n_la; ++j) {
-			v[_pOff(0, j)] = 0;
-		}
-	} else {
-		//для обращения нужна ортогональность единице
-		//0'я гармоника должна быть равна нулю
-	}
-
-	lapl_1(v, v);
-	printf("  |Lapl(Lapl_1)|=%.16le\n",dist1(v, u, nn));
-	if (d->full) {
-		_fprintfwmatrix("out/laplas_1_full.out", v, n1, n2, max(n1, n2), "%.3le ");
-	} else {
-		_fprintfwmatrix("out/laplas_1_half.out", v, n1, n2, max(n1, n2), "%.3le ");
-	}
-
-	delete [] u; delete [] uu;
-	delete [] v;
-}
-
-void SLaplacian::check0()
-{
-	printf("checking data ... \n");
-	printf("  n_la=%d\n", d->n_la);
-	printf("  n_phi=%d\n", d->n_phi);
-	printf("  use_fft=%d\n", d->use_fft);
-	printf("  full=%d\n", d->full);
+	d->XYtoU(Dest, &d->MF[0]);
 }

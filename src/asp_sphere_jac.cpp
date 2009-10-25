@@ -37,6 +37,7 @@
 #include <math.h>
 #include <assert.h>
 #include <string.h>
+#include <vector>
 
 #include "asp_excs.h"
 #include "asp_macros.h"
@@ -45,6 +46,7 @@
 #include "asp_sphere_jac.h"
 
 using namespace asp;
+using namespace std;
 
 //макросы для нахождения отступа в массиве для точки пространства
 #define  pOff(i, j) ( i ) * n_la + ( j )
@@ -55,25 +57,24 @@ using namespace asp;
 #define REGISTER_J( name , func ) \
 	void name(double * dst, const double *u, const double *v) \
 	{ \
-		double * tmp = new double[nn]; \
+		vector < double > tmp(nn); \
 		for (int i = 0; i < n_phi; ++i) { \
 			for (int j = 0; j < n_la; ++j) { \
 				tmp[pOff(i, j)] = func(u, v, i, j); \
 			} \
 		} \
-		memcpy(dst, tmp, nn * sizeof(double)); \
-		delete [] tmp; \
+		memcpy(dst, &tmp[0], nn * sizeof(double)); \
 	}
 
 class SJacobian::Private: public SSteps  {
 public:
-	double* COS; //!<значения косинусов по широте
+	vector < double > COS; //!<значения косинусов по широте
 	int nn;
 	Private(int _n_phi, int _n_la, bool _full)
 		:  SSteps(_n_phi, _n_la, _full),
 		COS(0)
 	{
-		COS = new double[2 * (n_phi + 1)];
+		COS.resize(2 * (n_phi + 1));
 		nn = n_phi * n_la;
 
 		double phi;
@@ -86,11 +87,6 @@ public:
 			COS[2 * i + 1] = cos(phi + 0.5 * d_phi);
 		}
 	}
-
-	~Private() {
-		if (COS) delete [] COS;
-	}
-
 
 	/*!
 	   \param i__1 - i-1
