@@ -49,24 +49,12 @@ public:
 
 	double *B1; //!<временная матрица	
 
-	void setTau(double _tau) {
-		tau   = _tau;
-		tau_1 = 1.0 / _tau;
-
-		forward_mult  = - conf->theta * conf->mu;
-		forward_diag  = tau_1 + conf->theta * conf->sigma;
-
-		backward_mult = (1.0 - conf->theta) * conf->mu;
-		backward_diag = tau_1 - (1.0 - conf->theta) * conf->sigma;
-	}
-
 	Private(BaroclinConf& _conf)
 		: SData(_conf.n_phi, _conf.n_la, _conf.full),
 		p(0), conf(&_conf), cor(0), B1(0)
 	{
 		init();
 		reset();
-		setTau(conf->tau);
 
 		nn = n_phi * n_la;
 	}
@@ -85,58 +73,6 @@ public:
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
 				cor[pOff(i, j)] = conf->cor(PHI[i], LA[j], conf);
-			}
-		}
-	}
-
-	/*!
-	 \f[ J(u, v) = \frac{1}{cos(\phi)} 
-	 \bigl( 
-	   \frac{\partial u}{\partial \lambda} \frac{\partial v}{\partial \phi}
-	  -\frac{\partial u}{\partial \phi} \frac{\partial v}{\partial \lambda}
-	 \bigr)
-	 \f]
-	*/
-	double Jacobian(const double *u, const double *v, int i, int j)
-	{
-#ifdef _BARVORTEX_ARAKAWA
-		return jac->J(u, v, i, j);
-#else
-		return jac->J1(u, v, i, j);
-#endif
-	}
-
-	void Jacobian(double * dst, const double *u, const double *v)
-	{
-		for (int i = 0; i < n_phi; ++i) {
-			for (int j = 0; j < n_la; ++j) {
-				dst[pOff(i, j)] = Jacobian(u, v, i, j);
-			}
-		}
-	}
-
-	/*!
-	   Находит константную правую часть:
-	   \f[
-	     \frac{\omega^n}{\tau} + (1-\theta)L\omega^n+f(x,y)
-	   \f]
-	 */
-	void take_B(double * dest, const double * omg, int have_rp) const
-	{
-		int    off;
-		double rp       = 0.0;	
-		double lpl;
-
-		for (int i = 0; i < n_phi; ++i) {
-			for (int j = 0; j < n_la; ++j) {
-				off  = pOff(i, j);
-				lpl  = lapl->lapl(omg, i, j);
-				if (have_rp) rp  = conf->rp1(PHI[i], LA[j], 0, conf);
-
-				dest[off] = omg[off] * tau_1 +
-					(1. - conf->theta) * 
-					   ( - conf->sigma * omg[off] + lpl * conf->mu) //оператор ~L
-					+ rp;
 			}
 		}
 	}
