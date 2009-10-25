@@ -194,10 +194,11 @@ public:
 	}
 
 	void init_filter() {
-		//double p   = 1.0 / cos(69.0 / 180.0 * M_PI);
+		double p   = 1.0 / cos(69.0 / 180.0 * M_PI);
 		//double p   = 1.0 / cos(5.0 / 180.0 * M_PI);
 		//double p   = 1.0 / cos(69.0 / 180.0 * M_PI);
-		double p   = 1.0 / cos(36.0 / 180.0 * M_PI);
+		//double p   = 1.0 / cos(36.0 / 180.0 * M_PI);
+		//double p = 1.0 / cos(36. / 180. * M_PI);
 		//double p = 1.0;
 		//double p = d_la / d_phi;
 
@@ -207,7 +208,7 @@ public:
 			//?
 			double c = cos(phi(i));
 			for (int m = 1; m < n_la; ++m) {
-				double l = c * p / sin(la(m) * 0.5);
+				double l = c * p / sin(la(m) * 0.25);
 				Fc[m * n_phi + i] = min(1.0, l);
 			}
 		}
