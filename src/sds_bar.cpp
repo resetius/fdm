@@ -165,14 +165,11 @@ void BarVortex::S(double *h1, const double *h) {
 void BarVortex::LT_step(double *h1, const double *h, const double *z)
 {
 	if (d->conf->filter) {
-		d->lapl->filter(h1, h1);
+		d->lapl->filter(h1, h);
+		d->L_step_t(h1, h1, z);
+	} else {
+		d->L_step_t(h1, h, z);
 	}
-
-#ifdef _BARVORTEX_LINEAR_PURE_IM
-	d->L_step_t(h1, h, z);
-#else
-	d->L_step_t(h1, h, z);
-#endif
 }
 
 void BarVortex::L_step(double *h1, const double *h, const double * z)
