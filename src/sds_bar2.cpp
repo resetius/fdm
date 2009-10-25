@@ -159,11 +159,7 @@ void Baroclin::S(double *u11, double * u21, const double *u1, const double *u2) 
 void Baroclin::L_step(double *u11, double * u21, const double *u1, const double *u2, 
 		const double *z1, const double *z2)
 {
-#ifdef _BARVORTEX_LINEAR_PURE_IM
-	d->L_step_im(h1, h, z);
-#else
-	d->L_step(u11, u1, z1);
-#endif
+	d->L_step_im(u11, u21, u1, u2, z1, z2);
 
 	if (d->conf->filter) {
 		d->lapl->filter(u11, u11);
@@ -179,20 +175,11 @@ void Baroclin::L_1_step(double *u11, double * u21, const double *u1, const doubl
 		d->lapl->filter_1(u21, u21);
 	}
 
-	//SDS::L_1_step(h1, h1, z); return;
-#ifdef _BARVORTEX_LINEAR_PURE_IM
 	if (d->conf->filter) {
-		d->L_1_step_im(h1, h1, z);
+		d->L_1_step_im(u11, u21, u11, u2, z1, z2);
 	} else {
-		d->L_1_step_im(h1, h, z);
+		d->L_1_step_im(u11, u21, u1, u2, z1, z2);
 	}
-#else
-	if (d->conf->filter) {
-		d->L_1_step_im(u11, u11, z1);
-	} else {
-		d->L_1_step_im(u11, u1, z1);
-	}
-#endif
 }
 
 double Baroclin::scalar(const double *x, const double *y, int n)
