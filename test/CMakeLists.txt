@@ -6,7 +6,11 @@ target_link_libraries(fdm_barvortex fdm)
 add_executable(fdm_baroclin test_baroclin.cpp)
 target_link_libraries(fdm_baroclin fdm)
 
+add_executable(fdm_slaplace test_slaplace.cpp)
+target_link_libraries(fdm_slaplace fdm)
+
 if (OPENMP_FOUND)
 	set_target_properties(fdm_barvortex PROPERTIES LINK_FLAGS ${OpenMP_C_FLAGS})
 	set_target_properties(fdm_baroclin PROPERTIES LINK_FLAGS ${OpenMP_C_FLAGS})
+	set_target_properties(fdm_slaplace PROPERTIES LINK_FLAGS ${OpenMP_C_FLAGS})
 endif (OPENMP_FOUND)
