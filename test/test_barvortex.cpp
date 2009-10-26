@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <math.h>
+#include <string.h>
 
 #include "sds_bar.h"
 #include "asp_misc.h"
