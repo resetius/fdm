@@ -68,6 +68,39 @@ void set_fpe_except()
 }
 #endif
 
+void calc_barvortex_right_part()
+{
+	BarVortexConf conf;
+	conf.steps = 1;
+	double R   = 6.371e+6;
+	double H   = 5000;
+	conf.omg   = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./conf.omg;
+	conf.k1    = 1.0;
+	conf.k2    = 1.0;
+	conf.tau   = 0.001;
+	conf.sigma = 1.14e-2;
+	conf.mu    = 6.77e-5;
+	conf.n_phi = 24;
+	conf.n_la  = 32;
+	conf.full  = 0;
+	conf.rho   = 1;
+	conf.theta = 0.5;
+
+	conf.cor   = cor;
+	conf.rp    = rp;
+	conf.filter = 1;
+
+	int n = conf.n_phi * conf.n_la;
+
+	double t = 0;
+	double T = 30 * 2.0 * M_PI;;
+	double nr;
+	int i = 0;
+
+	BarVortex bv(conf);
+}
+
 void test_barvortex()
 {
 	BarVortexConf conf;

@@ -32,12 +32,12 @@
  */
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-/*________ задача Баротропного вихря на сфере - реализация ________________*/
+/*________ Р·Р°РґР°С‡Р° Р‘Р°СЂРѕС‚СЂРѕРїРЅРѕРіРѕ РІРёС…СЂСЏ РЅР° СЃС„РµСЂРµ - СЂРµР°Р»РёР·Р°С†РёСЏ ________________*/
 
 #include <assert.h>
 
 /*!
-   Функторы линеаризировнного Якобиана
+   Р¤СѓРЅРєС‚РѕСЂС‹ Р»РёРЅРµР°СЂРёР·РёСЂРѕРІРЅРЅРѕРіРѕ РЇРєРѕР±РёР°РЅР°
  */
 template < typename Jac >
 class J_functor {
@@ -49,8 +49,8 @@ public:
 	J_functor(Jac * impl, int n1, int n2): 
 	  impl_(impl), n1_(n1), n2_(n2) {}
 
-	/*! берется сумма трех якобианов,
-	    чтобы разделить по J(u, b + cor) на сумму
+	/*! Р±РµСЂРµС‚СЃСЏ СЃСѓРјРјР° С‚СЂРµС… СЏРєРѕР±РёР°РЅРѕРІ,
+	    С‡С‚РѕР±С‹ СЂР°Р·РґРµР»РёС‚СЊ РїРѕ J(u, b + cor) РЅР° СЃСѓРјРјСѓ
 
 		J(p1, p2, i, j) + 
 		J(p3, p4, i, j) + 
@@ -149,10 +149,10 @@ JT_functor < Jac, Lapl > make_JT(Jac * impl, Lapl * lapl, int n1, int n2)
 class BarVortex::Private: public SData {
 public:
 	BarVortex * p;
-	BarVortexConf *conf; //!<конфиг
+	BarVortexConf *conf; //!<РєРѕРЅС„РёРі
 
 	int nn;
-	vector < double > cor; //!<кориолис
+	vector < double > cor; //!<РєРѕСЂРёРѕР»РёСЃ
 
 	void setTau(double _tau) {
 		tau   = _tau;
@@ -214,7 +214,7 @@ public:
 	}
 
 	/*!
-	   Находит константную правую часть:
+	   РќР°С…РѕРґРёС‚ РєРѕРЅСЃС‚Р°РЅС‚РЅСѓСЋ РїСЂР°РІСѓСЋ С‡Р°СЃС‚СЊ:
 	   \f[
 	     \frac{\omega^n}{\tau} + (1-\theta)L\omega^n+f(x,y)
 	   \f]
@@ -233,15 +233,15 @@ public:
 
 				dest[off] = omg[off] * tau_1 +
 					(1. - conf->theta) * 
-					   ( - conf->sigma * omg[off] + lpl * conf->mu) //оператор ~L
+					   ( - conf->sigma * omg[off] + lpl * conf->mu) //РѕРїРµСЂР°С‚РѕСЂ ~L
 					+ rp;
 			}
 		}
 	}
 
 	/*!
-	   неявная схема с внутренними итерациями
-	   один шаг с правой частью \param f
+	   РЅРµСЏРІРЅР°СЏ СЃС…РµРјР° СЃ РІРЅСѓС‚СЂРµРЅРЅРёРјРё РёС‚РµСЂР°С†РёСЏРјРё
+	   РѕРґРёРЅ С€Р°Рі СЃ РїСЂР°РІРѕР№ С‡Р°СЃС‚СЊСЋ \param f
 	*/
 	void S_step_im(double *dest, const double *h)
 	{
@@ -255,13 +255,13 @@ public:
 
 		vector < double > bnd    (n_la);
 
-		/*!находим \f$\omega_0 = \delta h_0\f$*/
+		/*!РЅР°С…РѕРґРёРј \f$\omega_0 = \delta h_0\f$*/
 		lapl->lapl(&omg_old[0], h);
 		//?
 		if (!full) { memset(&omg_old[0], 0, n_la * sizeof(double)); }
 
 		/*!
-		  в B1 кладем результат
+		  РІ B1 РєР»Р°РґРµРј СЂРµР·СѓР»СЊС‚Р°С‚
 	      \f[
 	        \frac{\omega^n}{\tau} + (1-\theta)L\omega^n+f(x,y)
 	      \f]
@@ -299,8 +299,8 @@ public:
 			vector_sum(&psi[0], &psi[0], h, nn);
 			vector_mult_scalar(&psi[0], &psi[0], 0.5, nn);
 
-			//для установки краевого условия
-			//начинаем от s!
+			//РґР»СЏ СѓСЃС‚Р°РЅРѕРІРєРё РєСЂР°РµРІРѕРіРѕ СѓСЃР»РѕРІРёСЏ
+			//РЅР°С‡РёРЅР°РµРј РѕС‚ s!
 			for (int i = s; i < n_phi; ++i) {
 				for (int j = 0; j < n_la; ++j) {
 					int off  = pOff(i, j);
@@ -311,19 +311,19 @@ public:
 				}
 			}
 
-			/*вычисляем u с крышкой*/
+			/*РІС‹С‡РёСЃР»СЏРµРј u СЃ РєСЂС‹С€РєРѕР№*/
 //			if (!full) { memset(omg, 0, n_la * sizeof(double));	}
 			//_fprintfwmatrix("out/omg1.out", omg, n_la, n_phi,
 			//	std::max(n_la, n_phi), "%23.16le ");
 			
-//здесь должно быть краевое условие laplace psi?
+//Р·РґРµСЃСЊ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РєСЂР°РµРІРѕРµ СѓСЃР»РѕРІРёРµ laplace psi?
 			if (!full) { 
 				memcpy(&omg[0], &bnd[0], n_la * sizeof(double));
 			}
 
 			lapl->lapl_1(&omg[0], &omg[0], forward_mult, forward_diag);
 
-			/*нашли омега, чтоб найти psi, надо обратить оператор лапласа*/
+			/*РЅР°С€Р»Рё РѕРјРµРіР°, С‡С‚РѕР± РЅР°Р№С‚Рё psi, РЅР°РґРѕ РѕР±СЂР°С‚РёС‚СЊ РѕРїРµСЂР°С‚РѕСЂ Р»Р°РїР»Р°СЃР°*/
 			if (!full) { 
 				//memcpy(bnd, omg, n_la * sizeof(double));
 				memset(&omg[0], 0, n_la * sizeof(double));	
@@ -349,7 +349,7 @@ public:
 		memcpy(dest, &psi[0], nn * sizeof(double));
 	}
 
-	//явная схема
+	//СЏРІРЅР°СЏ СЃС…РµРјР°
 	void S_step(double *h1, const double *h, const double *F)
 	{	
 		vector < double > omg (nn);
@@ -359,7 +359,7 @@ public:
 		double rp;
 		double lpl;		
 
-		/*!находим \f$\omega_0 = \delta h_0\f$*/
+		/*!РЅР°С…РѕРґРёРј \f$\omega_0 = \delta h_0\f$*/
 		lapl->lapl(&omg[0], h);
 		if (!full) { memset(&omg[0], 0, n_la * sizeof(double)); }
 		for (int i = 0; i < n_phi; ++i) {
@@ -379,24 +379,24 @@ public:
 			}
 		}
 
-		/*вычисляем u с крышкой*/
+		/*РІС‹С‡РёСЃР»СЏРµРј u СЃ РєСЂС‹С€РєРѕР№*/
 		if (!full) { memset(&B1[0], 0, n_la * sizeof(double)); }
 		lapl->lapl_1(&B1[0], &B1[0], forward_mult, forward_diag);
-		/*нашли омега, чтоб найти h1, надо обратить оператор лапласа*/
+		/*РЅР°С€Р»Рё РѕРјРµРіР°, С‡С‚РѕР± РЅР°Р№С‚Рё h1, РЅР°РґРѕ РѕР±СЂР°С‚РёС‚СЊ РѕРїРµСЂР°С‚РѕСЂ Р»Р°РїР»Р°СЃР°*/
 		if (!full) { memset(&B1[0], 0, n_la * sizeof(double)); }
 		lapl->lapl_1(h1, &B1[0]);
 	}
 
-	//неявная схема с внутренними итерациями
+	//РЅРµСЏРІРЅР°СЏ СЃС…РµРјР° СЃ РІРЅСѓС‚СЂРµРЅРЅРёРјРё РёС‚РµСЂР°С†РёСЏРјРё
 	void L_step_im(double *u1, const double *u_, 
 		const double * z, int maxIt = _BARVORTEX_IM_MAX_IT)
 	{
 		vector < double > z_lapl(nn);
 		
-		vector < double > pt1(nn); //лаплас, умноженный на коэф
-		vector < double > pt2(nn); //лаплас в квадрате, умноженный на коэф
-		vector < double > pt3(nn); //якобиан, умноженный на коэф
-		vector < double > omg(nn); //лаплас
+		vector < double > pt1(nn); //Р»Р°РїР»Р°СЃ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt2(nn); //Р»Р°РїР»Р°СЃ РІ РєРІР°РґСЂР°С‚Рµ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt3(nn); //СЏРєРѕР±РёР°РЅ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > omg(nn); //Р»Р°РїР»Р°СЃ
 		vector < double > u  (nn);
 		vector < double > bnd(n_la);
 
@@ -405,14 +405,14 @@ public:
 		memcpy(&u[0], u_, nn * sizeof(double));
 
 		lapl->lapl(&z_lapl[0], z);
-		lapl->lapl(&pt1[0], &u[0]); //первая часть - лаплас, умноженный на коэф, 
-		//установка краевых условий
+		lapl->lapl(&pt1[0], &u[0]); //РїРµСЂРІР°СЏ С‡Р°СЃС‚СЊ - Р»Р°РїР»Р°СЃ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„, 
+		//СѓСЃС‚Р°РЅРѕРІРєР° РєСЂР°РµРІС‹С… СѓСЃР»РѕРІРёР№
 
 //?
 		if (!full) { memset(&z_lapl[0], 0, n_la * sizeof(double)); }
 		if (!full) { memset(&pt1[0], 0, n_la * sizeof(double)); }
 
-		memcpy(&omg[0], &pt1[0], nn * sizeof(double)); //сохраняем лаплас - понадобится в pt3
+		memcpy(&omg[0], &pt1[0], nn * sizeof(double)); //СЃРѕС…СЂР°РЅСЏРµРј Р»Р°РїР»Р°СЃ - РїРѕРЅР°РґРѕР±РёС‚СЃСЏ РІ pt3
 		
 		lapl->lapl(&pt2[0], &pt1[0]);
 		//(1-\theta)*lapl^2
@@ -475,7 +475,7 @@ public:
 		}
 	}
 
-	//неявная схема с внутренними итерациями
+	//РЅРµСЏРІРЅР°СЏ СЃС…РµРјР° СЃ РІРЅСѓС‚СЂРµРЅРЅРёРјРё РёС‚РµСЂР°С†РёСЏРјРё
 	void L_1_step_im(double *dest, const double *h_, 
 		const double * z, int maxIt = _BARVORTEX_IM_MAX_IT)
 	{
@@ -493,10 +493,10 @@ public:
 		double lpl;
 
 		memcpy(&h[0], h_, nn * sizeof(double));
-		/*!находим \f$\omega_0 = \delta h_0\f$*/
+		/*!РЅР°С…РѕРґРёРј \f$\omega_0 = \delta h_0\f$*/
 		lapl->lapl(&omg_old[0], &h[0]);
 		lapl->lapl(&z_lapl[0], &z[0]);
-		//установка краевых условий
+		//СѓСЃС‚Р°РЅРѕРІРєР° РєСЂР°РµРІС‹С… СѓСЃР»РѕРІРёР№
 		if (!full) { memset(&z_lapl[0], 0, n_la * sizeof(double)); }
 		if (!full) { memset(&omg_old[0], 0, n_la * sizeof(double)); }
 
@@ -539,10 +539,10 @@ public:
 				}
 			}
 
-			/*вычисляем u с крышкой*/
+			/*РІС‹С‡РёСЃР»СЏРµРј u СЃ РєСЂС‹С€РєРѕР№*/
 			if (!full) { memset(&omg[0], 0, n_la * sizeof(double));	}
 			lapl->lapl_1(&omg[0], &omg[0], backward_mult, backward_diag);
-			/*нашли омега, чтоб найти h1, надо обратить оператор лапласа*/
+			/*РЅР°С€Р»Рё РѕРјРµРіР°, С‡С‚РѕР± РЅР°Р№С‚Рё h1, РЅР°РґРѕ РѕР±СЂР°С‚РёС‚СЊ РѕРїРµСЂР°С‚РѕСЂ Р»Р°РїР»Р°СЃР°*/
 			if (!full) { memset(&omg[0], 0, n_la * sizeof(double));	}
 			lapl->lapl_1(&psi[0], &omg[0]);
 
@@ -560,25 +560,25 @@ public:
 		memcpy(dest, &psi[0], nn * sizeof(double));
 	}
 
-	//явная схема
+	//СЏРІРЅР°СЏ СЃС…РµРјР°
 	void L_step(double *u1, const double *u, const double * z)
 	{
 		vector < double > z_lapl(nn);
 		
-		vector < double > pt1 (nn); //лаплас, умноженный на коэф
-		vector < double > pt2 (nn); //лаплас в квадрате, умноженный на коэф
-		vector < double > pt3 (nn); //якобиан, умноженный на коэф
+		vector < double > pt1 (nn); //Р»Р°РїР»Р°СЃ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt2 (nn); //Р»Р°РїР»Р°СЃ РІ РєРІР°РґСЂР°С‚Рµ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt3 (nn); //СЏРєРѕР±РёР°РЅ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
 
 		J_functor < SJacobian > funct1(jac, n_phi, n_la);
 
 		lapl->lapl(&z_lapl[0], z);
-		lapl->lapl(&pt1[0], u); //первая часть - лаплас, умноженный на коэф, 
+		lapl->lapl(&pt1[0], u); //РїРµСЂРІР°СЏ С‡Р°СЃС‚СЊ - Р»Р°РїР»Р°СЃ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„, 
 
-		//установка краевых условий
+		//СѓСЃС‚Р°РЅРѕРІРєР° РєСЂР°РµРІС‹С… СѓСЃР»РѕРІРёР№
 		if (!full) { memset(&z_lapl[0], 0, n_la * sizeof(double)); }
 		if (!full) { memset(&pt1[0], 0, n_la * sizeof(double)); }
 
-		//умножаем позже, так как лаплас пока нужен
+		//СѓРјРЅРѕР¶Р°РµРј РїРѕР·Р¶Рµ, С‚Р°Рє РєР°Рє Р»Р°РїР»Р°СЃ РїРѕРєР° РЅСѓР¶РµРЅ
 //		memset(pt3, 0, nn * sizeof(double));
 		funct1.calc(&pt3[0], &u[0], &cor[0], z, &pt1[0], &z_lapl[0]);
 		vector_mult_scalar(&pt3[0], &pt3[0], -conf->rho, nn);
@@ -602,14 +602,14 @@ public:
 		lapl->lapl_1(u1, u1);
 	}
 
-	//явная схема, сопряженная задача
+	//СЏРІРЅР°СЏ СЃС…РµРјР°, СЃРѕРїСЂСЏР¶РµРЅРЅР°СЏ Р·Р°РґР°С‡Р°
 	void L_step_t(double *v1, const double *v, const double * z)
 	{
 		vector < double > z_lapl(nn);
 		
-		vector < double > pt1 (nn); //лаплас, умноженный на коэф
-		vector < double > pt2 (nn); //лаплас в квадрате, умноженный на коэф
-		vector < double > pt3 (nn); //якобиан, умноженный на коэф
+		vector < double > pt1 (nn); //Р»Р°РїР»Р°СЃ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt2 (nn); //Р»Р°РїР»Р°СЃ РІ РєРІР°РґСЂР°С‚Рµ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt3 (nn); //СЏРєРѕР±РёР°РЅ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
 
 		JT_functor < SJacobian, SLaplacian > 
 			funct2(jac, lapl, n_phi, n_la, full);
@@ -643,15 +643,15 @@ public:
 		if (!full) { memset(v1, 0, n_la * sizeof(double)); }
 	}
 
-	//неявная схема, сопряженная задача
+	//РЅРµСЏРІРЅР°СЏ СЃС…РµРјР°, СЃРѕРїСЂСЏР¶РµРЅРЅР°СЏ Р·Р°РґР°С‡Р°
 	void L_step_im_t(double *v1, const double *v, 
 		const double * z, int maxIt = _BARVORTEX_IM_MAX_IT)
 	{
 		vector < double > z_lapl(nn);
 		
-		vector < double > pt1 (nn); //лаплас, умноженный на коэф
-		vector < double > pt2 (nn); //лаплас в квадрате, умноженный на коэф
-		vector < double > pt3 (nn); //якобиан, умноженный на коэф
+		vector < double > pt1 (nn); //Р»Р°РїР»Р°СЃ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt2 (nn); //Р»Р°РїР»Р°СЃ РІ РєРІР°РґСЂР°С‚Рµ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt3 (nn); //СЏРєРѕР±РёР°РЅ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
 
 		vector < double > v1_new(nn);
 		vector < double > v1_old(nn);
@@ -678,12 +678,12 @@ public:
 		vector_mult_scalar(&pt2[0], &pt2[0], 
 			(1. - conf->theta) * conf->mu, nn);
 
-		//параметры явной схемы
+		//РїР°СЂР°РјРµС‚СЂС‹ СЏРІРЅРѕР№ СЃС…РµРјС‹
 		//__________________________________________________________
-		vector < double > pt11   (nn); //лаплас, умноженный на коэф
-		vector < double > pt21   (nn); //лаплас в квадрате, умноженный на коэф
-		vector < double > pt31   (nn); //якобиан, умноженный на коэф
-		vector < double > omg    (nn); //лаплас
+		vector < double > pt11   (nn); //Р»Р°РїР»Р°СЃ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt21   (nn); //Р»Р°РїР»Р°СЃ РІ РєРІР°РґСЂР°С‚Рµ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt31   (nn); //СЏРєРѕР±РёР°РЅ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > omg    (nn); //Р»Р°РїР»Р°СЃ
 		vector < double > omg_n  (nn);
 		vector < double > u1_o   (nn);
 		vector < double > u1     (nn);
@@ -691,10 +691,10 @@ public:
 		const double * u  = v;
 
 		J_functor < SJacobian > funct1(jac, n_phi, n_la);
-		lapl->lapl(&pt11[0], u); //первая часть - лаплас, умноженный на коэф, 
-		//установка краевых условий		
+		lapl->lapl(&pt11[0], u); //РїРµСЂРІР°СЏ С‡Р°СЃС‚СЊ - Р»Р°РїР»Р°СЃ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„, 
+		//СѓСЃС‚Р°РЅРѕРІРєР° РєСЂР°РµРІС‹С… СѓСЃР»РѕРІРёР№		
 		if (!full) { memset(&pt11[0], 0, n_la * sizeof(double)); }
-		memcpy(&omg[0], &pt11[0], nn * sizeof(double)); //сохраняем лаплас - понадобится в pt3
+		memcpy(&omg[0], &pt11[0], nn * sizeof(double)); //СЃРѕС…СЂР°РЅСЏРµРј Р»Р°РїР»Р°СЃ - РїРѕРЅР°РґРѕР±РёС‚СЃСЏ РІ pt3
 		lapl->lapl(&pt21[0], &pt11[0]);
 		vector_mult_scalar(&pt21[0], &pt21[0], 
 			(1. - conf->theta) * conf->mu, nn);
@@ -706,7 +706,7 @@ public:
 		//__________________________________________________________
 
 
-		//в неявной схеме pt1 и pt2 фиксированы, по pt3 идет итерирование
+		//РІ РЅРµСЏРІРЅРѕР№ СЃС…РµРјРµ pt1 Рё pt2 С„РёРєСЃРёСЂРѕРІР°РЅС‹, РїРѕ pt3 РёРґРµС‚ РёС‚РµСЂРёСЂРѕРІР°РЅРёРµ
 
 		double norm;
 		int it = 0;
@@ -715,7 +715,7 @@ public:
 			++it;
 
 			//______________________________________________________
-			//явная часть
+			//СЏРІРЅР°СЏ С‡Р°СЃС‚СЊ
 			memcpy(&u1_o[0], &u1[0], nn * sizeof(double));
 
 			vector_sum(&u1[0], &u1_o[0], &u[0], nn);
@@ -767,27 +767,27 @@ public:
 		memcpy(&v1[0], &v1_new[0], nn * sizeof(double));
 	}
 
-	//явная схема
-	//warning: оператор не является обратным к L_step, так как 
-	//J берется от другого значения
+	//СЏРІРЅР°СЏ СЃС…РµРјР°
+	//warning: РѕРїРµСЂР°С‚РѕСЂ РЅРµ СЏРІР»СЏРµС‚СЃСЏ РѕР±СЂР°С‚РЅС‹Рј Рє L_step, С‚Р°Рє РєР°Рє 
+	//J Р±РµСЂРµС‚СЃСЏ РѕС‚ РґСЂСѓРіРѕРіРѕ Р·РЅР°С‡РµРЅРёСЏ
 	void L_1_step(double *u1, const double *u, const double * z)
 	{
 		vector < double > z_lapl(nn);
 		
-		vector < double > pt1 (nn); //лаплас, умноженный на коэф
-		vector < double > pt2 (nn); //лаплас в квадрате, умноженный на коэф
-		vector < double > pt3 (nn); //якобиан, умноженный на коэф
+		vector < double > pt1 (nn); //Р»Р°РїР»Р°СЃ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt2 (nn); //Р»Р°РїР»Р°СЃ РІ РєРІР°РґСЂР°С‚Рµ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
+		vector < double > pt3 (nn); //СЏРєРѕР±РёР°РЅ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„
 
 		J_functor < SJacobian > funct1(jac, n_phi, n_la);
 
 		lapl->lapl(&z_lapl[0], z);
-		lapl->lapl(&pt1[0], u); //первая часть - лаплас, умноженный на коэф, 
+		lapl->lapl(&pt1[0], u); //РїРµСЂРІР°СЏ С‡Р°СЃС‚СЊ - Р»Р°РїР»Р°СЃ, СѓРјРЅРѕР¶РµРЅРЅС‹Р№ РЅР° РєРѕСЌС„, 
 
-		//установка краевых условий
+		//СѓСЃС‚Р°РЅРѕРІРєР° РєСЂР°РµРІС‹С… СѓСЃР»РѕРІРёР№
 		if (!full) { memset(&z_lapl[0], 0, n_la * sizeof(double)); }
 		if (!full) { memset(&pt1[0], 0, n_la * sizeof(double)); }
 
-		//умножаем позже, так как лаплас пока нужен
+		//СѓРјРЅРѕР¶Р°РµРј РїРѕР·Р¶Рµ, С‚Р°Рє РєР°Рє Р»Р°РїР»Р°СЃ РїРѕРєР° РЅСѓР¶РµРЅ
 		funct1.calc(&pt3[0], u, &cor[0], z, &pt1[0], &z_lapl[0]);
 		vector_mult_scalar(&pt3[0], &pt3[0], conf->rho, nn);
 
@@ -817,6 +817,26 @@ public:
 	double norm(const double *x, int n)
 	{
 		return sqrt(scalar(x, x, n));
+	}
+
+	void calc_rp(double * rp, const double * u)
+	{
+		vector < double > w(nn);
+		vector < double > dw(nn);
+		vector < double > jac1(nn);
+		vector < double > jac2(nn);
+
+		lapl->lapl(&w[0], &u[0]);  memset(&w[0], 0, n_la * sizeof(double));
+		lapl->lapl(&dw[0], &w[0]); memset(&dw[0], 0, n_la * sizeof(double));
+
+		jac->J(&jac1[0], &u[0], &w[0]);
+		jac->J(&jac2[0], &u[0], &cor[0]);
+
+		vector_sum(rp, &jac1[0], &jac2[0], nn);
+		vector_sum1(rp, rp, &w[0], 1.0, conf->sigma, nn);
+		vector_sum1(rp, rp, &dw[0], 1.0, -conf->mu, nn);
+
+		memset(rp, 0, n_la * sizeof(double));
 	}
 };
 

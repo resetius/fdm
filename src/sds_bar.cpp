@@ -234,3 +234,8 @@ double BarVortex::lambda(int j)
 	return d->LA[j];
 }
 
+void BarVortex::calc_rp(double * rp, const double * u)
+{
+	d->calc_rp(rp, u);
+}
+
