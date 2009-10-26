@@ -76,8 +76,12 @@ struct BarVortexConf
 
 	typedef double (*rp_t ) (double phi, double lambda, BarVortexConf * conf);
 	rp_t rp;
+	double * rp_add;
 	rp_t cor;
+	double * cor_add;
 	int filter;
+
+	BarVortexConf(): rp(0), rp_add(0), cor(0), cor_add(0) {}
 };
 
 class BarVortex

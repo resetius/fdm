@@ -20,10 +20,10 @@ void do_all(const char * fname)
 	int n_la;
 	int n_phi;
 
-	asp::load_matrix_from_txtfile(&f, &n_la, &n_phi, fname);
+	asp::load_matrix_from_txtfile(&f, &n_phi, &n_la, fname);
 	SLaplacian l(n_phi, n_la, false);
 
-	vector < double > tmp(n_la, n_phi);
+	vector < double > tmp(n_la * n_phi);
 	memset(f, 0, n_la * sizeof(double));
 
 	l.lapl(&tmp[0], f);

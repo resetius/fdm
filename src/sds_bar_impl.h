@@ -183,6 +183,9 @@ public:
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
 				cor[pOff(i, j)] = conf->cor(PHI[i], LA[j], conf);
+				if (conf->cor_add) {
+					cor[pOff(i, j)] += conf->cor_add[pOff(i, j)];
+				}
 			}
 		}
 	}
@@ -229,7 +232,15 @@ public:
 			for (int j = 0; j < n_la; ++j) {
 				off  = pOff(i, j);
 				lpl  = lapl->lapl(omg, i, j);
-				if (have_rp) rp  = conf->rp(PHI[i], LA[j], conf);
+				if (have_rp) {
+					rp = 0;
+					if (conf->rp) {
+						rp += conf->rp(PHI[i], LA[j], conf);
+					}
+					if (conf->rp_add) {
+						rp += conf->rp_add[off];
+					}
+				}
 
 				dest[off] = omg[off] * tau_1 +
 					(1. - conf->theta) * 
