@@ -38,7 +38,7 @@
 //использовать библиотеку fftw?
 //warning: библиотека под GPL лицензией!
 //для коммерческих разработок надо убрать этот define !
-//#define _FFTW 
+//#define _FFTW
 
 	enum FFT_type {
 		FFT_SIN      = 1, //!<синусное преобразование
@@ -108,20 +108,12 @@
 	/*!медленное косинусное преобразование*/
 	void cFT(double *S, double *s, double dx, int N);
 
-#ifdef _FFTW
-	void sFFT_fftw(double *S, double *ss, double dx, int N);
-	void cFFT_fftw(double *S, double *ss, double dx, int N);
-
-	void pFFT_1_fftw(double *S, double *s1, double dx, int N);
-	void pFFT_fftw(double *S, double *s, double dx, int N);
-#endif
-
 /*~~~ значения синусов и косинусов даны ~~~~~ */
-/*вместо sin((2 * k - 1) * M_PI * j / (double)(idx * 2)); 
-  используем массив 
+/*вместо sin((2 * k - 1) * M_PI * j / (double)(idx * 2));
+  используем массив
   ffSIN[(2 * k - 1) * vm * 2 * n_la + j];
   вместо cos((2 * k - 1) * M_PI * j / (double)(idx * 2));
-  используем массив 
+  используем массив
   ffCOS[(2 * k - 1) * vm * 2 * n_la + j];
   где, значения берутся так в случае сетки на сфере:
   (в случаях других сеток будет отличаться нормировка
@@ -145,7 +137,7 @@
        Самарский-Николаев, страница 180-181
 	  \param S  - ответ
 	  \param s  - начальное условие
-	  \param dx - множитель перед суммой	  
+	  \param dx - множитель перед суммой
 	  \param p  - структура, проинициализированная FFT_init
 	*/
 	void pFFT_2(double *S, double *s, double dx, fft * p);

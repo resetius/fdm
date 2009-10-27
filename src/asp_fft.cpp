@@ -37,16 +37,7 @@
 #include "asp_macros.h"
 #include "asp_fft.h"
 
-#ifdef _FFTW
-#include "fftw3.h"
-#endif
-
 #define SQRT_M_1_PI 0.56418958354775629
-
-#ifdef _FFTW
-static void sFFT_fftw_2(const fftw_plan p, double *S, double *ss, double dx, int N);
-static void cFFT_fftw_2(const fftw_plan p, double *S, double *ss, double dx, int N);
-#endif
 
 fft * FFT_init(int type, int N)
 {
@@ -118,7 +109,7 @@ void FFT_free(fft * s)
 	  \param N  - число точек
 	  \param n  - log2(N)
 	*/
-	void pFFT_1(double *S, double *s1, double dx, int N, int n) 
+	void pFFT_1(double *S, double *s1, double dx, int N, int n)
 	{
 		int p, s, j, idx, idx2, vm, k;
 		int N_2 = N / 2;
@@ -183,33 +174,7 @@ void FFT_free(fft * s)
 		free(a); free(_y); free(y);
 	}
 
-#ifdef _FFTW
-	void pFFT_1_fftw(double *S, double *s1, double dx, int N)
-	{
-		int k;
-		int N_2 = N / 2;
-		//вычисляем нужные + "лишние" значения
-		double * y  = (double*)malloc((N + 1) * sizeof(double));
-		double *_y  = (double*)malloc((N + 1) * sizeof(double));
-
-		sFFT_fftw(_y, s1, 1.0, N);
-		cFFT_fftw(y,  s1, 1.0, N);
-
-		for (k = 0; k <= N_2; k++) {
-			S[k] = y[k] * dx;
-		}
-		S[0] *= M_SQRT1_2;
-
-		/*for (k = 1; k <= N_2 - 1; k++) {
-			S[N - k] = _y[k] * dx;
-		}
-		S[N_2] *= M_SQRT1_2;*/
-
-		free(y); free(_y);
-	}
-#endif
-
-	void pFFT_2_1(double *S, const double *s1, double dx, fft * ft) 
+	void pFFT_2_1(double *S, const double *s1, double dx, fft * ft)
 	{
 		int p, s, j, idx, idx2, vm, k;
 		int N = ft->N, n = ft->n, sz = ft->sz;
@@ -315,49 +280,8 @@ void FFT_free(fft * s)
 		S[N_2] = y1[N_2];
 		free(y1); free(y2); free(ss);
 	}
-#ifdef _FFTW
-	void pFFT_fftw(double *S, double *s, double dx, int N)
-	{
-		int N_2 = N/2;
-		int k;
-		double *y1 = (double*)malloc((N_2 + 1) * sizeof(double));
-		double *y2 = (double*)malloc((N_2 + 1) * sizeof(double));
-		double *ss = (double*)malloc((N_2 + 1) * sizeof(double));
 
-		static fftw_plan p1 = 0;
-		static fftw_plan p2 = 0;
-
-//p1 = fftw_plan_r2r_1d(N_2-1, &s[1], &S[1], FFTW_RODFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
-//p2 = fftw_plan_r2r_1d(N_2+1, &s[0], &S[0], FFTW_REDFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
-
-		ss[0]=s[0]*M_SQRT1_2;
-		memcpy(&ss[1], &s[1], (N_2-1) * sizeof(double));
-
-		ss[N_2]=s[N_2]*M_SQRT1_2;
-
-		if (!p2) {
-			p2 = fftw_plan_r2r_1d(N_2+1, &ss[0], &y1[0], FFTW_REDFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
-		}
-		cFFT_fftw_2(p2, y1, ss, dx, N_2);
-
-		for (k = 1; k <= N_2-1; ++k) {
-			ss[k] = s[N-k];
-		}
-
-		if (!p1) p1 = fftw_plan_r2r_1d(N_2-1, &ss[1], &y2[1], FFTW_RODFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
-		sFFT_fftw_2(p1, y2, ss, dx, N_2);
-
-		for (k = 1; k <= N_2 - 1; ++k) {
-			S[k]   = (y1[k] + y2[k]);
-			S[N-k] = (y1[k] - y2[k]);
-		}
-		S[0]   = y1[0]  ;
-		S[N_2] = y1[N_2];
-		free(y1); free(y2); free(ss);
-	}
-#endif
-
-	void pFFT_2(double *S, double *s, double dx, fft * ft) 
+	void pFFT_2(double *S, double *s, double dx, fft * ft)
 	{
 		int N = ft->N;
 		int N_2 = N/2;
@@ -396,54 +320,6 @@ void FFT_free(fft * s)
 		free(y1); free(y2); free(ss);
 	}
 
-#ifdef _FFTW
-	void sFFT_fftw_2(const fftw_plan p, double *S, double *ss, double dx, int N) {
-		fftw_execute_r2r(p, &ss[1], &S[1]);
-		vector_mult_scalar(&S[1], &S[1], 0.5 * dx, N-1);
-	}
-
-	void sFFT_fftw(double *S, double *ss, double dx, int N) {
-		static fftw_plan p = 0;
-		
-		if (!p) p = fftw_plan_r2r_1d(N-1, &ss[1], &S[1], FFTW_RODFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
-
-		sFFT_fftw_2(p, S, ss, dx, N);
-
-		//fftw_execute(p);
-		//fftw_execute_r2r(p, &ss[1], &S[1]);
-		//vector_mult_scalar(&S[1], &S[1], 0.5 * dx, N-1);
-		//fftw_destroy_plan(p);
-	}
-
-	void cFFT_fftw_2(const fftw_plan p, double *S, double *ss, double dx, int N) {
-		double * tmp = (double*)malloc((N+1) * sizeof(double));
-		memcpy(tmp, ss, (N+1) * sizeof(double));
-		vector_mult_scalar(&tmp[1], &tmp[1], 0.5, N-1);
-
-		fftw_execute_r2r(p, &tmp[0], &S[0]);
-		vector_mult_scalar(&S[0], &S[0], dx, N+1);
-
-		free(tmp);
-	}
-
-	void cFFT_fftw(double *S, double *ss, double dx, int N) {
-		static fftw_plan p = 0;
-
-//		double * tmp = malloc((N+1) * sizeof(double));
-//		memcpy(tmp, ss, (N+1) * sizeof(double));
-//		vector_mult_scalar(&tmp[1], &tmp[1], 0.5, N-1);
-
-		if (!p) p = fftw_plan_r2r_1d(N+1, &ss[0], &S[0], FFTW_REDFT00, FFTW_ESTIMATE/*FFTW_MEASURE*/);
-//		fftw_execute(p);
-
-		cFFT_fftw_2(p, S, ss, dx, N);
-
-//		vector_mult_scalar(&S[0], &S[0], dx, N+1);
-
-//		fftw_destroy_plan(p);
-//		free(tmp);
-	}
-#endif
 	/*!медленное синусное преобразование*/
 	void sFT(double *S, double *s, double dx, int N)
 	{
@@ -559,7 +435,7 @@ void FFT_free(fft * s)
 	void cFFT(double *S, double *ss, double dx, int N, int n) {
 		int p, s, j, k;
 		int M = N + 1;
-		double *a = (double*)malloc((n + 1) * M * sizeof(double));	
+		double *a = (double*)malloc((n + 1) * M * sizeof(double));
 
 		memcpy(&a[0], &ss[0], M * sizeof(double));
 
@@ -594,13 +470,13 @@ void FFT_free(fft * s)
 		free(a);
 	}
 
-	void cFFT_2(double *S, double *ss, double dx, fft * ft) 
+	void cFFT_2(double *S, double *ss, double dx, fft * ft)
 	{
 		int p, s, j, k;
 		int n = ft->n, N = ft->N, nr = ft->k, sz = ft->sz;
-		double * ffCOS = ft->ffCOS;		
+		double * ffCOS = ft->ffCOS;
 		int M = N + 1;
-		double *a = (double*)malloc((n + 1) * M * sizeof(double));	
+		double *a = (double*)malloc((n + 1) * M * sizeof(double));
 
 		memcpy(&a[0], &ss[0], M * sizeof(double));
 
