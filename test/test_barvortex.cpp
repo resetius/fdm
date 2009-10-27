@@ -5,6 +5,7 @@
 #include <vector>
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "sds_bar.h"
 #include "asp_misc.h"
@@ -67,7 +68,7 @@ double u1(double phi, double lambda)
 	double T0  = 1./omg;
 	double R   = 6.371e+6;
 
-	return sin(2. * phi) * cos(lambda);
+	return sin(2. * phi);
 }
 
 #define  pOff(i, j) ( i ) * conf.n_la + ( j )
@@ -127,6 +128,11 @@ void calc_barvortex_right_part()
 	bv.calc_rp(&rp[0], &u0[0]);
 
 	_fprintfwmatrix("forc.txt", &rp[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+}
+
+double rnd_u(double phi, double lambda)
+{
+	return (phi - M_PI / 2) *  phi * sin(lambda) * rand() / (double)RAND_MAX;
 }
 
 void LOp(double * u, const double * v, vector < vector < double > > & z, BarVortex * bv, BarVortexConf * conf)
@@ -194,7 +200,7 @@ void test_barvortex_linear()
 	int n = conf.n_phi * conf.n_la;
 
 	double t = 0;
-	double T = 1;
+	double T = 10;
 	double nr;
 	int i = 0;
 
@@ -213,7 +219,7 @@ void test_barvortex_linear()
 
 	z.push_back(z0);
 
-#if 0
+#if 1
 	while (t < T)
 	{
 		bv.S_step(&z1[0], &z0[0]);
@@ -225,8 +231,8 @@ void test_barvortex_linear()
 
 	for (int i = 0; i < conf.n_phi; ++i) {
 		for (int j = 0; j < conf.n_la; ++j) {
-			u[pOff(i, j)] = u0(bv.phi(i), bv.lambda(j));
-			v[pOff(i, j)] = u1(bv.phi(i), bv.lambda(j));
+			u[pOff(i, j)] = rnd_u(bv.phi(i), bv.lambda(j));
+			v[pOff(i, j)] = rnd_u(bv.phi(i), bv.lambda(j));
 		}
 	}
 
@@ -235,7 +241,7 @@ void test_barvortex_linear()
 
 	nr1 = bv.scalar(&lu[0], &v[0], n);
 	nr2 = bv.scalar(&ltv[0], &u[0], n);
-	fprintf(stderr, "%le\n%le\n", nr1, nr2);
+	fprintf(stderr, "%le\n%le\n%le\n", nr1, nr2, fabs(nr1 - nr2));
 }
 
 void test_barvortex()
