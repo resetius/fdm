@@ -57,8 +57,17 @@ double u0(double phi, double lambda)
 	double T0  = 1./omg;
 	double R   = 6.371e+6;
 
-	return -T0/R * 16.0 / M_PI / M_PI * 30.0 * 
+	return -T0/R * 16.0 / M_PI / M_PI * 30.0 *
 		(M_PI/4 * phi * phi - phi * phi * phi / 3);
+}
+
+double u1(double phi, double lambda)
+{
+	double omg = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./omg;
+	double R   = 6.371e+6;
+
+	return sin(2. * phi) * cos(lambda);
 }
 
 #define  pOff(i, j) ( i ) * conf.n_la + ( j )
@@ -118,6 +127,115 @@ void calc_barvortex_right_part()
 	bv.calc_rp(&rp[0], &u0[0]);
 
 	_fprintfwmatrix("forc.txt", &rp[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+}
+
+void LOp(double * u, const double * v, vector < vector < double > > & z, BarVortex * bv, BarVortexConf * conf)
+{
+	int nn = conf->n_la * conf->n_phi;
+
+	vector < double > tmp1(nn);
+	vector < double > tmp2(nn);
+
+	memcpy(&tmp1[0], v, nn * sizeof(double));
+
+	for (int i = 0; i < (int)z.size(); ++i)
+	{
+		double * z1 = &z[i][0];
+		bv->L_step(&tmp2[0], &tmp1[0], z1);
+		tmp1.swap(tmp2);
+	}
+
+	memcpy(u, &tmp1[0], nn * sizeof(double));
+}
+
+void LTOp(double * u, const double * v, vector < vector < double > > & z, BarVortex * bv, BarVortexConf * conf)
+{
+	int nn = conf->n_la * conf->n_phi;
+
+	vector < double > tmp1(nn);
+	vector < double > tmp2(nn);
+
+	memcpy(&tmp1[0], v, nn * sizeof(double));
+
+	for (int i = (int)z.size() - 1; i >= 0; --i)
+	{
+		double * z1 = &z[i][0];
+		bv->LT_step(&tmp2[0], &tmp1[0], z1);
+		tmp1.swap(tmp2);
+	}
+
+	memcpy(u, &tmp1[0], nn * sizeof(double));
+}
+
+void test_barvortex_linear()
+{
+	BarVortexConf conf;
+	conf.steps = 1;
+	double R   = 6.371e+6;
+	double H   = 5000;
+	conf.omg   = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./conf.omg;
+	conf.k1    = 1.0;
+	conf.k2    = 1.0;
+	conf.tau   = 0.001;
+	conf.sigma = 1.14e-2;
+	conf.mu    = 6.77e-5;
+	conf.n_phi = 24;
+	conf.n_la  = 32;
+	conf.full  = 0;
+	conf.rho   = 1;
+	conf.theta = 0.5;
+
+	conf.cor    = cor;
+	conf.rp     = rp;
+	conf.filter = 1;
+	conf.cor_add= 0;
+
+	int n = conf.n_phi * conf.n_la;
+
+	double t = 0;
+	double T = 1;
+	double nr;
+	int i = 0;
+
+	BarVortex bv(conf);
+	vector < double > u(n);
+	vector < double > v(n);
+
+	vector < double > lu(n);
+	vector < double > ltv(n);
+
+	vector < double > z1(n);
+	vector < double > z0(n);
+	vector < vector < double > > z;
+
+	double nr1, nr2;
+
+	z.push_back(z0);
+
+#if 0
+	while (t < T)
+	{
+		bv.S_step(&z1[0], &z0[0]);
+		z1.swap(z0);
+		z.push_back(z0);
+		t += conf.tau;
+	}
+#endif
+
+	for (int i = 0; i < conf.n_phi; ++i) {
+		for (int j = 0; j < conf.n_la; ++j) {
+			u[pOff(i, j)] = u0(bv.phi(i), bv.lambda(j));
+			v[pOff(i, j)] = u1(bv.phi(i), bv.lambda(j));
+		}
+	}
+
+	LOp(&lu[0],   &u[0], z, &bv, &conf);
+	LTOp(&ltv[0], &v[0], z, &bv, &conf);
+
+	nr1 = bv.scalar(&lu[0], &v[0], n);
+	nr2 = bv.scalar(&ltv[0], &u[0], n);
+	fprintf(stderr, "%le\n%le\n", nr1, nr2);
 }
 
 void test_barvortex()
@@ -186,8 +304,8 @@ void test_barvortex()
 
 //		if (i % 10000 == 0) {
 			nr = bv.norm(&u1[0], n);
-			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le;\n", 
-					t, nr, 
+			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le;\n",
+					t, nr,
 					find_min(&u1[0], n),
 					find_max(&u1[0], n));
 //			char buf[1024];
@@ -276,8 +394,8 @@ void test_barvortex_real()
 
 //		if (i % 10000 == 0) {
 			nr = bv.norm(&u1[0], n);
-			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le;\n", 
-					t, nr, 
+			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le;\n",
+					t, nr,
 					find_min(&u1[0], n),
 					find_max(&u1[0], n));
 //			char buf[1024];
@@ -308,7 +426,8 @@ int main(int argc, char ** argv)
 	//set_fpe_except();
 	if (argc < 2) {
 		//test_barvortex();
-		test_barvortex_real();
+		//test_barvortex_real();
+		test_barvortex_linear();
 	} else {
 		calc_barvortex_right_part();
 	}
