@@ -40,17 +40,17 @@
   суффикс _1 у переменных означает переменная в -1 степени
  */
 struct SSteps {
-	bool full;       //!<полная сфера ?
+	bool full;      //!<полная сфера ?
 	int n_phi;      //!<шагов по phi (широте)
-    int n_la;       //!<шагов по lambda (долготе)
+	int n_la;       //!<шагов по lambda (долготе)
 
-    double d_phi;   //!<шаг по широте
+	double d_phi;   //!<шаг по широте
 	double d_phi_1;
-    double d_la;    //!<шаг по долготе
+	double d_la;    //!<шаг по долготе
 	double d_la_1;
-    double d_phi2;  //!<2 * шаг по широте
+	double d_phi2;  //!<2 * шаг по широте
 	double d_phi2_1;
-    double d_la2;   //!<2 * шаг по долготе
+	double d_la2;   //!<2 * шаг по долготе
 	double d_la2_1;
 
 	SSteps(int _n_phi, int _n_la, bool _full = false) 
@@ -135,7 +135,7 @@ public:
 	   \param M - значения функции от которой находим обратный оператор Лапласа
 	   \param mult - множитель (для каждого i)
 	   \param diag - диагональная добавка (для каждого i)  
-    */
+	*/
 	void lapl_1(double * Dest, const double * Source, double * mult, double * diag, int bc = BC_DIRICHLET);
 	void baroclin_1(
 		double * oW1, double * oW2, 
