@@ -109,6 +109,9 @@ public:
 
 	/*!скал€рное произведение в сферических координатах*/
 	double scalar(const double *u, const double *v);
+
+	void JV2(double * dest, const double * u, const double * b);
+	void JV2T(double * dest, const double * u, const double * b);
 };
 
 #endif

@@ -437,8 +437,8 @@ void test_barvortex_plan()
 	lapl.lapl(&u[0], &u[0]);
 	memset(&u[0], 0, conf.n_la * sizeof(double));
 
-	jac.J(&jac_ans1[0],  &u[0],   &c00[0]);
-	jac.JT(&jac_ans2[0], &c01[0], &c00[0]);
+	jac.JV2(&jac_ans1[0],  &u[0],   &c00[0]);
+	jac.JV2T(&jac_ans2[0], &c01[0], &c00[0]);
 	//jac.JT(&jac_ans2[0], &c01[0], &c00[0], 1);
 
 	// (ans1, c01)

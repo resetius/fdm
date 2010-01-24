@@ -730,3 +730,306 @@ double SJacobian::scalar(const double *u, const double *v)
 	return sum;
 }
 
+void SJacobian::JV2T(double * dest, const double * u, const double * v)
+{
+	JV2(dest, u, v);
+	vector_mult_scalar(dest, dest, -1.0, d->nn);
+}
+
+void SJacobian::JV2(double * dest, const double * u, const double * v)
+{
+	int i, j, m, n;
+	double J1, J2, J3;
+	double J1a, J2a, J3a;
+
+	int Nx = d->n_la;
+	int Ny = d->n_phi;
+
+	double Hx = d->d_la;
+	double Hy = d->d_phi;
+
+	double * ko = dest;
+	const double * ps = u;
+	const double * om = v;
+	double KORIOLIS_KEY = 1.0;
+
+// central'nie raznosti:
+
+	if (1 == 0)
+	{
+
+		printf ("Central'nue raznosti ne podderzivautsia\n");
+		exit (1);
+
+		for (i = 0; i < Nx; i++)
+			for (j = 0; j < Ny; j++)
+				ko[i+j*Nx] = 0.;
+
+		for (i = 1; i < Nx - 1; i++)
+			for (j = 1; j < Ny - 1; j++)
+				ko[i+j*Nx] = (ps[i+1+j*Nx] - ps[i-1+j*Nx]) / 2. / Hx * (om[i+ (j+1) *Nx] - om[i+ (j-1) *Nx]) / 2. / Hy -
+				             (ps[i+ (j+1) *Nx] - ps[i+ (j-1) *Nx]) / 2. / Hy * (om[i+1+j*Nx] - om[i-1+j*Nx]) / 2. / Hx;
+
+// esli hotim zanulit' dlia testa
+		for (i = 0; i < Nx; i++)
+			for (j = 0; j < Ny; j++)
+				ko[i+j*Nx] = 1. / cos (Hy * (j) ) * ko[i+j*Nx] * KORIOLIS_KEY;
+	}
+	else
+	{
+
+
+//shema Arakavy
+//AO u->ps v->om; u_ij->ps_ji
+
+		for (i = 0; i < Nx; i++)
+			for (j = 0; j < Ny; j++)
+				ko[i+j*Nx] = 0.;
+
+		for (i = 1; i < Nx - 1; i++)
+			for (j = 1; j < Ny - 1; j++)
+			{
+				J1 = (ps[i+1+j*Nx] - ps[i-1+j*Nx]) * (om[i+ (j+1) *Nx] - om[i+ (j-1) *Nx]) -
+				     (ps[i+ (j+1) *Nx] - ps[i+ (j-1) *Nx]) * (om[i+1+j*Nx] - om[i-1+j*Nx]);
+				J1 = J1 / 2. / Hx / 2. / Hy;
+
+				J1a = (ps[i+1+j*Nx] - ps[i-1+j*Nx]) * (om[i+ (j+1) *Nx] - om[i+ (j-1) *Nx]) -
+				      (ps[i+ (j+1) *Nx] - ps[i+ (j-1) *Nx]) * (om[i+1+j*Nx] - om[i-1+j*Nx]);
+				J1a = J1a / 2. / Hx / 2. / Hy;
+
+
+				J2 = (ps[i+1+ (j+1) *Nx] - ps[i-1+ (j+1) *Nx]) * om[i+ (j+1) *Nx] -
+				     (ps[i+1+ (j-1) *Nx] - ps[i-1+ (j-1) *Nx]) * om[i+ (j-1) *Nx] -
+				     (ps[i+1+ (j+1) *Nx] - ps[i+1+ (j-1) *Nx]) * om[i+1+j*Nx] +
+				     (ps[i-1+ (j+1) *Nx] - ps[i-1+ (j-1) *Nx]) * om[i-1+j*Nx];
+				J2 = J2 / 2. / Hx / 2. / Hy;
+
+				J2a = (ps[i+1+ (j+1) *Nx] - ps[i-1+ (j+1) *Nx]) * om[i+ (j+1) *Nx] -
+				      (ps[i+1+ (j-1) *Nx] - ps[i-1+ (j-1) *Nx]) * om[i+ (j-1) *Nx] -
+				      (ps[i+1+ (j+1) *Nx] - ps[i+1+ (j-1) *Nx]) * om[i+1+j*Nx] +
+				      (ps[i-1+ (j+1) *Nx] - ps[i-1+ (j-1) *Nx]) * om[i-1+j*Nx];
+				J2a = J2a / 2. / Hx / 2. / Hy;
+
+
+				J3 = (om[i+1+ (j+1) *Nx] - om[i+1+ (j-1) *Nx]) * ps[i+1+j*Nx] -
+				     (om[i-1+ (j+1) *Nx] - om[i-1+ (j-1) *Nx]) * ps[i-1+j*Nx] -
+				     (om[i+1+ (j+1) *Nx] - om[i-1+ (j+1) *Nx]) * ps[i+ (j+1) *Nx] +
+				     (om[i+1+ (j-1) *Nx] - om[i-1+ (j-1) *Nx]) * ps[i+ (j-1) *Nx];
+
+				J3 = J3 / 2. / Hx / 2. / Hy;
+
+				J3a = (om[i+1+ (j+1) *Nx] - om[i+1+ (j-1) *Nx]) * ps[i+1+j*Nx] -
+				      (om[i-1+ (j+1) *Nx] - om[i-1+ (j-1) *Nx]) * ps[i-1+j*Nx] -
+				      (om[i+1+ (j+1) *Nx] - om[i-1+ (j+1) *Nx]) * ps[i+ (j+1) *Nx] +
+				      (om[i+1+ (j-1) *Nx] - om[i-1+ (j-1) *Nx]) * ps[i+ (j-1) *Nx];
+
+				J3a = J3a / 2. / Hx / 2. / Hy;
+
+
+
+				ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * (J1 + J2 + J3) / 3.; //  (J1a+J2a+J3a)/3.;
+				//ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * J2;
+			}
+
+
+
+		j = Ny - 1;
+
+		for (i = 1; i < Nx - 1; i++)
+		{
+			double j3_la;
+			double j3_phi;
+
+			J1 = (ps[ (i+1) %Nx+j*Nx] - ps[ (i-1) %Nx+j*Nx]) * (om[ (i+Nx/2) %Nx + (j) *Nx] - om[ (i) %Nx+ (j-1) *Nx]) -
+			     (ps[ (i+Nx/2) %Nx+ (j) *Nx] - ps[ (i) %Nx+ (j-1) *Nx]) * (om[ (i+1) %Nx+j*Nx] - om[ (i-1) %Nx+j*Nx]);
+			J1 = J1 / 2. / Hx / 2. / Hy;
+
+			J1a = (ps[i+1+j*Nx] - ps[i-1+j*Nx]) * (om[i+ (j+1) *Nx] - om[i+ (j-1) *Nx]) -
+			      (ps[i+ (j+1) *Nx] - ps[i+ (j-1) *Nx]) * (om[i+1+j*Nx] - om[i-1+j*Nx]);
+			J1a = J1a / 2. / Hx / 2. / Hy;
+
+
+			J2 = (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (i-1+Nx/2) %Nx+ (j) *Nx]) * om[ (i+Nx/2) %Nx+ (j) *Nx] -
+			     (ps[ (i+1) %Nx+ (j-1) *Nx] - ps[ (i-1) %Nx+ (j-1) *Nx]) * om[ (i) %Nx+ (j-1) *Nx] -
+			     (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (i+1) %Nx+ (j-1) *Nx]) * om[ (i+1) %Nx+j*Nx] +
+			     (ps[ (i-1+Nx/2) %Nx+ (j) *Nx] - ps[ (i-1) %Nx+ (j-1) *Nx]) * om[ (i-1) %Nx+j*Nx];
+			J2 = J2 / 2. / Hx / 2. / Hy;
+
+			J2a = (ps[i+1+ (j+1) *Nx] - ps[i-1+ (j+1) *Nx]) * om[i+ (j+1) *Nx] -
+			      (ps[i+1+ (j-1) *Nx] - ps[i-1+ (j-1) *Nx]) * om[i+ (j-1) *Nx] -
+			      (ps[i+1+ (j+1) *Nx] - ps[i+1+ (j-1) *Nx]) * om[i+1+j*Nx] +
+			      (ps[i-1+ (j+1) *Nx] - ps[i-1+ (j-1) *Nx]) * om[i-1+j*Nx];
+			J2a = J2a / 2. / Hx / 2. / Hy;
+
+
+			J3 = (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i+1) %Nx+ (j-1) *Nx]) * ps[ (i+1) %Nx+j*Nx] -
+			     (om[ (i-1+Nx/2) %Nx+ (j) *Nx] - om[ (i-1) %Nx+ (j-1) *Nx]) * ps[ (i-1) %Nx+j*Nx] -
+			     (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i-1+Nx/2) %Nx+ (j) *Nx]) * ps[ (i+Nx/2) %Nx+ (j) *Nx] +
+			     (om[ (i+1) %Nx+ (j-1) *Nx] - om[ (i-1) %Nx+ (j-1) *Nx]) * ps[ (i) %Nx+ (j-1) *Nx];
+
+			j3_la  = (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i+1) %Nx+ (j-1) *Nx]) * ps[ (i+1) %Nx+j*Nx] -
+			     (om[ (i-1+Nx/2) %Nx+ (j) *Nx] - om[ (i-1) %Nx+ (j-1) *Nx]) * ps[ (i-1) %Nx+j*Nx];
+			j3_phi = -
+			     (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i-1+Nx/2) %Nx+ (j) *Nx]) * ps[ (i+Nx/2) %Nx+ (j) *Nx] +
+			     (om[ (i+1) %Nx+ (j-1) *Nx] - om[ (i-1) %Nx+ (j-1) *Nx]) * ps[ (i) %Nx+ (j-1) *Nx];
+
+			J3 = J3 / 2. / Hx / 2. / Hy;
+
+			J3a = (om[i+1+ (j+1) *Nx] - om[i+1+ (j-1) *Nx]) * ps[i+1+j*Nx] -
+			      (om[i-1+ (j+1) *Nx] - om[i-1+ (j-1) *Nx]) * ps[i-1+j*Nx] -
+			      (om[i+1+ (j+1) *Nx] - om[i-1+ (j+1) *Nx]) * ps[i+ (j+1) *Nx] +
+			      (om[i+1+ (j-1) *Nx] - om[i-1+ (j-1) *Nx]) * ps[i+ (j-1) *Nx];
+
+			J3a = J3a / 2. / Hx / 2. / Hy;
+
+
+
+			ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * (J1 + J2 + J3) / 3.; //  (J1a+J2a+J3a)/3.;
+			//ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * J2;
+
+		}
+
+
+		i = 0;
+		for (j = 1; j < Ny - 1; j++)
+		{
+			J1 = (ps[i+1+j*Nx] - ps[Nx-1+j*Nx]) * (om[i+ (j+1) *Nx] - om[i+ (j-1) *Nx]) -
+			     (ps[i+ (j+1) *Nx] - ps[i+ (j-1) *Nx]) * (om[i+1+j*Nx] - om[Nx-1+j*Nx]);
+			J1 = J1 / 2. / Hx / 2. / Hy;
+
+
+			J2 = (ps[i+1+ (j+1) *Nx] - ps[Nx-1+ (j+1) *Nx]) * om[i+ (j+1) *Nx] -
+			     (ps[i+1+ (j-1) *Nx] - ps[Nx-1+ (j-1) *Nx]) * om[i+ (j-1) *Nx] -
+			     (ps[i+1+ (j+1) *Nx] - ps[i+1+ (j-1) *Nx]) * om[i+1+j*Nx] +
+			     (ps[Nx-1+ (j+1) *Nx] - ps[Nx-1+ (j-1) *Nx]) * om[Nx-1+j*Nx];
+			J2 = J2 / 2. / Hx / 2. / Hy;
+
+
+			J3 = (om[i+1+ (j+1) *Nx] - om[i+1+ (j-1) *Nx]) * ps[i+1+j*Nx] -
+			     (om[Nx-1+ (j+1) *Nx] - om[Nx-1+ (j-1) *Nx]) * ps[Nx-1+j*Nx] -
+			     (om[i+1+ (j+1) *Nx] - om[Nx-1+ (j+1) *Nx]) * ps[i+ (j+1) *Nx] +
+			     (om[i+1+ (j-1) *Nx] - om[Nx-1+ (j-1) *Nx]) * ps[i+ (j-1) *Nx];
+
+			J3 = J3 / 2. / Hx / 2. / Hy;
+
+
+
+
+			ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * (J1 + J2 + J3) / 3.; //  (J1a+J2a+J3a)/3.;
+			//ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * J2;
+		}
+
+
+
+		i = Nx - 1;
+		for (j = 1; j < Ny - 1; j++)
+		{
+			J1 = (ps[0+j*Nx] - ps[i-1+j*Nx]) * (om[i+ (j+1) *Nx] - om[i+ (j-1) *Nx]) -
+			     (ps[i+ (j+1) *Nx] - ps[i+ (j-1) *Nx]) * (om[0+j*Nx] - om[i-1+j*Nx]);
+			J1 = J1 / 2. / Hx / 2. / Hy;
+
+
+			J2 = (ps[0+ (j+1) *Nx] - ps[i-1+ (j+1) *Nx]) * om[i+ (j+1) *Nx] -
+			     (ps[0+ (j-1) *Nx] - ps[i-1+ (j-1) *Nx]) * om[i+ (j-1) *Nx] -
+			     (ps[0+ (j+1) *Nx] - ps[0+ (j-1) *Nx]) * om[0+j*Nx] +
+			     (ps[i-1+ (j+1) *Nx] - ps[i-1+ (j-1) *Nx]) * om[i-1+j*Nx];
+			J2 = J2 / 2. / Hx / 2. / Hy;
+
+
+
+			J3 = (om[0+ (j+1) *Nx] - om[0+ (j-1) *Nx]) * ps[0+j*Nx] -
+			     (om[i-1+ (j+1) *Nx] - om[i-1+ (j-1) *Nx]) * ps[i-1+j*Nx] -
+			     (om[0+ (j+1) *Nx] - om[i-1+ (j+1) *Nx]) * ps[i+ (j+1) *Nx] +
+			     (om[0+ (j-1) *Nx] - om[i-1+ (j-1) *Nx]) * ps[i+ (j-1) *Nx];
+
+			J3 = J3 / 2. / Hx / 2. / Hy;
+
+
+			ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * (J1 + J2 + J3) / 3.; //  (J1a+J2a+J3a)/3.;
+			//ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * J2;
+		}
+
+
+		j = Ny - 1;
+		i = 0;
+		{
+			J1 = (ps[ (i+1) %Nx+j*Nx] - ps[ (Nx-1) %Nx+j*Nx]) * (om[ (i+Nx/2) %Nx + (j) *Nx] - om[ (i) %Nx+ (j-1) *Nx]) -
+			     (ps[ (i+Nx/2) %Nx+ (j) *Nx] - ps[ (i) %Nx+ (j-1) *Nx]) * (om[ (i+1) %Nx+j*Nx] - om[ (Nx-1) %Nx+j*Nx]);
+			J1 = J1 / 2. / Hx / 2. / Hy;
+
+			J2 = (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (Nx-1+Nx/2) %Nx+ (j) *Nx]) * om[ (i+Nx/2) %Nx+ (j) *Nx] -
+			     (ps[ (i+1) %Nx+ (j-1) *Nx] - ps[ (Nx-1) %Nx+ (j-1) *Nx]) * om[ (i) %Nx+ (j-1) *Nx] -
+			     (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (i+1) %Nx+ (j-1) *Nx]) * om[ (i+1) %Nx+j*Nx] +
+			     (ps[ (Nx-1+Nx/2) %Nx+ (j) *Nx] - ps[ (Nx-1) %Nx+ (j-1) *Nx]) * om[ (Nx-1) %Nx+j*Nx];
+			J2 = J2 / 2. / Hx / 2. / Hy;
+
+
+			J3 = (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i+1) %Nx+ (j-1) *Nx]) * ps[ (i+1) %Nx+j*Nx] -
+			     (om[ (Nx-1+Nx/2) %Nx+ (j) *Nx] - om[ (Nx-1) %Nx+ (j-1) *Nx]) * ps[ (Nx-1) %Nx+j*Nx] -
+			     (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (Nx-1+Nx/2) %Nx+ (j) *Nx]) * ps[ (i+Nx/2) %Nx+ (j) *Nx] +
+			     (om[ (i+1) %Nx+ (j-1) *Nx] - om[ (Nx-1) %Nx+ (j-1) *Nx]) * ps[ (i) %Nx+ (j-1) *Nx];
+
+			J3 = J3 / 2. / Hx / 2. / Hy;
+
+
+
+			ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * (J1 + J2 + J3) / 3.; //  (J1a+J2a+J3a)/3.;
+			//ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * J2;
+
+		}
+
+
+		j = Ny - 1;
+		i = Nx - 1;
+
+		{
+			J1 = (ps[ (i+1) %Nx+j*Nx] - ps[ (i-1) %Nx+j*Nx]) * (om[ (i+Nx/2) %Nx + (j) *Nx] - om[ (i) %Nx+ (j-1) *Nx]) -
+			     (ps[ (i+Nx/2) %Nx+ (j) *Nx] - ps[ (i) %Nx+ (j-1) *Nx]) * (om[ (i+1) %Nx+j*Nx] - om[ (i-1) %Nx+j*Nx]);
+			J1 = J1 / 2. / Hx / 2. / Hy;
+
+			J1a = (ps[i+1+j*Nx] - ps[i-1+j*Nx]) * (om[i+ (j+1) *Nx] - om[i+ (j-1) *Nx]) -
+			      (ps[i+ (j+1) *Nx] - ps[i+ (j-1) *Nx]) * (om[i+1+j*Nx] - om[i-1+j*Nx]);
+			J1a = J1a / 2. / Hx / 2. / Hy;
+
+
+			J2 = (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (i-1+Nx/2) %Nx+ (j) *Nx]) * om[ (i+Nx/2) %Nx+ (j) *Nx] -
+			     (ps[ (i+1) %Nx+ (j-1) *Nx] - ps[ (i-1) %Nx+ (j-1) *Nx]) * om[ (i) %Nx+ (j-1) *Nx] -
+			     (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (i+1) %Nx+ (j-1) *Nx]) * om[ (i+1) %Nx+j*Nx] +
+			     (ps[ (i-1+Nx/2) %Nx+ (j) *Nx] - ps[ (i-1) %Nx+ (j-1) *Nx]) * om[ (i-1) %Nx+j*Nx];
+			J2 = J2 / 2. / Hx / 2. / Hy;
+
+			J2a = (ps[i+1+ (j+1) *Nx] - ps[i-1+ (j+1) *Nx]) * om[i+ (j+1) *Nx] -
+			      (ps[i+1+ (j-1) *Nx] - ps[i-1+ (j-1) *Nx]) * om[i+ (j-1) *Nx] -
+			      (ps[i+1+ (j+1) *Nx] - ps[i+1+ (j-1) *Nx]) * om[i+1+j*Nx] +
+			      (ps[i-1+ (j+1) *Nx] - ps[i-1+ (j-1) *Nx]) * om[i-1+j*Nx];
+			J2a = J2a / 2. / Hx / 2. / Hy;
+
+
+			J3 = (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i+1) %Nx+ (j-1) *Nx]) * ps[ (i+1) %Nx+j*Nx] -
+			     (om[ (i-1+Nx/2) %Nx+ (j) *Nx] - om[ (i-1) %Nx+ (j-1) *Nx]) * ps[ (i-1) %Nx+j*Nx] -
+			     (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i-1+Nx/2) %Nx+ (j) *Nx]) * ps[ (i+Nx/2) %Nx+ (j) *Nx] +
+			     (om[ (i+1) %Nx+ (j-1) *Nx] - om[ (i-1) %Nx+ (j-1) *Nx]) * ps[ (i) %Nx+ (j-1) *Nx];
+
+			J3 = J3 / 2. / Hx / 2. / Hy;
+
+			J3a = (om[i+1+ (j+1) *Nx] - om[i+1+ (j-1) *Nx]) * ps[i+1+j*Nx] -
+			      (om[i-1+ (j+1) *Nx] - om[i-1+ (j-1) *Nx]) * ps[i-1+j*Nx] -
+			      (om[i+1+ (j+1) *Nx] - om[i-1+ (j+1) *Nx]) * ps[i+ (j+1) *Nx] +
+			      (om[i+1+ (j-1) *Nx] - om[i-1+ (j-1) *Nx]) * ps[i+ (j-1) *Nx];
+
+			J3a = J3a / 2. / Hx / 2. / Hy;
+
+
+
+			ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * (J1 + J2 + J3) / 3.; //  (J1a+J2a+J3a)/3.;
+			//ko[i+j*Nx] = 1. / cos (Hy * (j) ) * KORIOLIS_KEY * J2;
+
+		}
+
+
+
+
+	}
+
+	return ;
+}
