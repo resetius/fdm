@@ -1,6 +1,6 @@
 /*$Id$*/
 
-/* Copyright (c) 2003, 2004, 2005, 2007 Alexey Ozeritsky
+/* Copyright (c) 2003, 2004, 2005, 2007, 2010 Alexey Ozeritsky
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -962,4 +962,56 @@ void SLaplacian::filter_1(double *Dest, const double * Source)
 	}
 
 	d->XYtoU(Dest, &d->MF[0]);
+}
+
+void SLaplacian::make_psi(double * dpsi, const double * u, const double * v)
+{
+	int i, j;
+	int Nx = d->n_la;
+	int Ny = d->n_phi;
+
+	double Hx = d->d_la;
+	double Hy = d->d_phi;
+
+	for (i = 1; i < Nx - 1; i++)
+		for (j = 1; j < Ny - 1; j++)
+			dpsi[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+			                 - (u[i+Nx* (j+1) ] * cos ( (j + 0.5) * Hy) - u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+			               / cos (j * Hy);
+
+	j = 0;
+	for (i = 0; i < Nx; i++)
+		dpsi[i+Nx*j] = 0.;
+
+	j = Ny - 1;
+	for (i = 1; i < Nx - 1; i++)
+		dpsi[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+		                 - (-u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+		               / cos (j * Hy);
+
+	i = 0;
+	for (j = 1; j < Ny - 1; j++)
+		dpsi[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+		                 - (u[i+Nx* (j+1) ] * cos ( (j + 0.5) * Hy) - u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+		               / cos (j * Hy);
+
+	i = Nx - 1;
+	for (j = 1; j < Ny - 1; j++)
+		dpsi[i+Nx*j] = ( (v[0+Nx*j] - v[i+Nx*j]) / Hx
+		                 - (u[i+Nx* (j+1) ] * cos ( (j + 0.5) * Hy) - u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+		               / cos (j * Hy);
+
+	i = Nx - 1;
+	j = Ny - 1;
+	dpsi[i+Nx*j] = ( (v[0+Nx*j] - v[i+Nx*j]) / Hx
+	                 - (-u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+	               / cos (j * Hy);
+
+	i = 0;
+	j = Ny - 1;
+	dpsi[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+	                 - (-u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+	               / cos (j * Hy);
+
+	lapl_1(dpsi, dpsi);
 }

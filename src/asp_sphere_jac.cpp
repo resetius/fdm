@@ -335,9 +335,10 @@ public:
 			//j3 += (v[pOff(i__1, j_1)] - v[pOff(i__1, j__1)])
 			//	* u[pOff(i__1, j)];
 
+			// changed !
 			int k    = (j + Ny/2    ) % Ny;
-			int k_1  = (j + Ny/2 - 1) % Ny;
-			int k__1 = (j + Ny/2 + 1) % Ny;
+			int k_1  = (j + Ny/2 + 1) % Ny;
+			int k__1 = (j + Ny/2 - 1) % Ny;
 
 			j3 -= (v[pOff(i_1, k_1)] - v[pOff(i_1, k__1)])
 				* u[pOff(i_1, k)];
@@ -488,8 +489,8 @@ public:
 				(v[pOff(i__1, j)]);
 		} else if (full && i == 0) {
 			int k    = (j + Ny/2    ) % Ny;
-			int k_1  = (j + Ny/2 - 1) % Ny; //- ?
-			int k__1 = (j + Ny/2 + 1) % Ny; //+ ?
+			int k_1  = (j + Ny/2 + 1) % Ny; //- ?
+			int k__1 = (j + Ny/2 - 1) % Ny; //+ ?
 
 			j2 += (u[pOff(i_1, j_1)] - u[pOff(i_1, j__1)]) *
 				(v[pOff(i_1, j)]);
@@ -504,6 +505,7 @@ public:
 			/*j2 -= (u[pOff(i__1, j_1)] - u[pOff(i__1, j__1)]) *
 				(v[pOff(i__1, j)]);*/
 
+			// changed !
 			int k    = (j + Ny/2    ) % Ny;
 			int k_1  = (j + Ny/2 - 1) % Ny; //- ?
 			int k__1 = (j + Ny/2 + 1) % Ny; //+ ?

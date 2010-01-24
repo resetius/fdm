@@ -2,7 +2,7 @@
 #define _SPHERE_LAPL_H
 /*$Id$*/
 
-/* Copyright (c) 2003, 2004, 2005, 2007 Alexey Ozeritsky
+/* Copyright (c) 2003, 2004, 2005, 2007, 2010 Alexey Ozeritsky
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -161,6 +161,8 @@ public:
 	void filter(double *Dest, const double * Source);
 	void filter_1(double *Dest, const double * Source);
 
+	/*!вычисляет функцию тока по компонентам скорости*/
+	void make_psi(double * out, const double * u, const double * v);
 };
 
 #endif //_SPHERE_LAPL_H
