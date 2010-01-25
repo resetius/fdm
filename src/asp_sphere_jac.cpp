@@ -753,29 +753,6 @@ void SJacobian::JV2(double * dest, const double * u, const double * v)
 	const double * om = v;
 	double KORIOLIS_KEY = 1.0;
 
-// central'nie raznosti:
-
-	if (1 == 0)
-	{
-
-		printf ("Central'nue raznosti ne podderzivautsia\n");
-		exit (1);
-
-		for (i = 0; i < Nx; i++)
-			for (j = 0; j < Ny; j++)
-				ko[i+j*Nx] = 0.;
-
-		for (i = 1; i < Nx - 1; i++)
-			for (j = 1; j < Ny - 1; j++)
-				ko[i+j*Nx] = (ps[i+1+j*Nx] - ps[i-1+j*Nx]) / 2. / Hx * (om[i+ (j+1) *Nx] - om[i+ (j-1) *Nx]) / 2. / Hy -
-				             (ps[i+ (j+1) *Nx] - ps[i+ (j-1) *Nx]) / 2. / Hy * (om[i+1+j*Nx] - om[i-1+j*Nx]) / 2. / Hx;
-
-// esli hotim zanulit' dlia testa
-		for (i = 0; i < Nx; i++)
-			for (j = 0; j < Ny; j++)
-				ko[i+j*Nx] = 1. / cos (Hy * (j) ) * ko[i+j*Nx] * KORIOLIS_KEY;
-	}
-	else
 	{
 
 
