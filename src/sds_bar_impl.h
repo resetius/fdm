@@ -265,6 +265,7 @@ public:
 		vector < double > B1      (nn);
 
 		vector < double > bnd    (n_la);
+		double theta = conf->theta;
 
 		/*!находим \f$\omega_0 = \delta h_0\f$*/
 		lapl->lapl(&omg_old[0], h);
@@ -299,16 +300,14 @@ public:
 			    \frac{\omega^{n+1} + \omega^n}{2}
 			  \f]
 			 */
-			vector_sum(&os[0], &omg[0], &omg_old[0], nn);
-			vector_mult_scalar(&os[0], &os[0], 0.5, nn);
+			vector_sum1(&os[0], &omg[0], &omg_old[0], theta, 1.0 - theta, nn);
 
 			/*!
 			  \f[
 			    \frac{\omega^{n+1} + \omega^n}{2}
 			  \f]
 			 */
-			vector_sum(&psi[0], &psi[0], h, nn);
-			vector_mult_scalar(&psi[0], &psi[0], 0.5, nn);
+			vector_sum1(&psi[0], &psi[0], h, theta, 1.0 - theta, nn);
 
 			//для установки краевого условия
 			//начинаем от s!
@@ -316,9 +315,10 @@ public:
 				for (int j = 0; j < n_la; ++j) {
 					int off  = pOff(i, j);
 					omg[off] = B1[off] -
-						//0.0;
-						conf->k1 * Jacobian(&psi[0], &os[0], i, j) + 
-						conf->k2 * Jacobian(&psi[0], &cor[0], i, j);
+						(
+							conf->k1 * Jacobian(&psi[0], &os[0], i, j) + 
+							conf->k2 * Jacobian(&psi[0], &cor[0], i, j)
+						);
 				}
 			}
 
