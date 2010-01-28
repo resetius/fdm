@@ -37,6 +37,8 @@
 #include <math.h>
 #include <assert.h>
 #include <string.h>
+#include <stdlib.h>
+
 #include <vector>
 
 #include "asp_excs.h"
