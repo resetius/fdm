@@ -339,8 +339,8 @@ public:
 
 			// changed !
 			int k    = (j + Ny/2    ) % Ny;
-			int k_1  = (j + Ny/2 + 1) % Ny;
-			int k__1 = (j + Ny/2 - 1) % Ny;
+			int k_1  = (j + Ny/2 - 1) % Ny;
+			int k__1 = (j + Ny/2 + 1) % Ny;
 
 			j3 -= (v[pOff(i_1, k_1)] - v[pOff(i_1, k__1)])
 				* u[pOff(i_1, k)];

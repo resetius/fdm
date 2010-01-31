@@ -264,6 +264,9 @@ public:
 		vector < double > os      (nn);
 		vector < double > B1      (nn);
 
+		vector < double > jac1    (nn);
+		vector < double > jac2    (nn);
+
 		vector < double > bnd    (n_la);
 		double theta = conf->theta;
 
@@ -311,14 +314,13 @@ public:
 
 			//для установки краевого условия
 			//начинаем от s!
+
 			for (int i = s; i < n_phi; ++i) {
 				for (int j = 0; j < n_la; ++j) {
 					int off  = pOff(i, j);
-					omg[off] = B1[off] -
-						(
-							conf->k1 * Jacobian(&psi[0], &os[0], i, j) + 
-							conf->k2 * Jacobian(&psi[0], &cor[0], i, j)
-						);
+					jac1[off] = conf->k1 * Jacobian(&psi[0], &os[0], i, j);
+					jac2[off] = conf->k2 * Jacobian(&psi[0], &cor[0], i, j);
+					omg[off] = B1[off] - jac1[off] - jac2[off];
 				}
 			}
 

@@ -398,6 +398,7 @@ void test_barvortex_plan()
 	vector < double > v00(n);
 	vector < double > c00(n);
 	vector < double > c01(n);
+	vector < double > c02(n);
 	vector < double > jac_ans1(n);
 	vector < double > jac_ans2(n);
 
@@ -435,7 +436,11 @@ void test_barvortex_plan()
 	}
 
 	lapl.make_psi(&u[0], &u00[0], &v00[0]);
+	lapl.make_psi2(&c01[0], &u00[0], &v00[0]);
 	//lapl.lapl(&u[0], &u[0]);
+
+	_fprintfwmatrix("u.txt", &u00[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+	_fprintfwmatrix("v.txt", &v00[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 
 	memset(&u[0], 0, conf.n_la * sizeof(double));
 
@@ -457,8 +462,8 @@ void test_barvortex_plan()
 					find_max(&u[0], n));
 			char buf[1024];
 			sprintf(buf, "u_%05d.txt", i);
-			lapl.lapl(&omg[0], &u[0]);
-			_fprintfwmatrix(buf, &omg[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+//			lapl.lapl(&omg[0], &u[0]);
+			_fprintfwmatrix(buf, &u[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 			if (i > 99) exit(1);
 
 			//fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");

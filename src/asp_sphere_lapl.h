@@ -163,6 +163,10 @@ public:
 
 	/*!вычисляет функцию тока по компонентам скорости*/
 	void make_psi(double * out, const double * u, const double * v);
+	/*!вычисляет функцию тока по компонентам скорости
+	вариант Андея
+	*/
+	void make_psi2(double * out, const double * u, const double * v);
 };
 
 #endif //_SPHERE_LAPL_H
