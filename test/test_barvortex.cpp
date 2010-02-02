@@ -365,14 +365,14 @@ void test_barvortex_plan()
 	double T0  = 1./conf.omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
-	conf.tau   = 0.025;
+	conf.tau   = 0.001;
 	conf.sigma = T0 / 14. / 24. / 60. / 60.;
 	conf.mu    = 2.e+5 * T0 / R / R;
 	conf.n_phi = 24;
 	conf.n_la  = 32;
 	conf.full  = 0;
 	conf.rho   = 1;
-	conf.theta = 1.0;//0.5;
+	conf.theta = 0.5;
 
 	conf.cor    = cor3;//zero_cor;
 	conf.rp     = zero_rp;
@@ -392,11 +392,13 @@ void test_barvortex_plan()
 
 	vector < double > u(n);
 	vector < double > u1(n);
+	vector < double > omg(n);
 
 	vector < double > u00(n);
 	vector < double > v00(n);
 	vector < double > c00(n);
 	vector < double > c01(n);
+	vector < double > c02(n);
 	vector < double > jac_ans1(n);
 	vector < double > jac_ans2(n);
 
@@ -434,7 +436,12 @@ void test_barvortex_plan()
 	}
 
 	lapl.make_psi(&u[0], &u00[0], &v00[0]);
-	lapl.lapl(&u[0], &u[0]);
+	lapl.make_psi2(&c01[0], &u00[0], &v00[0]);
+	//lapl.lapl(&u[0], &u[0]);
+
+	_fprintfwmatrix("u.txt", &u00[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+	_fprintfwmatrix("v.txt", &v00[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+
 	memset(&u[0], 0, conf.n_la * sizeof(double));
 
 	jac.JV2(&jac_ans1[0],  &u[0],   &c00[0]);
@@ -447,19 +454,17 @@ void test_barvortex_plan()
 	double nr2 = jac.scalar(&u[0], &jac_ans2[0]);
 
 	while (t < T) {
-		bv.S_step(&u1[0], &u[0]);
-		t += conf.tau;
-
 		if (i % 10 == 0) {
-			nr = bv.norm(&u1[0], n);
+			nr = bv.norm(&u[0], n);
 			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le;\n",
 					t, nr,
-					find_min(&u1[0], n),
-					find_max(&u1[0], n));
+					find_min(&u[0], n),
+					find_max(&u[0], n));
 			char buf[1024];
 			sprintf(buf, "u_%05d.txt", i);
-			_fprintfwmatrix(buf, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
-			//exit(1);
+//			lapl.lapl(&omg[0], &u[0]);
+			_fprintfwmatrix(buf, &u[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+			if (i > 99) exit(1);
 
 			//fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
 			//fprintf(stdout, "\n"); fflush(stdout);
@@ -468,6 +473,9 @@ void test_barvortex_plan()
 				return;
 			}
 		}
+
+		bv.S_step(&u1[0], &u[0]);
+		t += conf.tau;
 
 		u1.swap(u);
 		i ++;

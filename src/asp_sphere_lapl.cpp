@@ -964,6 +964,64 @@ void SLaplacian::filter_1(double *Dest, const double * Source)
 	d->XYtoU(Dest, &d->MF[0]);
 }
 
+static int ii(int i_phi, int i_la, int nLa) {
+	if (i_la < 0) {
+		i_la = (i_la+nLa);
+	}
+	if (i_la >= nLa) {
+		i_la = i_la%nLa;
+	}
+	return i_phi*nLa+i_la;
+}
+
+void SLaplacian::make_psi2(double * f_out, const double * u, const double * v)
+{
+	int nLa = d->n_la;
+	int nPhi = d->n_phi;
+	double R = 1.0;
+
+	unsigned long nan_[2]={0xffffffff, 0x7fffffff};
+	double nan = *(double*)nan_;
+	nan = 0.0;
+
+	// Initialize f_out[] grid function with default values: NaN
+
+	for (int i = 0; i < nLa; i++) {
+		for (int j = 0; j < nPhi; j++) {
+			f_out[ii(j, i, nLa)] = nan;
+		}
+	}
+
+	double d_la  = R*2.0*M_PI/(nLa); // d_la=dx on shpere with R radius
+	double d_phi = R*M_PI/(2.0*(nPhi-1.0)+1.0); // d_phi=dy on shpere with R radius
+
+	for (int i = 0; i < nLa; i++) {
+		double lambda = d_la*i; // x
+
+		for (int j = 1; j < nPhi; j++) { // start with j=1 !!!
+			double phi = d_phi*j; // y
+
+			double c0 = cos(d_phi*(j-1));
+			double c1 = cos(d_phi*j);
+			double c2 = cos(d_phi*(j+1));
+			double du_dphi = 0.0;
+
+			if (j == nPhi-1) {
+				du_dphi = (c0*u[ii(j+1, i, nLa)]-c2*u[ii(j-1, i, nLa)])/(2*d_phi);
+			}
+			else {
+				int i0 = (i + nLa/2) % nLa;
+				du_dphi = (c1*u[ii(j, i0, nLa)]-c0*u[ii(j-1, i, nLa)])/(2*d_phi); // c1, c0 - is correct !!!
+			}
+			double dv_dla = (v[ii(j, i+1, nLa)]-v[ii(j, i-1, nLa)])/(2*d_la);
+
+			f_out[ii(j, i, nLa)] = (-du_dphi+dv_dla)/(R*c1);
+		}
+	}
+
+//	lapl_1(f_out, f_out);
+}
+
 void SLaplacian::make_psi(double * dpsi, const double * u, const double * v)
 {
 	int i, j;

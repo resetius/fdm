@@ -37,6 +37,8 @@
 #include <math.h>
 #include <assert.h>
 #include <string.h>
+#include <stdlib.h>
+
 #include <vector>
 
 #include "asp_excs.h"
@@ -337,8 +339,8 @@ public:
 
 			// changed !
 			int k    = (j + Ny/2    ) % Ny;
-			int k_1  = (j + Ny/2 + 1) % Ny;
-			int k__1 = (j + Ny/2 - 1) % Ny;
+			int k_1  = (j + Ny/2 - 1) % Ny;
+			int k__1 = (j + Ny/2 + 1) % Ny;
 
 			j3 -= (v[pOff(i_1, k_1)] - v[pOff(i_1, k__1)])
 				* u[pOff(i_1, k)];
@@ -826,7 +828,7 @@ void SJacobian::JV2(double * dest, const double * u, const double * v)
 			J1a = J1a / 2. / Hx / 2. / Hy;
 
 
-			J2 = (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (i-1+Nx/2) %Nx+ (j) *Nx]) * om[ (i+Nx/2) %Nx+ (j) *Nx] -
+			J2 = (ps[ (i-1+Nx/2) %Nx+ (j) *Nx] - ps[ (i+1+Nx/2) %Nx+ (j) *Nx]) * om[ (i+Nx/2) %Nx+ (j) *Nx] -
 			     (ps[ (i+1) %Nx+ (j-1) *Nx] - ps[ (i-1) %Nx+ (j-1) *Nx]) * om[ (i) %Nx+ (j-1) *Nx] -
 			     (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (i+1) %Nx+ (j-1) *Nx]) * om[ (i+1) %Nx+j*Nx] +
 			     (ps[ (i-1+Nx/2) %Nx+ (j) *Nx] - ps[ (i-1) %Nx+ (j-1) *Nx]) * om[ (i-1) %Nx+j*Nx];
@@ -841,7 +843,7 @@ void SJacobian::JV2(double * dest, const double * u, const double * v)
 
 			J3 = (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i+1) %Nx+ (j-1) *Nx]) * ps[ (i+1) %Nx+j*Nx] -
 			     (om[ (i-1+Nx/2) %Nx+ (j) *Nx] - om[ (i-1) %Nx+ (j-1) *Nx]) * ps[ (i-1) %Nx+j*Nx] -
-			     (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i-1+Nx/2) %Nx+ (j) *Nx]) * ps[ (i+Nx/2) %Nx+ (j) *Nx] +
+			     (om[ (i-1+Nx/2) %Nx+ (j) *Nx] - om[ (i+1+Nx/2) %Nx+ (j) *Nx]) * ps[ (i+Nx/2) %Nx+ (j) *Nx] +
 			     (om[ (i+1) %Nx+ (j-1) *Nx] - om[ (i-1) %Nx+ (j-1) *Nx]) * ps[ (i) %Nx+ (j-1) *Nx];
 
 			j3_la  = (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i+1) %Nx+ (j-1) *Nx]) * ps[ (i+1) %Nx+j*Nx] -
@@ -934,7 +936,7 @@ void SJacobian::JV2(double * dest, const double * u, const double * v)
 			     (ps[ (i+Nx/2) %Nx+ (j) *Nx] - ps[ (i) %Nx+ (j-1) *Nx]) * (om[ (i+1) %Nx+j*Nx] - om[ (Nx-1) %Nx+j*Nx]);
 			J1 = J1 / 2. / Hx / 2. / Hy;
 
-			J2 = (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (Nx-1+Nx/2) %Nx+ (j) *Nx]) * om[ (i+Nx/2) %Nx+ (j) *Nx] -
+			J2 = (ps[ (i-1+Nx/2) %Nx+ (j) *Nx] - ps[ (Nx+1+Nx/2) %Nx+ (j) *Nx]) * om[ (i+Nx/2) %Nx+ (j) *Nx] -
 			     (ps[ (i+1) %Nx+ (j-1) *Nx] - ps[ (Nx-1) %Nx+ (j-1) *Nx]) * om[ (i) %Nx+ (j-1) *Nx] -
 			     (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (i+1) %Nx+ (j-1) *Nx]) * om[ (i+1) %Nx+j*Nx] +
 			     (ps[ (Nx-1+Nx/2) %Nx+ (j) *Nx] - ps[ (Nx-1) %Nx+ (j-1) *Nx]) * om[ (Nx-1) %Nx+j*Nx];
@@ -943,7 +945,7 @@ void SJacobian::JV2(double * dest, const double * u, const double * v)
 
 			J3 = (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i+1) %Nx+ (j-1) *Nx]) * ps[ (i+1) %Nx+j*Nx] -
 			     (om[ (Nx-1+Nx/2) %Nx+ (j) *Nx] - om[ (Nx-1) %Nx+ (j-1) *Nx]) * ps[ (Nx-1) %Nx+j*Nx] -
-			     (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (Nx-1+Nx/2) %Nx+ (j) *Nx]) * ps[ (i+Nx/2) %Nx+ (j) *Nx] +
+			     (om[ (i-1+Nx/2) %Nx+ (j) *Nx] - om[ (Nx+1+Nx/2) %Nx+ (j) *Nx]) * ps[ (i+Nx/2) %Nx+ (j) *Nx] +
 			     (om[ (i+1) %Nx+ (j-1) *Nx] - om[ (Nx-1) %Nx+ (j-1) *Nx]) * ps[ (i) %Nx+ (j-1) *Nx];
 
 			J3 = J3 / 2. / Hx / 2. / Hy;
@@ -969,7 +971,7 @@ void SJacobian::JV2(double * dest, const double * u, const double * v)
 			J1a = J1a / 2. / Hx / 2. / Hy;
 
 
-			J2 = (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (i-1+Nx/2) %Nx+ (j) *Nx]) * om[ (i+Nx/2) %Nx+ (j) *Nx] -
+			J2 = (ps[ (i-1+Nx/2) %Nx+ (j) *Nx] - ps[ (i+1+Nx/2) %Nx+ (j) *Nx]) * om[ (i+Nx/2) %Nx+ (j) *Nx] -
 			     (ps[ (i+1) %Nx+ (j-1) *Nx] - ps[ (i-1) %Nx+ (j-1) *Nx]) * om[ (i) %Nx+ (j-1) *Nx] -
 			     (ps[ (i+1+Nx/2) %Nx+ (j) *Nx] - ps[ (i+1) %Nx+ (j-1) *Nx]) * om[ (i+1) %Nx+j*Nx] +
 			     (ps[ (i-1+Nx/2) %Nx+ (j) *Nx] - ps[ (i-1) %Nx+ (j-1) *Nx]) * om[ (i-1) %Nx+j*Nx];
@@ -984,7 +986,7 @@ void SJacobian::JV2(double * dest, const double * u, const double * v)
 
 			J3 = (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i+1) %Nx+ (j-1) *Nx]) * ps[ (i+1) %Nx+j*Nx] -
 			     (om[ (i-1+Nx/2) %Nx+ (j) *Nx] - om[ (i-1) %Nx+ (j-1) *Nx]) * ps[ (i-1) %Nx+j*Nx] -
-			     (om[ (i+1+Nx/2) %Nx+ (j) *Nx] - om[ (i-1+Nx/2) %Nx+ (j) *Nx]) * ps[ (i+Nx/2) %Nx+ (j) *Nx] +
+			     (om[ (i-1+Nx/2) %Nx+ (j) *Nx] - om[ (i+1+Nx/2) %Nx+ (j) *Nx]) * ps[ (i+Nx/2) %Nx+ (j) *Nx] +
 			     (om[ (i+1) %Nx+ (j-1) *Nx] - om[ (i-1) %Nx+ (j-1) *Nx]) * ps[ (i) %Nx+ (j-1) *Nx];
 
 			J3 = J3 / 2. / Hx / 2. / Hy;
