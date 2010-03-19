@@ -11,6 +11,8 @@
 #include "asp_misc.h"
 #include "asp_sphere_lapl.h"
 #include "asp_sphere_jac.h"
+#include "statistics.h"
+#include "srtm_rel.h"
 
 using namespace std;
 using namespace asp;
@@ -355,7 +357,49 @@ double cor3(double phi, double lambda, BarVortexConf * conf)
 	return (l + h);
 }
 
-void test_barvortex_plan()
+double one_rp(double phi, double lambda, BarVortexConf * conf)
+{
+	return 1.0;
+}
+
+void output_psi(const char * prefix, const char * suffix,
+                                const double * psi, long nlat, long nlon,
+                                double U0, double PSI0
+                                /*SphereGrad & grad*/)
+{
+//        vector < double > u (nlat * nlon);
+//        vector < double > v (nlat * nlon);
+        vector < double > Psi (nlat * nlon);
+
+//        grad.calc(&u[0], &v[0], &psi[0]);
+
+//        vec_mult_scalar(&u[0], &u[0], -1.0, nlat * nlon);
+
+        char ubuf[1024]; char vbuf[1024]; char psibuf[1024];
+        char Ubuf[1024]; char Vbuf[1024]; char Psibuf[1024];
+
+        snprintf(ubuf, 1024,   "out/%snorm_u%s.txt", prefix, suffix);
+        snprintf(vbuf, 1024,   "out/%snorm_v%s.txt", prefix, suffix);
+        snprintf(psibuf, 1024, "out/%snorm_psi%s.txt", prefix, suffix);
+
+        snprintf(Ubuf, 1024,   "out/%sorig_u%s.txt", prefix, suffix);
+        snprintf(Vbuf, 1024,   "out/%sorig_v%s.txt", prefix, suffix);
+        snprintf(Psibuf, 1024, "out/%sorig_psi%s.txt", prefix, suffix);
+
+//        fprintfwmatrix(ubuf,   &u[0], nlat, nlon, "%23.16lf ");
+//        fprintfwmatrix(vbuf,   &v[0], nlat, nlon, "%23.16lf ");
+        _fprintfwmatrix(psibuf, &psi[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
+
+//        vec_mult_scalar(&u[0], &u[0], U0, nlon * nlat);
+//        vec_mult_scalar(&v[0], &v[0], U0, nlon * nlat);
+        vector_mult_scalar(&Psi[0],  &psi[0],  PSI0, nlon * nlat);
+
+//        fprintfwmatrix(Ubuf,   &u[0], nlat, nlon, "%23.16le ");
+//        fprintfwmatrix(Vbuf,   &v[0], nlat, nlon, "%23.16le ");
+        _fprintfwmatrix(Psibuf, &Psi[0], nlat, nlon, std::max(nlat, nlon), "%23.16le ");
+}
+
+void test_barvortex_plan(const char * srtm)
 {
 	BarVortexConf conf;
 	conf.steps = 1;
@@ -365,42 +409,53 @@ void test_barvortex_plan()
 	double T0  = 1./conf.omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
-	conf.tau   = 0.001;
-	conf.sigma = T0 / 14. / 24. / 60. / 60.;
-	conf.mu    = 2.e+5 * T0 / R / R;
+	int part_of_the_day = 192;
+	conf.tau   = 2 * M_PI / (double) part_of_the_day;
+	conf.sigma = 1.14e-2;
+	conf.mu    = 6.77e-5;
 	conf.n_phi = 24;
 	conf.n_la  = 32;
 	conf.full  = 0;
 	conf.rho   = 1;
 	conf.theta = 0.5;
 
-	conf.cor    = cor3;//zero_cor;
-	conf.rp     = zero_rp;
+	conf.cor    = 0;//cor3;//zero_cor;
+	conf.rp     = 0;//one_rp;//zero_rp;
 	conf.filter = 0;
 	conf.cor_add= 0;
 
 	int n = conf.n_phi * conf.n_la;
 
 	double t = 0;
-	double T = 1445;//300 * 2.0 * M_PI;;
+	double T = 2 * M_PI * 1000.0; //1445;//300 * 2.0 * M_PI;;
 	double nr;
-	int i = 0;
+	int i, j;
+
+	vector < double > cor(n);
+	vector < double > rel(n);
+	vector < double > u(n);
+	vector < double > v(n);
+	vector < double > f(n);
+	vector < double > u1(n);
+	int nlat     = conf.n_phi;
+	int nlon     = conf.n_la;
+
+	const char * fn = srtm ? srtm : "";
+	ReliefLoader rel_loader(fn);
+	rel_loader.get(&rel[0], 24, 32, conf.full, true);
+
+	double rel_max = 0.0;
+        for (i = 0; i < nlat * nlon; ++i) {
+                if (rel_max < rel[i]) rel_max = rel[i];
+                //if (rel_max < fabs(rel[i])) rel_max = fabs(rel[i]);
+        }
+
+	conf.cor_add = &cor[0];
+	conf.rp_add  = &f[0];
 
 	BarVortex bv(conf);
 	SLaplacian lapl(conf.n_phi, conf.n_la, false);
 	SJacobian jac(conf.n_phi, conf.n_la, false);
-
-	vector < double > u(n);
-	vector < double > u1(n);
-	vector < double > omg(n);
-
-	vector < double > u00(n);
-	vector < double > v00(n);
-	vector < double > c00(n);
-	vector < double > c01(n);
-	vector < double > c02(n);
-	vector < double > jac_ans1(n);
-	vector < double > jac_ans2(n);
 
 	fprintf(stderr, "#domain:sphere half\n");
 	fprintf(stderr, "#mesh_w:%d\n", conf.n_la);
@@ -420,59 +475,60 @@ void test_barvortex_plan()
 	double U0max = 30.;
 	double Hy    = bv.phi(1);
 	double Hx    = bv.lambda(1);
+	double omg = 2.*M_PI/24./60./60.;
+	double TE  = 1./omg;
+	double RE  = 6.371e+6;
+        double PSI0 = RE * RE / TE;
 	double U0    = R / T0;
 	double Ly    = M_PI / 2.0;
 	double Lx    = 2.0 * M_PI;
 
-	for (int i = 0; i < conf.n_la; ++i) {
-		for (int j = 0; j < conf.n_phi; ++j) {
-			u00[pOff(j, i)] = U0max * 4.*j * Hy * (M_PI / 2. - j * Hy) / Ly / Ly / U0;
-			v00[pOff(j, i)] = 0.0;
+        for (i = 0; i < nlat; ++i)
+        {
+                for (j = 0; j < nlon; ++j)
+                {
+                        double phi    = bv.phi(i);
+                        double lambda = bv.lambda(j);
 
-			double cc = conf.cor(bv.phi(j), bv.lambda(i), &conf);
-			c00[pOff(j, i)] = cc;
-			c01[pOff(j, i)] = (double)rand() / RAND_MAX * conf.cor(bv.phi(j), bv.lambda(i), &conf);
-		}
-	}
+                        if (phi > 0) {
+                                u[i * nlon + j] = (phi * (M_PI / 2. - phi) * 16 / M_PI / M_PI * 100.0 / U0);
+                        } else {
+                                u[i * nlon + j] = (phi * (M_PI / 2. + phi) * 16 / M_PI / M_PI * 100.0 / U0);
+                        }
+                        v[i * nlon + j] = 0;
 
-	lapl.make_psi(&u[0], &u00[0], &v00[0]);
-	lapl.make_psi2(&c01[0], &u00[0], &v00[0]);
-	//lapl.lapl(&u[0], &u[0]);
+                        if (rel[i * nlon + j] > 0) {
+                                rel[i * nlon + j] = 1.0 * rel[i * nlon + j] / rel_max;
+                        } else {
+                                rel[i * nlon + j] = 0.0;
+                        }
+                        cor[i * nlon + j] = rel[i * nlon + j] + 2 * sin(phi);
+                }
+        }
 
-	_fprintfwmatrix("u.txt", &u00[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
-	_fprintfwmatrix("v.txt", &v00[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
+	lapl.make_psi(&f[0], &u[0], &v[0]);
+	lapl.lapl_1(&u[0], &f[0]);
+	vector_mult_scalar(&f[0], &f[0], conf.sigma, n);
 
-	memset(&u[0], 0, conf.n_la * sizeof(double));
+	bv.reset();
 
-	jac.JV2(&jac_ans1[0],  &u[0],   &c00[0]);
-	jac.JV2T(&jac_ans2[0], &c01[0], &c00[0]);
-	//jac.JT(&jac_ans2[0], &c01[0], &c00[0], 1);
+	Variance < double > var(n);
 
-	// (ans1, c01)
-	// (u, ans2)
-	double nr1 = jac.scalar(&jac_ans1[0], &c01[0]);
-	double nr2 = jac.scalar(&u[0], &jac_ans2[0]);
-
+	i = 0;
 	while (t < T) {
-		if (i % 10 == 0) {
-			nr = bv.norm(&u[0], n);
-			fprintf(stderr, "t=%le; nr=%le; min=%le; max=%le;\n",
-					t, nr,
-					find_min(&u[0], n),
-					find_max(&u[0], n));
-			char buf[1024];
-			sprintf(buf, "u_%05d.txt", i);
-//			lapl.lapl(&omg[0], &u[0]);
-			_fprintfwmatrix(buf, &u[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
-			if (i > 99) exit(1);
+		if (i % part_of_the_day == 0) {
+                        char buf[1024];
+                        nr = bv.norm(&u[0], n);
+                        fprintf(stderr, "nr=%.16lf, t=%.16lf of %.16lf\n", nr, t, T);
+                        snprintf(buf, 1024, "%06d", i);
+                        output_psi("", buf, &u[0], nlat, nlon, U0, PSI0/*, grad*/);
 
-			//fprintfwmatrix(stdout, &u1[0], conf.n_phi, conf.n_la, conf.n_la, "%.16lf ");
-			//fprintf(stdout, "\n"); fflush(stdout);
+                        vector < double > m = var.m_current();
+                        vector < double > d = var.current();
 
-			if (isnan(nr)) {
-				return;
-			}
-		}
+                        output_psi("m_", "", &m[0], nlat, nlon, U0, PSI0/*, grad*/);
+                        output_psi("d_", "", &d[0], nlat, nlon, U0, PSI0/*, grad*/);
+                }
 
 		bv.S_step(&u1[0], &u[0]);
 		t += conf.tau;
@@ -584,7 +640,7 @@ int main(int argc, char ** argv)
 		//test_barvortex();
 		//test_barvortex_real();
 		//test_barvortex_linear();
-		test_barvortex_plan();
+		test_barvortex_plan(argv[1]);
 	} else {
 		calc_barvortex_right_part();
 	}

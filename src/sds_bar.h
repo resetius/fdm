@@ -65,8 +65,8 @@ struct BarVortexConf
 	double theta;  //!<параметр в полунеявной схеме.
 	double sigma;  //!<параметры задачи.
 	double mu;     //!<параметры задачи.
-    int n_phi;     //!<разбиение (широта)
-    int n_la;      //!<разбиение (долгота).
+	int n_phi;     //!<разбиение (широта)
+	int n_la;      //!<разбиение (долгота).
 	int full;      //!<использовать полную сферу?
 	double k1;
 	double k2;
@@ -109,6 +109,8 @@ public:
 
 	double phi(int i);
 	double lambda(int i);
+
+	void reset();
 };
 
 }

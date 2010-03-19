@@ -239,3 +239,8 @@ void BarVortex::calc_rp(double * rp, const double * u)
 	d->calc_rp(rp, u);
 }
 
+void BarVortex::reset()
+{
+	d->reset();
+}
+

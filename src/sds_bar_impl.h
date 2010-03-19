@@ -182,7 +182,9 @@ public:
 
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
-				cor[pOff(i, j)] = conf->cor(PHI[i], LA[j], conf);
+				if (conf->cor) {
+					cor[pOff(i, j)] = conf->cor(PHI[i], LA[j], conf);
+				}
 				if (conf->cor_add) {
 					cor[pOff(i, j)] += conf->cor_add[pOff(i, j)];
 				}
