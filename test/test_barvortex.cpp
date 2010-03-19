@@ -453,7 +453,6 @@ void test_barvortex_plan(const char * srtm)
 	conf.cor_add = &cor[0];
 	conf.rp_add  = &f[0];
 
-	BarVortex bv(conf);
 	SLaplacian lapl(conf.n_phi, conf.n_la, false);
 	SJacobian jac(conf.n_phi, conf.n_la, false);
 
@@ -473,8 +472,6 @@ void test_barvortex_plan(const char * srtm)
 	fprintf(stderr, "#build:$Id$\n");
 
 	double U0max = 30.;
-	double Hy    = bv.phi(1);
-	double Hx    = bv.lambda(1);
 	double omg = 2.*M_PI/24./60./60.;
 	double TE  = 1./omg;
 	double RE  = 6.371e+6;
@@ -487,8 +484,8 @@ void test_barvortex_plan(const char * srtm)
         {
                 for (j = 0; j < nlon; ++j)
                 {
-                        double phi    = bv.phi(i);
-                        double lambda = bv.lambda(j);
+                        double phi    = lapl.phi(i);
+                        double lambda = lapl.lambda(j);
 
                         if (phi > 0) {
                                 u[i * nlon + j] = (phi * (M_PI / 2. - phi) * 16 / M_PI / M_PI * 100.0 / U0);
@@ -510,9 +507,14 @@ void test_barvortex_plan(const char * srtm)
 	lapl.lapl_1(&u[0], &f[0]);
 	vector_mult_scalar(&f[0], &f[0], conf.sigma, n);
 
-	bv.reset();
+	BarVortex bv(conf);
 
 	Variance < double > var(n);
+	_fprintfwmatrix("out/cor.txt", &cor[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
+        _fprintfwmatrix("out/rel.txt", &rel[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
+        _fprintfwmatrix("out/rp.txt", &f[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
+        _fprintfwmatrix("out/u0.txt", &u[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
+        _fprintfwmatrix("out/v0.txt", &v[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
 
 	i = 0;
 	while (t < T) {

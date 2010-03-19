@@ -1073,3 +1073,14 @@ void SLaplacian::make_psi(double * dpsi, const double * u, const double * v)
 
 	lapl_1(dpsi, dpsi);
 }
+
+double SLaplacian::phi(int i)
+{
+	return d->phi(i);
+}
+
+double SLaplacian::lambda(int j)
+{
+        return d->la(j);
+}
+

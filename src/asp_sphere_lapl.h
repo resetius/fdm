@@ -167,6 +167,10 @@ public:
 	вариант Андея
 	*/
 	void make_psi2(double * out, const double * u, const double * v);
+
+	double phi(int i);
+	double lambda(int i);
 };
 
 #endif //_SPHERE_LAPL_H
+
