@@ -412,7 +412,7 @@ void test_barvortex_plan(const char * srtm)
 	int part_of_the_day = 192;
 	conf.tau   = 2 * M_PI / (double) part_of_the_day;
 	conf.sigma = 1.14e-2;
-	conf.mu    = 6.77e-5;
+	conf.mu    = 1.77e-6;
 	conf.n_phi = 24;
 	conf.n_la  = 32;
 	conf.full  = 0;
@@ -636,13 +636,14 @@ int main(int argc, char ** argv)
 	}
 	fprintf(stderr, "\n");
 	//set_fpe_except();
-	if (argc < 2) {
+//	if (argc < 3) {
+//		fprintf(stderr, "calc\n");
 		//test_barvortex();
 		//test_barvortex_real();
 		//test_barvortex_linear();
 		test_barvortex_plan(argv[1]);
-	} else {
-		calc_barvortex_right_part();
-	}
+//	} else {
+//		calc_barvortex_right_part();
+//	}
 }
 
