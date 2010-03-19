@@ -178,11 +178,10 @@ void ReliefLoader::get(double * out, long nlat, long nlon, bool full, bool offse
 				phi    = -0.5 * M_PI + i * dlat;
 				lambda = j * dlon;
 			} else if (offset && !full) {
+				phi    = i * dlat;
+				lambda = j * dlon;
 			} else if (offset && full) {
 				phi    = (dlat - M_PI) * 0.5 + (double)i * dlat;
-				lambda = j * dlon;
-			} else if (!offset && full) {
-				phi    = i * dlat;
 				lambda = j * dlon;
 			}
 
