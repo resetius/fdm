@@ -18,6 +18,8 @@ using namespace std;
 using namespace asp;
 using namespace SDS;
 
+#undef max
+
 #ifdef WIN32
 #include <float.h>
 #define isnan _isnan
