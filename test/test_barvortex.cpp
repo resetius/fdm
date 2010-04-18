@@ -6,6 +6,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "sds_bar.h"
 #include "asp_misc.h"
@@ -23,6 +24,7 @@ using namespace SDS;
 #ifdef WIN32
 #include <float.h>
 #define isnan _isnan
+#define snprintf _snprintf
 inline bool isinf(double x)
 {
 	int c = _fpclass(x);
@@ -390,7 +392,7 @@ void output_psi(const char * prefix, const char * suffix,
 
 //        fprintfwmatrix(ubuf,   &u[0], nlat, nlon, "%23.16lf ");
 //        fprintfwmatrix(vbuf,   &v[0], nlat, nlon, "%23.16lf ");
-        _fprintfwmatrix(psibuf, &psi[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
+        _fprintfwmatrix(psibuf, &psi[0], nlat, nlon, max(nlat, nlon), "%23.16lf ");
 
 //        vec_mult_scalar(&u[0], &u[0], U0, nlon * nlat);
 //        vec_mult_scalar(&v[0], &v[0], U0, nlon * nlat);
@@ -398,7 +400,7 @@ void output_psi(const char * prefix, const char * suffix,
 
 //        fprintfwmatrix(Ubuf,   &u[0], nlat, nlon, "%23.16le ");
 //        fprintfwmatrix(Vbuf,   &v[0], nlat, nlon, "%23.16le ");
-        _fprintfwmatrix(Psibuf, &Psi[0], nlat, nlon, std::max(nlat, nlon), "%23.16le ");
+        _fprintfwmatrix(Psibuf, &Psi[0], nlat, nlon, max(nlat, nlon), "%23.16le ");
 }
 
 void test_barvortex_plan(const char * srtm)
@@ -512,11 +514,11 @@ void test_barvortex_plan(const char * srtm)
 	BarVortex bv(conf);
 
 	Variance < double > var(n);
-	_fprintfwmatrix("out/cor.txt", &cor[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
-        _fprintfwmatrix("out/rel.txt", &rel[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
-        _fprintfwmatrix("out/rp.txt", &f[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
-        _fprintfwmatrix("out/u0.txt", &u[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
-        _fprintfwmatrix("out/v0.txt", &v[0], nlat, nlon, std::max(nlat, nlon), "%23.16lf ");
+	_fprintfwmatrix("out/cor.txt", &cor[0], nlat, nlon, max(nlat, nlon), "%23.16lf ");
+        _fprintfwmatrix("out/rel.txt", &rel[0], nlat, nlon, max(nlat, nlon), "%23.16lf ");
+        _fprintfwmatrix("out/rp.txt", &f[0], nlat, nlon, max(nlat, nlon), "%23.16lf ");
+        _fprintfwmatrix("out/u0.txt", &u[0], nlat, nlon, max(nlat, nlon), "%23.16lf ");
+        _fprintfwmatrix("out/v0.txt", &v[0], nlat, nlon, max(nlat, nlon), "%23.16lf ");
 
 	i = 0;
 	while (t < T) {
