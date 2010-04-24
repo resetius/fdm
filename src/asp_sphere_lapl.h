@@ -130,6 +130,18 @@ public:
 	void lapl_1(double * Dest, const double * Source, double mult = 1.0, double diag = 0.0, int bc = BC_DIRICHLET);
 
 	/*!
+	  Значения обратного оператора Лапласа во всех точках сетки.
+	  вызывает lapl_1(Dest, Source, 1.0, 0.0)
+	  Добавлено для совместимости. 
+	   \param Dest - ответ
+	   \param M - значения функции от которой находим обратный оператор Лапласа	  
+	 */
+	void solve(double * Dest, const double * Source)
+	{
+		lapl_1(Dest, Source, 1.0, 0.0);
+	}
+
+	/*!
 	   Значения обратного оператора Лапласа во всех точках сетки
 	   \param Dest - ответ
 	   \param M - значения функции от которой находим обратный оператор Лапласа

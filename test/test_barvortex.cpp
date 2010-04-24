@@ -483,7 +483,7 @@ void test_barvortex_plan(const char * srtm)
 	double U0max = 30.;
 	double TE  = 1./omg;
 	double RE  = 6.371e+6;
-        double PSI0 = RE * RE / TE;
+	double PSI0 = RE * RE / TE;
 	double U0    = R / T0;
 	double Ly    = M_PI / 2.0;
 	double Lx    = 2.0 * M_PI;

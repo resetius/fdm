@@ -231,4 +231,3 @@ void BarVortex::reset()
 {
 	d->reset();
 }
-
