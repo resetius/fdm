@@ -98,6 +98,11 @@ public:
 
 	virtual ~BarVortex();
 	void S_step(double *h1, const double *h);
+	void S_step(double *h1, const double *h, double t)
+	{
+		S_step(h1, h);
+	}
+
 	void L_step(double *h1, const double *h, const double *z);
 	void LT_step(double *h1, const double *h, const double *z);
 	void L_1_step(double *h1, const double *h, const double *z);
