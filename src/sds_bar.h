@@ -58,35 +58,6 @@ namespace SDS {
  * \f$\phi \in [0,\pi/2]\f$ - широта
  * \f$\lambda \in [0,2\pi]\f$ - долгота
  */
-struct BarVortexConf 
-{
-	typedef double (*rp_t ) (double phi, double lambda, 
-		double t, const BarVortexConf * conf);
-
-	int nlat;      //!<разбиение (широта)
-	int nlon;      //!<разбиение (долгота).
-	int full;      //!<использовать полную сферу?
-	int filter;
-
-	double tau;    //!<шаг счёта.
-	double sigma;  //!<параметры задачи.
-	double mu;     //!<параметры задачи.
-	double k1;
-	double k2;
-	double theta;  //!<параметр в полунеявной схеме.
-
-	rp_t rp;
-	rp_t cor;
-
-	double * rp2;
-	double * cor2;
-
-	int & n_phi;
-	int & n_la;
-
-	BarVortexConf()
-		: rp(0), rp2(0), cor(0), cor2(0), n_phi(nlat), n_la(nlon) {}
-};
 
 class BarVortex
 {
@@ -95,7 +66,35 @@ private:
 	Private * d;
 
 public:
-	typedef BarVortexConf conf_t;
+	struct Conf 
+	{
+		typedef double (*rp_t ) (double phi, double lambda, 
+			double t, const Conf * conf);
+
+		int nlat;      //!<разбиение (широта)
+		int nlon;      //!<разбиение (долгота).
+		int full;      //!<использовать полную сферу?
+		int filter;
+
+		double tau;    //!<шаг счёта.
+		double sigma;  //!<параметры задачи.
+		double mu;     //!<параметры задачи.
+		double k1;
+		double k2;
+		double theta;  //!<параметр в полунеявной схеме.
+
+		rp_t rp;
+		rp_t cor;
+
+		double * rp2;
+		double * cor2;
+
+		int & n_phi;
+		int & n_la;
+
+		Conf()
+			: rp(0), rp2(0), cor(0), cor2(0), n_phi(nlat), n_la(nlon) {}
+	};
 
 	virtual ~BarVortex();
 	void S_step(double *h1, const double *h);
@@ -103,7 +102,7 @@ public:
 	void LT_step(double *h1, const double *h, const double *z);
 	void L_1_step(double *h1, const double *h, const double *z);
 
-	BarVortex(BarVortexConf&);
+	BarVortex(Conf&);
 	
 	double scalar(const double *x, const double *y, int n);
 	double norm(const double *x, int n);

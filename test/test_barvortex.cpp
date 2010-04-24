@@ -31,12 +31,12 @@ inline bool isinf(double x)
 }
 #endif
 
-double zero_rp(double phi, double lambda, double t, const BarVortexConf * conf)
+double zero_rp(double phi, double lambda, double t, const BarVortex::Conf * conf)
 {
 	return 0;
 }
 
-double rp(double phi, double lambda, double t, const BarVortexConf * conf)
+double rp(double phi, double lambda, double t, const BarVortex::Conf * conf)
 {
 	double omg = 2.*M_PI/24./60./60.; // ?
 	double T0  = 1./omg;
@@ -53,18 +53,18 @@ double rp(double phi, double lambda, double t, const BarVortexConf * conf)
 	return -T0/R * 16.0 / M_PI / M_PI * 30.0 * (pt1 + pt2);
 }
 
-double zero_cor(double phi, double lambda, double t, const BarVortexConf * conf)
+double zero_cor(double phi, double lambda, double t, const BarVortex::Conf * conf)
 {
 	return 0.0;
 }
 
-double cor(double phi, double lambda, double t, const BarVortexConf * conf)
+double cor(double phi, double lambda, double t, const BarVortex::Conf * conf)
 {
 	return 2.*sin(phi) +  // l
 		0.5 * cos(2*lambda)*sin(2*phi)*sin(2*phi); //h
 }
 
-double cor2(double phi, double lambda, double t, const BarVortexConf * conf)
+double cor2(double phi, double lambda, double t, const BarVortex::Conf * conf)
 {
 	return 2.*sin(phi);
 }
@@ -103,7 +103,7 @@ void set_fpe_except()
 
 void calc_barvortex_right_part()
 {
-	BarVortexConf conf;
+	BarVortex::Conf conf;
 	double R   = 6.371e+6;
 	double H   = 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
@@ -150,7 +150,7 @@ double rnd_u(double phi, double lambda)
 	return (phi - M_PI / 2) *  phi * sin(lambda) * rand() / (double)RAND_MAX;
 }
 
-void LOp(double * u, const double * v, vector < vector < double > > & z, BarVortex * bv, BarVortexConf * conf)
+void LOp(double * u, const double * v, vector < vector < double > > & z, BarVortex * bv, BarVortex::Conf * conf)
 {
 	int nn = conf->n_la * conf->n_phi;
 
@@ -169,7 +169,7 @@ void LOp(double * u, const double * v, vector < vector < double > > & z, BarVort
 	memcpy(u, &tmp1[0], nn * sizeof(double));
 }
 
-void LTOp(double * u, const double * v, vector < vector < double > > & z, BarVortex * bv, BarVortexConf * conf)
+void LTOp(double * u, const double * v, vector < vector < double > > & z, BarVortex * bv, BarVortex::Conf * conf)
 {
 	int nn = conf->n_la * conf->n_phi;
 
@@ -190,7 +190,7 @@ void LTOp(double * u, const double * v, vector < vector < double > > & z, BarVor
 
 void test_barvortex_linear()
 {
-	BarVortexConf conf;
+	BarVortex::Conf conf;
 	double R   = 6.371e+6;
 	double H   = 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
@@ -259,7 +259,7 @@ void test_barvortex_linear()
 
 void test_barvortex()
 {
-	BarVortexConf conf;
+	BarVortex::Conf conf;
 	double R   = 6.371e+6;
 	double H   = 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
@@ -343,7 +343,7 @@ void test_barvortex()
 	}
 }
 
-double cor3(double phi, double lambda, BarVortexConf * conf)
+double cor3(double phi, double lambda, BarVortex::Conf * conf)
 {
 	double omg  = 2.*M_PI/24./60./60.; // ?
 	double T0   = 1./omg;
@@ -355,7 +355,7 @@ double cor3(double phi, double lambda, BarVortexConf * conf)
 	return (l + h);
 }
 
-double one_rp(double phi, double lambda, BarVortexConf * conf)
+double one_rp(double phi, double lambda, BarVortex::Conf * conf)
 {
 	return 1.0;
 }
@@ -399,7 +399,7 @@ void output_psi(const char * prefix, const char * suffix,
 
 void test_barvortex_plan(const char * srtm)
 {
-	BarVortexConf conf;
+	BarVortex::Conf conf;
 	double R   = 6.371e+6;
 	double H   = 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
@@ -550,7 +550,7 @@ void test_barvortex_plan(const char * srtm)
 
 void test_barvortex_real()
 {
-	BarVortexConf conf;
+	BarVortex::Conf conf;
 	double R   = 6.371e+6;
 	double H   = 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
