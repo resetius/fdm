@@ -6,4 +6,5 @@ file(GLOB SRC src/*.c src/*.cpp src/*.h)
 add_library(fdm ${SRC})
 
 add_subdirectory(test)
+add_subdirectory(utils)
 

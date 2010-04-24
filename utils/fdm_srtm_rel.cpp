@@ -23,7 +23,7 @@
 #include <stdint.h>
 #endif
 
-#include "srtm_rel.h"
+#include "fdm_srtm_rel.h"
 
 using namespace std;
 
@@ -189,4 +189,22 @@ void ReliefLoader::get(double * out, long nlat, long nlon, bool full, bool offse
 		}
 	}
 }
+
+#ifdef TEST
+
+void usage(const char * argv)
+{
+	fprintf(stderr, "%s topo30 [-nlat nlat] [-nlon nlon] [-o output] [-fmt bin|txt] [-type half|full]");
+	exit(1);
+}
+
+int main(int argc, char ** argv)
+{
+	int nlat = 32;
+	int nlon = 24;
+	int full = 0;
+	int bin  = 0;
+}
+#endif
+
 
