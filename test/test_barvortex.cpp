@@ -31,12 +31,12 @@ inline bool isinf(double x)
 }
 #endif
 
-double zero_rp(double phi, double lambda, BarVortexConf * conf)
+double zero_rp(double phi, double lambda, double t, const BarVortexConf * conf)
 {
 	return 0;
 }
 
-double rp(double phi, double lambda, BarVortexConf * conf)
+double rp(double phi, double lambda, double t, const BarVortexConf * conf)
 {
 	double omg = 2.*M_PI/24./60./60.; // ?
 	double T0  = 1./omg;
@@ -53,18 +53,18 @@ double rp(double phi, double lambda, BarVortexConf * conf)
 	return -T0/R * 16.0 / M_PI / M_PI * 30.0 * (pt1 + pt2);
 }
 
-double zero_cor(double phi, double lambda, BarVortexConf * conf)
+double zero_cor(double phi, double lambda, double t, const BarVortexConf * conf)
 {
 	return 0.0;
 }
 
-double cor(double phi, double lambda, BarVortexConf * conf)
+double cor(double phi, double lambda, double t, const BarVortexConf * conf)
 {
 	return 2.*sin(phi) +  // l
 		0.5 * cos(2*lambda)*sin(2*phi)*sin(2*phi); //h
 }
 
-double cor2(double phi, double lambda, BarVortexConf * conf)
+double cor2(double phi, double lambda, double t, const BarVortexConf * conf)
 {
 	return 2.*sin(phi);
 }
@@ -104,11 +104,10 @@ void set_fpe_except()
 void calc_barvortex_right_part()
 {
 	BarVortexConf conf;
-	conf.steps = 1;
 	double R   = 6.371e+6;
 	double H   = 5000;
-	conf.omg   = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./conf.omg;
+	double omg = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
 	conf.tau   = 0.001;
@@ -117,7 +116,6 @@ void calc_barvortex_right_part()
 	conf.n_phi = 24;
 	conf.n_la  = 32;
 	conf.full  = 0;
-	conf.rho   = 1;
 	conf.theta = 0.5;
 
 	conf.cor    = cor2;
@@ -138,7 +136,7 @@ void calc_barvortex_right_part()
 	int n_la;
 	asp::load_matrix_from_txtfile(&u0, &n_phi, &n_la, "u0.txt");
 	asp::load_matrix_from_txtfile(&rel, &n_phi, &n_la, "rel.txt");
-	conf.cor_add = rel;
+	conf.cor2 = rel;
 	vector < double > rp(n_la * n_phi);
 
 	BarVortex bv(conf);
@@ -193,11 +191,10 @@ void LTOp(double * u, const double * v, vector < vector < double > > & z, BarVor
 void test_barvortex_linear()
 {
 	BarVortexConf conf;
-	conf.steps = 1;
 	double R   = 6.371e+6;
 	double H   = 5000;
-	conf.omg   = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./conf.omg;
+	double omg = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
 	conf.tau   = 0.001;
@@ -206,13 +203,12 @@ void test_barvortex_linear()
 	conf.n_phi = 24;
 	conf.n_la  = 32;
 	conf.full  = 0;
-	conf.rho   = 1;
 	conf.theta = 0.5;
 
 	conf.cor    = cor;
 	conf.rp     = rp;
 	conf.filter = 1;
-	conf.cor_add= 0;
+	conf.cor2   = 0;
 
 	int n = conf.n_phi * conf.n_la;
 
@@ -264,11 +260,10 @@ void test_barvortex_linear()
 void test_barvortex()
 {
 	BarVortexConf conf;
-	conf.steps = 1;
 	double R   = 6.371e+6;
 	double H   = 5000;
-	conf.omg   = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./conf.omg;
+	double omg = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
 	conf.tau   = 0.001;
@@ -277,13 +272,12 @@ void test_barvortex()
 	conf.n_phi = 24;
 	conf.n_la  = 32;
 	conf.full  = 0;
-	conf.rho   = 1;
 	conf.theta = 0.5;
 
 	conf.cor    = cor;
 	conf.rp     = rp;
 	conf.filter = 1;
-	conf.cor_add= 0;
+	conf.cor2   = 0;
 
 	int n = conf.n_phi * conf.n_la;
 
@@ -351,7 +345,8 @@ void test_barvortex()
 
 double cor3(double phi, double lambda, BarVortexConf * conf)
 {
-	double T0   = 1./conf->omg;
+	double omg  = 2.*M_PI/24./60./60.; // ?
+	double T0   = 1./omg;
 	double OMGE = 2.*M_PI / (24.*60.*60.);
 	double H0   = OMGE * 0.5;
 
@@ -405,11 +400,10 @@ void output_psi(const char * prefix, const char * suffix,
 void test_barvortex_plan(const char * srtm)
 {
 	BarVortexConf conf;
-	conf.steps = 1;
 	double R   = 6.371e+6;
 	double H   = 5000;
-	conf.omg   = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./conf.omg;
+	double omg = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
 	int part_of_the_day = 192;
@@ -419,13 +413,12 @@ void test_barvortex_plan(const char * srtm)
 	conf.n_phi = 24;
 	conf.n_la  = 32;
 	conf.full  = 0;
-	conf.rho   = 1;
 	conf.theta = 0.5;
 
 	conf.cor    = 0;//cor3;//zero_cor;
 	conf.rp     = 0;//one_rp;//zero_rp;
 	conf.filter = 0;
-	conf.cor_add= 0;
+	conf.cor2   = 0;
 
 	int n = conf.n_phi * conf.n_la;
 
@@ -466,8 +459,8 @@ void test_barvortex_plan(const char * srtm)
                 //if (rel_max < fabs(rel[i])) rel_max = fabs(rel[i]);
         }
 
-	conf.cor_add = &cor[0];
-	conf.rp_add  = &f[0];
+	conf.cor2 = &cor[0];
+	conf.rp2  = &f[0];
 
 	SLaplacian lapl(conf.n_phi, conf.n_la, false);
 	SJacobian jac(conf.n_phi, conf.n_la, false);
@@ -488,7 +481,6 @@ void test_barvortex_plan(const char * srtm)
 	fprintf(stderr, "#build:$Id$\n");
 
 	double U0max = 30.;
-	double omg = 2.*M_PI/24./60./60.;
 	double TE  = 1./omg;
 	double RE  = 6.371e+6;
         double PSI0 = RE * RE / TE;
@@ -496,28 +488,28 @@ void test_barvortex_plan(const char * srtm)
 	double Ly    = M_PI / 2.0;
 	double Lx    = 2.0 * M_PI;
 
-        for (i = 0; i < nlat; ++i)
-        {
-                for (j = 0; j < nlon; ++j)
-                {
-                        double phi    = lapl.phi(i);
-                        double lambda = lapl.lambda(j);
+	for (i = 0; i < nlat; ++i)
+	{
+		for (j = 0; j < nlon; ++j)
+		{
+			double phi    = lapl.phi(i);
+			double lambda = lapl.lambda(j);
 
-                        if (phi > 0) {
-                                u[i * nlon + j] = (phi * (M_PI / 2. - phi) * 16 / M_PI / M_PI * 100.0 / U0);
-                        } else {
-                                u[i * nlon + j] = (phi * (M_PI / 2. + phi) * 16 / M_PI / M_PI * 100.0 / U0);
-                        }
-                        v[i * nlon + j] = 0;
+			if (phi > 0) {
+				u[i * nlon + j] = (phi * (M_PI / 2. - phi) * 16 / M_PI / M_PI * 100.0 / U0);
+			} else {
+				u[i * nlon + j] = (phi * (M_PI / 2. + phi) * 16 / M_PI / M_PI * 100.0 / U0);
+			}
+			v[i * nlon + j] = 0;
 
-                        if (rel[i * nlon + j] > 0) {
-                                rel[i * nlon + j] = 1.0 * rel[i * nlon + j] / rel_max;
-                        } else {
-                                rel[i * nlon + j] = 0.0;
-                        }
-                        cor[i * nlon + j] = rel[i * nlon + j] + 2 * sin(phi);
-                }
-        }
+			if (rel[i * nlon + j] > 0) {
+				rel[i * nlon + j] = 1.0 * rel[i * nlon + j] / rel_max;
+			} else {
+				rel[i * nlon + j] = 0.0;
+			}
+			cor[i * nlon + j] = rel[i * nlon + j] + 2 * sin(phi);
+		}
+	}
 
 	lapl.make_psi(&f[0], &u[0], &v[0]);
 	lapl.lapl_1(&u[0], &f[0]);
@@ -559,11 +551,10 @@ void test_barvortex_plan(const char * srtm)
 void test_barvortex_real()
 {
 	BarVortexConf conf;
-	conf.steps = 1;
 	double R   = 6.371e+6;
 	double H   = 5000;
-	conf.omg   = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./conf.omg;
+	double omg = 2.*M_PI/24./60./60.; // ?
+	double T0  = 1./omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
 	conf.tau   = 0.001;
@@ -572,7 +563,6 @@ void test_barvortex_real()
 	conf.n_phi = 24;
 	conf.n_la  = 32;
 	conf.full  = 0;
-	conf.rho   = 1;
 	conf.theta = 0.5;
 
 	conf.cor    = cor2;
@@ -592,8 +582,8 @@ void test_barvortex_real()
 	asp::load_matrix_from_txtfile(&rel, &n_phi, &n_la, "rel.txt");
 	asp::load_matrix_from_txtfile(&forc, &n_phi, &n_la, "forc.txt");
 
-	conf.cor_add = rel;
-	conf.rp_add  = forc;
+	conf.cor2 = rel;
+	conf.rp2  = forc;
 
 	BarVortex bv(conf);
 	vector < double > u(n);

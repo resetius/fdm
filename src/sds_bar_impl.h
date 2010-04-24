@@ -183,10 +183,10 @@ public:
 		for (int i = 0; i < n_phi; ++i) {
 			for (int j = 0; j < n_la; ++j) {
 				if (conf->cor) {
-					cor[pOff(i, j)] = conf->cor(PHI[i], LA[j], conf);
+					cor[pOff(i, j)] = conf->cor(PHI[i], LA[j], 0, conf);
 				}
-				if (conf->cor_add) {
-					cor[pOff(i, j)] += conf->cor_add[pOff(i, j)];
+				if (conf->cor2) {
+					cor[pOff(i, j)] += conf->cor2[pOff(i, j)];
 				}
 			}
 		}
@@ -237,10 +237,10 @@ public:
 				if (have_rp) {
 					rp = 0;
 					if (conf->rp) {
-						rp += conf->rp(PHI[i], LA[j], conf);
+						rp += conf->rp(PHI[i], LA[j], 0, conf);
 					}
-					if (conf->rp_add) {
-						rp += conf->rp_add[off];
+					if (conf->rp2) {
+						rp += conf->rp2[off];
 					}
 				}
 
@@ -382,7 +382,7 @@ public:
 				off  = pOff(i, j);
 				lpl  = lapl->lapl(&omg[0], i, j);
 				rp  = F[off];
-				rp -= conf->rho * (
+				rp -= (
 						Jacobian(h, &omg[0], i, j) +
 						Jacobian(h, &cor[0], i, j)
 					);
@@ -461,7 +461,7 @@ public:
 			vector_mult_scalar(&omg_n[0], &omg_n[0], 0.5, nn);
 
 			funct1.calc(&pt3[0], &u1[0], &cor[0], &z[0], &omg_n[0], &z_lapl[0]);
-			vector_mult_scalar(&pt3[0], &pt3[0], -conf->rho, nn);
+			vector_mult_scalar(&pt3[0], &pt3[0], -1, nn);
 
 			memset(u1, 0, nn * sizeof(double));
 			vector_sum(u1, u1, &pt1[0], nn);
@@ -545,7 +545,7 @@ public:
 				for (int j = 0; j < n_la; ++j) {
 					off      = pOff(i, j);
 					omg[off] = B1[off] + 
-						(conf->rho) * 
+						
 						(
 							Jacobian(z, &os[0], i, j) + 
 							Jacobian(&psi[0], &z_lapl[0], i, j) + 
@@ -596,7 +596,7 @@ public:
 		//умножаем позже, так как лаплас пока нужен
 //		memset(pt3, 0, nn * sizeof(double));
 		funct1.calc(&pt3[0], &u[0], &cor[0], z, &pt1[0], &z_lapl[0]);
-		vector_mult_scalar(&pt3[0], &pt3[0], -conf->rho, nn);
+		vector_mult_scalar(&pt3[0], &pt3[0], -1, nn);
 
 //		memset(pt2, 0, nn * sizeof(double));
 		lapl->lapl(&pt2[0], &pt1[0]);
@@ -649,7 +649,7 @@ public:
 			(1. - conf->theta) * conf->mu, nn);
 
 		funct2.calc(&pt3[0], v1, &cor[0], z, 0, &z_lapl[0]);
-		vector_mult_scalar(&pt3[0], &pt3[0], -conf->rho, nn);
+		vector_mult_scalar(&pt3[0], &pt3[0], -1, nn);
 
 		memset(v1, 0, nn * sizeof(double));
 		vector_sum(v1, v1, &pt1[0], nn);
@@ -740,7 +740,7 @@ public:
 			vector_mult_scalar(&omg_n[0], &omg_n[0], 0.5, nn);
 
 			funct1.calc(&pt31[0], &u1[0], &cor[0], &z[0], &omg_n[0], &z_lapl[0]);
-			vector_mult_scalar(&pt31[0], &pt31[0], -conf->rho, nn);
+			vector_mult_scalar(&pt31[0], &pt31[0], -1, nn);
 
 			memset(&u1[0], 0, nn * sizeof(double));
 			vector_sum(&u1[0], &u1[0], &pt11[0], nn);
@@ -760,7 +760,7 @@ public:
 			vector_mult_scalar(&v1_new[0], &v1_new[0], 0.5, nn);
 
 			funct2.calc(&pt3[0], &v1_new[0], &cor[0], z, 0, &z_lapl[0]);
-			vector_mult_scalar(&pt3[0], &pt3[0], -conf->rho, nn);
+			vector_mult_scalar(&pt3[0], &pt3[0], -1, nn);
 
 			memset(&v1_new[0], 0, nn * sizeof(double));
 			vector_sum(&v1_new[0], &v1_new[0], &pt1[0], nn);
@@ -804,7 +804,7 @@ public:
 
 		//умножаем позже, так как лаплас пока нужен
 		funct1.calc(&pt3[0], u, &cor[0], z, &pt1[0], &z_lapl[0]);
-		vector_mult_scalar(&pt3[0], &pt3[0], conf->rho, nn);
+		vector_mult_scalar(&pt3[0], &pt3[0], 1, nn);
 
 		lapl->lapl(&pt2[0], &pt1[0]);
 		vector_mult_scalar(&pt2[0], &pt2[0], 

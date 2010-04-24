@@ -60,28 +60,32 @@ namespace SDS {
  */
 struct BarVortexConf 
 {
-	int steps;     //!<шагов
-	double tau;    //!<шаг счёта.
-	double theta;  //!<параметр в полунеявной схеме.
-	double sigma;  //!<параметры задачи.
-	double mu;     //!<параметры задачи.
-	int n_phi;     //!<разбиение (широта)
-	int n_la;      //!<разбиение (долгота).
+	typedef double (*rp_t ) (double phi, double lambda, 
+		double t, const BarVortexConf * conf);
+
+	int nlat;      //!<разбиение (широта)
+	int nlon;      //!<разбиение (долгота).
 	int full;      //!<использовать полную сферу?
-	double k1;
-	double k2;
-
-	double rho;
-	double omg;
-
-	typedef double (*rp_t ) (double phi, double lambda, BarVortexConf * conf);
-	rp_t rp;
-	double * rp_add;
-	rp_t cor;
-	double * cor_add;
 	int filter;
 
-	BarVortexConf(): rp(0), rp_add(0), cor(0), cor_add(0) {}
+	double tau;    //!<шаг счёта.
+	double sigma;  //!<параметры задачи.
+	double mu;     //!<параметры задачи.
+	double k1;
+	double k2;
+	double theta;  //!<параметр в полунеявной схеме.
+
+	rp_t rp;
+	rp_t cor;
+
+	double * rp2;
+	double * cor2;
+
+	int & n_phi;
+	int & n_la;
+
+	BarVortexConf()
+		: rp(0), rp2(0), cor(0), cor2(0), n_phi(nlat), n_la(nlon) {}
 };
 
 class BarVortex
@@ -94,7 +98,6 @@ public:
 	typedef BarVortexConf conf_t;
 
 	virtual ~BarVortex();
-	void S(double *h1, const double *h);
 	void S_step(double *h1, const double *h);
 	void L_step(double *h1, const double *h, const double *z);
 	void LT_step(double *h1, const double *h, const double *z);

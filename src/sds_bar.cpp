@@ -150,18 +150,6 @@ void BarVortex::S_step(double *h1, const double *h)
 	}
 }
 
-void BarVortex::S(double *h1, const double *h) {
-	memcpy(h1, h, d->n_la * d->n_phi * sizeof(double));
-
-	for (int i = 0; i < d->conf->steps; i++) {
-#ifdef _BARVORTEX_PURE_IM
-		d->S_step_im(h1, h1);
-#else
-		d->S_step(h1, h1);
-#endif
-	}
-}
-
 void BarVortex::LT_step(double *h1, const double *h, const double *z)
 {
 	if (d->conf->filter) {
