@@ -137,6 +137,7 @@ ReliefLoader::~ReliefLoader()
 	delete d;
 }
 
+// offset - отступить на полшага от полюса?
 void ReliefLoader::get(double * out, long nlat, long nlon, bool full, bool offset)
 {
 	if (!loaded) {
@@ -200,11 +201,93 @@ void usage(const char * argv)
 
 int main(int argc, char ** argv)
 {
+	string output = "output.rel";
 	int nlat = 32;
 	int nlon = 24;
 	int full = 0;
 	int bin  = 0;
+
+	if (argc < 2) {
+		usage(argv[0]);
+	}
+
+	ReliefLoader loader(argv[1]);
+
+	for (int i = 2; i < argc; ++i)
+	{
+		if (!strcmp(argv[i], "-nlat")) {
+			if (i == argc - 1) {
+				usage(argv[0]);
+			}
+
+			nlat = atoi(argv[i + 1]);
+		} else if (!strcmp(argv[i], "-nlon")) {
+			if (i == argc - 1) {
+				usage(argv[0]);
+			}
+
+			nlon = atoi(argv[i + 1]);
+		} else if (!strcmp(argv[i], "-o")) {
+			if (i == argc - 1) {
+				usage(argv[0]);
+			}
+
+			output = argv[i + 1];
+		} else if (!strcmp(argv[i], "-fmt")) {
+			if (i == argc - 1) {
+				usage(argv[0]);
+			}
+
+			if (!strcmp(argv[i + 1], "bin")) {
+				bin = 1;
+			} else if (!strcmp(argv[i + 1], "txt")) {
+				bin = 0;
+			} else {
+				usage(argv[0]);
+			}
+		} else if (!strcmp(argv[i], "-type")) {
+			if (i == argc - 1) {
+				usage(argv[0]);
+			}
+			if (!strcmp(argv[i + 1], "full")) {
+				full = 1;
+			} else if (!strcmp(argv[i + 1], "half")) {
+				full = 0;
+			} else {
+				usage(argv[0]);
+			}
+		}
+	}
+
+	fprintf(stderr, "nlat=%d\n", nlat);
+	fprintf(stderr, "nlon=%d\n", nlon);
+	fprintf(stderr, "full=%d\n", full);
+	fprintf(stderr, "bin=%d\n", bin);
+	fprintf(stderr, "output=%s\n", output.c_str());
+
+	vector < double > rel(nlat * nlon);
+	loader.get(&rel[0], nlat, nlon, full, true);
+
+	FILE * f = fopen(output.c_str(), "wb");
+	if (!f) {
+		usage(argv[0]);
+	}
+
+	if (bin) {
+		fwrite(&rel, 1, nlat * nlon * sizeof(double), f);
+	} else {
+		for (int i = 0; i < nlat; ++i)
+		{
+			for (int j = 0; j < nlon; ++j)
+			{
+				fprintf(f, "%.16le ", rel[i * nlon + j]);
+			}
+			fprintf(f, "\n");
+		}
+	}
+
+	fclose(f);
+
+	return 0;
 }
 #endif
-
-
