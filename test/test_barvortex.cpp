@@ -13,7 +13,6 @@
 #include "asp_sphere_lapl.h"
 #include "asp_sphere_jac.h"
 #include "statistics.h"
-#include "srtm_rel.h"
 
 using namespace std;
 using namespace asp;
@@ -445,8 +444,21 @@ void test_barvortex_plan(const char * srtm)
 	int nlon     = conf.n_la;
 
 	const char * fn = srtm ? srtm : "";
-	ReliefLoader rel_loader(fn);
-	rel_loader.get(&rel[0], 24, 32, conf.full, true);
+
+	if (fn) {
+		double * r; 
+		int n1, n2;
+		asp::load_matrix_from_txtfile(&r, &n1, &n2, "rel.txt");
+		if (n1 == conf.n_phi && n2 == conf.n_la) {
+			memcpy(&rel[0], r, n * sizeof(double));
+		} else {
+			fprintf(stderr, "bad relief file\n");
+			exit(1);
+		}
+		free(r);
+	} else {
+		fprintf(stderr, "zero relief \n");
+	}
 
 	double rel_max = 0.0;
         for (i = 0; i < nlat * nlon; ++i) {
@@ -634,6 +646,7 @@ void test_barvortex_real()
 	}
 }
 
+// usage: exe [relief_in_text_format.txt]
 int main(int argc, char ** argv)
 {
 	fprintf(stderr, "#cmd:");
