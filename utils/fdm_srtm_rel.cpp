@@ -195,7 +195,7 @@ void ReliefLoader::get(double * out, long nlat, long nlon, bool full, bool offse
 
 void usage(const char * argv)
 {
-	fprintf(stderr, "%s topo30 [-nlat nlat] [-nlon nlon] [-o output] [-fmt bin|txt] [-type half|full]");
+	fprintf(stderr, "%s topo30 [-nlat nlat] [-nlon nlon] [-o output] [-fmt bin|txt] [-type half|full]", argv);
 	exit(1);
 }
 
@@ -256,6 +256,8 @@ int main(int argc, char ** argv)
 			} else {
 				usage(argv[0]);
 			}
+		} else if (!strcmp(argv[i], "-help") || !strcmp(argv[i], "-h")) {
+			usage(argv[0]);
 		}
 	}
 
