@@ -202,8 +202,8 @@ void usage(const char * argv)
 int main(int argc, char ** argv)
 {
 	string output = "output.rel";
-	int nlat = 32;
-	int nlon = 24;
+	int nlat = 24;
+	int nlon = 32;
 	int full = 0;
 	int bin  = 0;
 
