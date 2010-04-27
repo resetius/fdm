@@ -276,7 +276,7 @@ int main(int argc, char ** argv)
 	}
 
 	if (bin) {
-		fwrite(&rel, 1, nlat * nlon * sizeof(double), f);
+		fwrite(&rel[0], 1, nlat * nlon * sizeof(double), f);
 	} else {
 		for (int i = 0; i < nlat; ++i)
 		{
