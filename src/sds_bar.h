@@ -34,7 +34,7 @@
 //______________ ключи Баротропного вихря на сфере ______________________
 
 #define _BARVORTEX_PURE_IM    //чисто неявная схема (u с крышкой под f - итерации)
-//#define _BARVORTEX_LINEAR_PURE_IM
+#define _BARVORTEX_LINEAR_PURE_IM
 #define _BARVORTEX_IM_MAX_IT 3000
 //#define _BARVORTEX_IM_MAX_IT 1
 #define _BARVORTEX_IM_EPS 1e-10
