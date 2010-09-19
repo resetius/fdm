@@ -109,9 +109,9 @@ public:
 
 	BarVortex(Conf&);
 	
-	double scalar(const double *x, const double *y, int n);
-	double norm(const double *x, int n);
-	double dist(const double * x, const double * y, int n);
+	double scalar(const double *x, const double *y, int n = 0 /*unused*/);
+	double norm(const double *x, int n = 0 /*unused*/);
+	double dist(const double * x, const double * y, int n = 0 /*unused*/);
 	void calc_rp(double * rp, const double * u);
 
 	double phi(int i);
