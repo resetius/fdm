@@ -208,7 +208,7 @@ double BarVortex::norm(const double *x, int n)
 double BarVortex::dist(const double * x, const double * y, int n)
 {
 	vector < double > tmp(d->nn);
-	vector_diff(&tmp[0], x, y, n);
+	vector_diff(&tmp[0], x, y, d->nn);
 	return norm(&tmp[0], n);
 }
 
