@@ -85,6 +85,11 @@ BarVortex::~BarVortex()
 	delete d;
 }
 
+const BarVortex::Conf & BarVortex::config() const
+{
+	return *d->conf;
+}
+
 static void stat(int nn, double * d, char * mask)
 {
 	int i;

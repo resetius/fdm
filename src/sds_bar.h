@@ -120,6 +120,8 @@ public:
 	double lambda(int i);
 
 	void reset();
+
+	const Conf & config() const;
 };
 
 }
