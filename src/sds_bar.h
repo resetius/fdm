@@ -89,11 +89,13 @@ public:
 		double * rp2;
 		double * cor2;
 
+		double * rp3; // rp = rp(2) + rp3
+
 		int & n_phi;
 		int & n_la;
 
 		Conf()
-			: rp(0), rp2(0), cor(0), cor2(0), n_phi(nlat), n_la(nlon) {}
+			: rp(0), cor(0), rp2(0), cor2(0), rp3(0), n_phi(nlat), n_la(nlon) {}
 	};
 
 	virtual ~BarVortex();
@@ -107,7 +109,7 @@ public:
 	void LT_step(double *h1, const double *h, const double *z);
 	void L_1_step(double *h1, const double *h, const double *z);
 
-	BarVortex(Conf&);
+	BarVortex(const Conf&);
 	
 	double scalar(const double *x, const double *y, int n = 0 /*unused*/);
 	double norm(const double *x, int n = 0 /*unused*/);

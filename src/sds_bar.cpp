@@ -74,7 +74,7 @@ using namespace SDS;
 
 #include "sds_bar_impl.h"
 
-BarVortex::BarVortex(BarVortex::Conf&conf_) :
+BarVortex::BarVortex(const BarVortex::Conf&conf_) :
 	d(new Private(conf_))
 {
 	d->p = this;

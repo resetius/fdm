@@ -149,7 +149,7 @@ JT_functor < Jac, Lapl > make_JT(Jac * impl, Lapl * lapl, int n1, int n2)
 class BarVortex::Private: public SData {
 public:
 	BarVortex * p;
-	BarVortex::Conf *conf; //!<конфиг
+	const BarVortex::Conf *conf; //!<конфиг
 
 	int nn;
 	vector < double > cor; //!<кориолис
@@ -165,7 +165,7 @@ public:
 		backward_diag = tau_1 - (1.0 - conf->theta) * conf->sigma;
 	}
 
-	Private(BarVortex::Conf& _conf)
+	Private(const BarVortex::Conf& _conf)
 		: SData(_conf.n_phi, _conf.n_la, _conf.full),
 		p(0), conf(&_conf)
 	{
@@ -241,6 +241,9 @@ public:
 					}
 					if (conf->rp2) {
 						rp += conf->rp2[off];
+					}
+					if (conf->rp3) {
+						rp += conf->rp3[off];
 					}
 				}
 
