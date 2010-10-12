@@ -112,6 +112,11 @@ public:
 
 	void JV2(double * dest, const double * u, const double * b);
 	void JV2T(double * dest, const double * u, const double * b);
+
+	void calc(double *dest, const double *u, const double *v)
+	{
+		J(dest, u, v);
+	}
 };
 
 #endif
