@@ -259,20 +259,23 @@ void calc_barvortex_forcing(Config & config, int argc, char *argv[])
 
 	vector < double > cor(n);
 	vector < double > rel(n);
-	vector < double > u(n);
-	vector < double > v(n);
-	vector < double > f(n);
-	vector < double > u1(n);
+
+	vector < double > u_m(n); // TODO: load this
+	vector < double > v_m(n); // TODO: load this
+	vector < double > psi_m(n);
+
 	int nlat     = conf.n_phi;
 	int nlon     = conf.n_la;
+
+	SLaplacian lapl(conf.n_phi, conf.n_la, !!conf.full);
+	SJacobian jac(conf.n_phi, conf.n_la, !!conf.full);
+
+	lapl.make_psi(&psi_m[0], &u_m[0], &v_m[0]);
 
 	load_relief(&cor[0], &rel[0], nlat, nlon, conf.full, offset, relief_fn);
 
 	conf.cor2 = &cor[0];
-	conf.rp2  = &f[0];
-
-	SLaplacian lapl(conf.n_phi, conf.n_la, false);
-	SJacobian jac(conf.n_phi, conf.n_la, false);
+	conf.rp2  = 0; //&f[0];
 
 	fprintf(stderr, "#domain:sphere half\n");
 	fprintf(stderr, "#mesh_w:%d\n", conf.n_la);

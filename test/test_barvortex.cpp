@@ -361,40 +361,40 @@ double one_rp(double phi, double lambda, BarVortex::Conf * conf)
 }
 
 void output_psi(const char * prefix, const char * suffix,
-                                const double * psi, long nlat, long nlon,
-                                double U0, double PSI0
-                                /*SphereGrad & grad*/)
+	const double * psi, long nlat, long nlon,
+	double U0, double PSI0
+	/*SphereGrad & grad*/)
 {
-//        vector < double > u (nlat * nlon);
-//        vector < double > v (nlat * nlon);
-        vector < double > Psi (nlat * nlon);
+	//        vector < double > u (nlat * nlon);
+	//        vector < double > v (nlat * nlon);
+	vector < double > Psi (nlat * nlon);
 
-//        grad.calc(&u[0], &v[0], &psi[0]);
+	//        grad.calc(&u[0], &v[0], &psi[0]);
 
-//        vec_mult_scalar(&u[0], &u[0], -1.0, nlat * nlon);
+	//        vec_mult_scalar(&u[0], &u[0], -1.0, nlat * nlon);
 
-        char ubuf[1024]; char vbuf[1024]; char psibuf[1024];
-        char Ubuf[1024]; char Vbuf[1024]; char Psibuf[1024];
+	char ubuf[1024]; char vbuf[1024]; char psibuf[1024];
+	char Ubuf[1024]; char Vbuf[1024]; char Psibuf[1024];
 
-        snprintf(ubuf, 1024,   "out/%snorm_u%s.txt", prefix, suffix);
-        snprintf(vbuf, 1024,   "out/%snorm_v%s.txt", prefix, suffix);
-        snprintf(psibuf, 1024, "out/%snorm_psi%s.txt", prefix, suffix);
+	snprintf(ubuf, 1024,   "out/%snorm_u%s.txt", prefix, suffix);
+	snprintf(vbuf, 1024,   "out/%snorm_v%s.txt", prefix, suffix);
+	snprintf(psibuf, 1024, "out/%snorm_psi%s.txt", prefix, suffix);
 
-        snprintf(Ubuf, 1024,   "out/%sorig_u%s.txt", prefix, suffix);
-        snprintf(Vbuf, 1024,   "out/%sorig_v%s.txt", prefix, suffix);
-        snprintf(Psibuf, 1024, "out/%sorig_psi%s.txt", prefix, suffix);
+	snprintf(Ubuf, 1024,   "out/%sorig_u%s.txt", prefix, suffix);
+	snprintf(Vbuf, 1024,   "out/%sorig_v%s.txt", prefix, suffix);
+	snprintf(Psibuf, 1024, "out/%sorig_psi%s.txt", prefix, suffix);
 
-//        fprintfwmatrix(ubuf,   &u[0], nlat, nlon, "%23.16lf ");
-//        fprintfwmatrix(vbuf,   &v[0], nlat, nlon, "%23.16lf ");
-        _fprintfwmatrix(psibuf, &psi[0], nlat, nlon, max(nlat, nlon), "%23.16lf ");
+	//        fprintfwmatrix(ubuf,   &u[0], nlat, nlon, "%23.16lf ");
+	//        fprintfwmatrix(vbuf,   &v[0], nlat, nlon, "%23.16lf ");
+	_fprintfwmatrix(psibuf, &psi[0], nlat, nlon, max(nlat, nlon), "%23.16lf ");
 
-//        vec_mult_scalar(&u[0], &u[0], U0, nlon * nlat);
-//        vec_mult_scalar(&v[0], &v[0], U0, nlon * nlat);
-        vector_mult_scalar(&Psi[0],  &psi[0],  PSI0, nlon * nlat);
+	//        vec_mult_scalar(&u[0], &u[0], U0, nlon * nlat);
+	//        vec_mult_scalar(&v[0], &v[0], U0, nlon * nlat);
+	vector_mult_scalar(&Psi[0],  &psi[0],  PSI0, nlon * nlat);
 
-//        fprintfwmatrix(Ubuf,   &u[0], nlat, nlon, "%23.16le ");
-//        fprintfwmatrix(Vbuf,   &v[0], nlat, nlon, "%23.16le ");
-        _fprintfwmatrix(Psibuf, &Psi[0], nlat, nlon, max(nlat, nlon), "%23.16le ");
+	//        fprintfwmatrix(Ubuf,   &u[0], nlat, nlon, "%23.16le ");
+	//        fprintfwmatrix(Vbuf,   &v[0], nlat, nlon, "%23.16le ");
+	_fprintfwmatrix(Psibuf, &Psi[0], nlat, nlon, max(nlat, nlon), "%23.16le ");
 }
 
 void test_barvortex_plan(const char * srtm)
@@ -527,18 +527,18 @@ void test_barvortex_plan(const char * srtm)
 	i = 0;
 	while (t < T) {
 		if (i % part_of_the_day == 0) {
-                        char buf[1024];
-                        nr = bv.norm(&u[0], n);
-                        fprintf(stderr, "nr=%.16lf, t=%.16lf of %.16lf\n", nr, t, T);
-                        snprintf(buf, 1024, "%06d", i);
-                        output_psi("", buf, &u[0], nlat, nlon, U0, PSI0/*, grad*/);
+			char buf[1024];
+			nr = bv.norm(&u[0], n);
+			fprintf(stderr, "nr=%.16lf, t=%.16lf of %.16lf\n", nr, t, T);
+			snprintf(buf, 1024, "%06d", i);
+			output_psi("", buf, &u[0], nlat, nlon, U0, PSI0/*, grad*/);
 
-                        vector < double > m = var.m_current();
-                        vector < double > d = var.current();
+			vector < double > m = var.m_current();
+			vector < double > d = var.current();
 
-                        output_psi("m_", "", &m[0], nlat, nlon, U0, PSI0/*, grad*/);
-                        output_psi("d_", "", &d[0], nlat, nlon, U0, PSI0/*, grad*/);
-                }
+			output_psi("m_", "", &m[0], nlat, nlon, U0, PSI0/*, grad*/);
+			output_psi("d_", "", &d[0], nlat, nlon, U0, PSI0/*, grad*/);
+		}
 
 		bv.S_step(&u1[0], &u[0]);
 		t += conf.tau;

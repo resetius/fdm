@@ -1022,55 +1022,113 @@ void SLaplacian::make_psi2(double * f_out, const double * u, const double * v)
 //	lapl_1(f_out, f_out);
 }
 
-void SLaplacian::make_psi(double * dpsi, const double * u, const double * v)
+//TODO: check
+void vrt(double * vt, const double * u, const double * v, 
+	int n_la, int n_phi, double d_la, double d_phi)
 {
 	int i, j;
-	int Nx = d->n_la;
-	int Ny = d->n_phi;
+	int Nx = n_la;
+	int Ny = n_phi;
 
-	double Hx = d->d_la;
-	double Hy = d->d_phi;
+	double Hx = d_la;
+	double Hy = d_phi;
 
 	for (i = 1; i < Nx - 1; i++)
 		for (j = 1; j < Ny - 1; j++)
-			dpsi[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+			vt[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
 			                 - (u[i+Nx* (j+1) ] * cos ( (j + 0.5) * Hy) - u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
 			               / cos (j * Hy);
 
 	j = 0;
 	for (i = 0; i < Nx; i++)
-		dpsi[i+Nx*j] = 0.;
+		vt[i+Nx*j] = 0.;
 
 	j = Ny - 1;
 	for (i = 1; i < Nx - 1; i++)
-		dpsi[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+		vt[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
 		                 - (-u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
 		               / cos (j * Hy);
 
 	i = 0;
 	for (j = 1; j < Ny - 1; j++)
-		dpsi[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+		vt[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
 		                 - (u[i+Nx* (j+1) ] * cos ( (j + 0.5) * Hy) - u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
 		               / cos (j * Hy);
 
 	i = Nx - 1;
 	for (j = 1; j < Ny - 1; j++)
-		dpsi[i+Nx*j] = ( (v[0+Nx*j] - v[i+Nx*j]) / Hx
+		vt[i+Nx*j] = ( (v[0+Nx*j] - v[i+Nx*j]) / Hx
 		                 - (u[i+Nx* (j+1) ] * cos ( (j + 0.5) * Hy) - u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
 		               / cos (j * Hy);
 
 	i = Nx - 1;
 	j = Ny - 1;
-	dpsi[i+Nx*j] = ( (v[0+Nx*j] - v[i+Nx*j]) / Hx
+	vt[i+Nx*j] = ( (v[0+Nx*j] - v[i+Nx*j]) / Hx
 	                 - (-u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
 	               / cos (j * Hy);
 
 	i = 0;
 	j = Ny - 1;
-	dpsi[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+	vt[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
 	                 - (-u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
 	               / cos (j * Hy);
+}
 
+//TODO: check
+void div(double * dv, const double * u, const double * v, 
+	int n_la, int n_phi, double d_la, double d_phi)
+{
+	int i, j;
+	int Nx = n_la;
+	int Ny = n_phi;
+
+	double Hx = d_la;
+	double Hy = d_phi;
+
+	for (i = 1; i < Nx - 1; i++)
+		for (j = 1; j < Ny - 1; j++)
+			dv[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+			                 + (u[i+Nx* (j+1) ] * cos ( (j + 0.5) * Hy) - u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+			               / cos (j * Hy);
+
+	j = 0;
+	for (i = 0; i < Nx; i++)
+		dv[i+Nx*j] = 0.;
+
+	j = Ny - 1;
+	for (i = 1; i < Nx - 1; i++)
+		dv[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+		                 + (-u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+		               / cos (j * Hy);
+
+	i = 0;
+	for (j = 1; j < Ny - 1; j++)
+		dv[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+		                 + (u[i+Nx* (j+1) ] * cos ( (j + 0.5) * Hy) - u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+		               / cos (j * Hy);
+
+	i = Nx - 1;
+	for (j = 1; j < Ny - 1; j++)
+		dv[i+Nx*j] = ( (v[0+Nx*j] - v[i+Nx*j]) / Hx
+		                 + (u[i+Nx* (j+1) ] * cos ( (j + 0.5) * Hy) - u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+		               / cos (j * Hy);
+
+	i = Nx - 1;
+	j = Ny - 1;
+	dv[i+Nx*j] = ( (v[0+Nx*j] - v[i+Nx*j]) / Hx
+	                 + (-u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+	               / cos (j * Hy);
+
+	i = 0;
+	j = Ny - 1;
+	dv[i+Nx*j] = ( (v[i+1+Nx*j] - v[i+Nx*j]) / Hx
+	                 + (-u[i+Nx* (j) ] * cos ( (j - 0.5) * Hy) ) / Hy )
+	               / cos (j * Hy);
+}
+
+void SLaplacian::make_psi(double * dpsi, const double * u, const double * v)
+{
+	vrt(dpsi, u, v, d->n_la, d->n_phi, d->d_la, d->d_phi);
 	lapl_1(dpsi, dpsi);
 }
 
