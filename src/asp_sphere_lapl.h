@@ -74,14 +74,14 @@ struct SSteps {
 
 /*!
   Завихренность поля (u, v)
-  vt(i,j) =  [-du/dlambda + d(cost*v)/dtheta]/cost
+  vt(i,j) =  [-dv/dlambda + d(cost*u)/dtheta]/cost
  */
 void vrt(double * vt, const double * u, const double * v, 
 	int n_la, int n_phi, double d_la, double d_phi);
 
 /*!
   Дивергенция поля (u, v)
-  dv(i,j) = 1/cos*[ d(cost*u(i,j))/dtheta + d(v(i,j))/dlambda ]
+  dv(i,j) = 1/cos*[ d(cost*v(i,j))/dtheta + d(u(i,j))/dlambda ]
  */
 void div(double * dv, const double * u, const double * v, 
 	int n_la, int n_phi, double d_la, double d_phi);

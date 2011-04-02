@@ -1,6 +1,6 @@
 /*$Id$*/
 
-/* Copyright (c) 2003, 2004, 2005, 2007, 2010 Alexey Ozeritsky
+/* Copyright (c) 2003-2011 Alexey Ozeritsky
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1022,7 +1022,6 @@ void SLaplacian::make_psi2(double * f_out, const double * u, const double * v)
 //	lapl_1(f_out, f_out);
 }
 
-//TODO: check
 void vrt(double * vt, const double * u, const double * v, 
 	int n_la, int n_phi, double d_la, double d_phi)
 {
@@ -1084,6 +1083,9 @@ void div(double * dv, const double * u, const double * v,
 
 	double Hx = d_la;
 	double Hy = d_phi;
+
+	const double * tmp;
+	tmp = u; u = v; v = tmp;
 
 	for (i = 1; i < Nx - 1; i++)
 		for (j = 1; j < Ny - 1; j++)
