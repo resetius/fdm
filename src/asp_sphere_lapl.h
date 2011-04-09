@@ -73,18 +73,40 @@ struct SSteps {
 
 
 /*!
-  Завихренность поля (u, v)
-  vt(i,j) =  [-dv/dlambda + d(cost*u)/dtheta]/cost
- */
-void vrt(double * vt, const double * u, const double * v, 
-	int n_la, int n_phi, double d_la, double d_phi);
-
-/*!
   Дивергенция поля (u, v)
   dv(i,j) = 1/cos*[ d(cost*v(i,j))/dtheta + d(u(i,j))/dlambda ]
  */
-void div(double * dv, const double * u, const double * v, 
-	int n_la, int n_phi, double d_la, double d_phi);
+class SDiv: public SSteps {
+public:
+	/*!
+	   Конструктор
+	   \param n_phi - число шагов по широте
+	   \param n_la  - число шагов по долготе
+	   \param full  - использовать полную сферу или полусферу?
+	*/
+	SDiv(int n_phi, int n_la, bool full = false);
+	~SDiv();
+
+	void calc(double * dest, const double * u, const double * v);
+};
+
+/*!
+  Завихренность поля (u, v)
+  vt(i,j) =  [-dv/dlambda + d(cost*u)/dtheta]/cost
+ */
+class SVorticity: public SSteps {
+public:
+	/*!
+	   Конструктор
+	   \param n_phi - число шагов по широте
+	   \param n_la  - число шагов по долготе
+	   \param full  - использовать полную сферу или полусферу?
+	*/
+	SVorticity(int n_phi, int n_la, bool full = false);
+	~SVorticity();
+
+	void calc(double * dest, const double * u, const double * v);
+};
 
 /*!
    Оператор Лапласа на единичной сфере
@@ -187,13 +209,6 @@ public:
 
 	void filter(double *Dest, const double * Source);
 	void filter_1(double *Dest, const double * Source);
-
-	/*!вычисляет функцию тока по компонентам скорости*/
-	void make_psi(double * out, const double * u, const double * v);
-	/*!вычисляет функцию тока по компонентам скорости
-	вариант Андея
-	*/
-	void make_psi2(double * out, const double * u, const double * v);
 
 	double phi(int i);
 	double lambda(int i);

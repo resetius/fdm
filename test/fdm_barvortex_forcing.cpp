@@ -269,8 +269,9 @@ void calc_barvortex_forcing(Config & config, int argc, char *argv[])
 
 	SLaplacian lapl(conf.n_phi, conf.n_la, !!conf.full);
 	SJacobian jac(conf.n_phi, conf.n_la, !!conf.full);
+	SVorticity vor(conf.n_phi, conf.n_la, !!conf.full);
 
-	lapl.make_psi(&psi_m[0], &u_m[0], &v_m[0]);
+	vor.calc(&psi_m[0], &u_m[0], &v_m[0]);
 
 	load_relief(&cor[0], &rel[0], nlat, nlon, conf.full, offset, relief_fn);
 

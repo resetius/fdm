@@ -126,7 +126,6 @@ void calc_barvortex_right_part()
 
 	double t = 0;
 	double T = 30 * 2.0 * M_PI;;
-	double nr;
 	int i = 0;
 
 
@@ -214,7 +213,6 @@ void test_barvortex_linear()
 
 	double t = 0;
 	double T = 10;
-	double nr;
 	int i = 0;
 
 	BarVortex bv(conf);
@@ -464,6 +462,7 @@ void test_barvortex_plan(const char * srtm)
 
 	SLaplacian lapl(conf.n_phi, conf.n_la, false);
 	SJacobian jac(conf.n_phi, conf.n_la, false);
+	SVorticity vor(conf.n_phi, conf.n_la, false);
 
 	fprintf(stderr, "#domain:sphere half\n");
 	fprintf(stderr, "#mesh_w:%d\n", conf.n_la);
@@ -511,7 +510,7 @@ void test_barvortex_plan(const char * srtm)
 		}
 	}
 
-	lapl.make_psi(&f[0], &u[0], &v[0]);
+	vor.calc(&f[0], &u[0], &v[0]);
 	lapl.lapl_1(&u[0], &f[0]);
 	vector_mult_scalar(&f[0], &f[0], conf.sigma, n);
 

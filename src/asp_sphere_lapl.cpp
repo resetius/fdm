@@ -39,6 +39,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <assert.h>
+
 #include <sstream>
 #include <vector>
 
@@ -974,55 +976,7 @@ static int ii(int i_phi, int i_la, int nLa) {
 	return i_phi*nLa+i_la;
 }
 
-void SLaplacian::make_psi2(double * f_out, const double * u, const double * v)
-{
-	int nLa = d->n_la;
-	int nPhi = d->n_phi;
-	double R = 1.0;
-
-	unsigned long nan_[2]={0xffffffff, 0x7fffffff};
-	double nan = *(double*)nan_;
-	nan = 0.0;
-
-	// Initialize f_out[] grid function with default values: NaN
-
-	for (int i = 0; i < nLa; i++) {
-		for (int j = 0; j < nPhi; j++) {
-			f_out[ii(j, i, nLa)] = nan;
-		}
-	}
-
-	double d_la  = R*2.0*M_PI/(nLa); // d_la=dx on shpere with R radius
-	double d_phi = R*M_PI/(2.0*(nPhi-1.0)+1.0); // d_phi=dy on shpere with R radius
-
-	for (int i = 0; i < nLa; i++) {
-		double lambda = d_la*i; // x
-
-		for (int j = 1; j < nPhi; j++) { // start with j=1 !!!
-			double phi = d_phi*j; // y
-
-			double c0 = cos(d_phi*(j-1));
-			double c1 = cos(d_phi*j);
-			double c2 = cos(d_phi*(j+1));
-			double du_dphi = 0.0;
-
-			if (j == nPhi-1) {
-				du_dphi = (c0*u[ii(j+1, i, nLa)]-c2*u[ii(j-1, i, nLa)])/(2*d_phi);
-			}
-			else {
-				int i0 = (i + nLa/2) % nLa;
-				du_dphi = (c1*u[ii(j, i0, nLa)]-c0*u[ii(j-1, i, nLa)])/(2*d_phi); // c1, c0 - is correct !!!
-			}
-			double dv_dla = (v[ii(j, i+1, nLa)]-v[ii(j, i-1, nLa)])/(2*d_la);
-
-			f_out[ii(j, i, nLa)] = (-du_dphi+dv_dla)/(R*c1);
-		}
-	}
-
-//	lapl_1(f_out, f_out);
-}
-
-void vrt(double * vt, const double * u, const double * v, 
+static void vrt(double * vt, const double * u, const double * v, 
 	int n_la, int n_phi, double d_la, double d_phi)
 {
 	int i, j;
@@ -1074,7 +1028,7 @@ void vrt(double * vt, const double * u, const double * v,
 }
 
 //TODO: check
-void div(double * dv, const double * u, const double * v, 
+static void div(double * dv, const double * u, const double * v, 
 	int n_la, int n_phi, double d_la, double d_phi)
 {
 	int i, j;
@@ -1128,12 +1082,6 @@ void div(double * dv, const double * u, const double * v,
 	               / cos (j * Hy);
 }
 
-void SLaplacian::make_psi(double * dpsi, const double * u, const double * v)
-{
-	vrt(dpsi, u, v, d->n_la, d->n_phi, d->d_la, d->d_phi);
-	lapl_1(dpsi, dpsi);
-}
-
 double SLaplacian::phi(int i)
 {
 	return d->phi(i);
@@ -1144,3 +1092,30 @@ double SLaplacian::lambda(int j)
         return d->la(j);
 }
 
+SVorticity::SVorticity(int n_phi, int n_la, bool full): SSteps(n_phi, n_la, full)
+{
+	assert(full == false);
+}
+
+SVorticity::~SVorticity()
+{
+}
+
+void SVorticity::calc(double * dest, const double * u, const double * v)
+{
+	vrt(dest, u, v, n_la, n_phi, d_la, d_phi);
+}
+
+SDiv::SDiv(int n_phi, int n_la, bool full): SSteps(n_phi, n_la, full)
+{
+	assert(full == false);
+}
+
+SDiv::~SDiv()
+{
+}
+
+void SDiv::calc(double * dest, const double * u, const double * v)
+{
+	div(dest, u, v, n_la, n_phi, d_la, d_phi);
+}
