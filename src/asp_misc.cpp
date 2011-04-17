@@ -1134,7 +1134,7 @@ void load_matrix_from_txtfile(double **A, int *n, int *m, const char *filename)
 	int pos = 0, i = 0;
 	int size, len;
 	char * token;
-	char * sep = " \t\r\n";
+	const char * sep = " \t\r\n";
 
 	FILE * f = fopen(filename, "rb");
 	printf("open %s\n", filename);
