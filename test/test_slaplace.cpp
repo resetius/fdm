@@ -1,6 +1,7 @@
 #define _USE_MATH_DEFINES
 #include <vector>
 #include <string>
+#include <algorithm>
 
 #include <string.h>
 #include <stdlib.h>
