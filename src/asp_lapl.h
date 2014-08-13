@@ -111,6 +111,7 @@ class FDM_API Laplacian {
 	double l_x;
 
 	int n_x;
+	int n; // размерность задачи
 	int type;
 
 public:
@@ -119,6 +120,9 @@ public:
 		PERIODIC  = 1  //!<периодическое краевое условие
 	};
 
+	// n_x число отрезков
+	// размерность в периодическом случае n = n_x
+	//             в непериодическом      n = n_x+1 
 	Laplacian(double l_x, int n_x, int type = ZERO_COND);
 
 	void lapl(double * Dest, const double * M);

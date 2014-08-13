@@ -344,7 +344,7 @@ void Laplacian2D::lapl_1(double * Dest, const double * Source,
 
 
 Laplacian::Laplacian(double l_x_, int n_x_, int type_)
-	: l_x(l_x_), n_x(n_x_), type(type_)
+	: l_x(l_x_), n_x(n_x_), n(type == PERIODIC ? n_x : n_x + 1), type(type_)
 {
 	d_x    = l_x / n_x;
 	d_x2_1 = 1.0 / d_x / d_x;
@@ -354,17 +354,17 @@ void Laplacian::lapl(double * Dest, const double * M)
 {
 	double * tmp;
 	if (Dest == M) {
-		tmp = (double*)malloc(n_x * sizeof(double));
+		tmp = (double*)malloc(n * sizeof(double));
 	} else {
 		tmp = Dest;
 	}
 	int i;
-	for (i = 0; i <= n_x; ++i) {
+	for (i = 0; i < n; ++i) {
 		tmp[i] = lapl(M, i);
 	}
 
 	if (Dest == M) {
-		memcpy(Dest, tmp, n_x * sizeof(double));
+		memcpy(Dest, tmp, n * sizeof(double));
 		free(tmp);
 	}
 }
@@ -376,8 +376,8 @@ double Laplacian::lapl(const double * A, int i)
 	double ret = 0.0;
 	switch (type) {
 	case PERIODIC:
-		ret += (A[(i + 1) % (n_x + 1)] - 2. * A[i] + 
-			A[(n_x + i) % (n_x + 1)]) * d_x2_1;
+		ret += (A[(i + 1) % n_x] - 2. * A[i] + 
+			A[(n_x + i) % n_x]) * d_x2_1;
 		break;
 	case ZERO_COND:
 	default:
@@ -412,4 +412,3 @@ void fdm_lapl2d(
 	Laplacian2D lapl(*l_x, *l_y, *n_x, *n_y);
 	lapl.lapl(dst, src);
 }
-
