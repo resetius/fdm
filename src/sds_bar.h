@@ -31,6 +31,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "asp_macros.h"
+
 //______________ ключи Баротропного вихря на сфере ______________________
 
 #define _BARVORTEX_PURE_IM    //чисто неявная схема (u с крышкой под f - итерации)
@@ -59,14 +61,14 @@ namespace SDS {
  * \f$\lambda \in [0,2\pi]\f$ - долгота
  */
 
-class BarVortex
+class FDM_API BarVortex
 {
 private:
 	class Private;
 	Private * d;
 
 public:
-	struct Conf 
+	struct FDM_API Conf
 	{
 		typedef double (*rp_t ) (double phi, double lambda, 
 			double t, const Conf * conf);

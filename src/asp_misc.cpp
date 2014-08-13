@@ -91,6 +91,10 @@ double dist(const double *y1, const double *y2,int n) {
 	return n2;
 }
 
+double dist2(const double *y1, const double *y2, int n) {
+	return dist(y1, y2, n);
+}
+
 /*!длина в норме 1*/
 double dist1(const double *y1, const double *y2, int n) {
 	int i;

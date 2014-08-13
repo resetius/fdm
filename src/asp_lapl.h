@@ -33,6 +33,8 @@
 #ifndef _ASP_LAPL_H
 #define _ASP_LAPL_H
 
+#include "asp_macros.h"
+
 /*!
    шаги на прямоугольнике
  */
@@ -87,7 +89,7 @@ struct SqSteps {
 	|
 	x
  */
-class Laplacian2D {
+class FDM_API Laplacian2D {
 	class Private;
 	Private * d;
 
@@ -103,7 +105,7 @@ public:
 };
 
 /*!одномерный оператор Лапласа*/
-class Laplacian {
+class FDM_API Laplacian {
 	double d_x;
 	double d_x2_1;
 	double l_x;
@@ -122,4 +124,17 @@ public:
 	void lapl(double * Dest, const double * M);
 	double lapl(const double * M, int i);
 };
+
+extern "C" {
+	void FDM_API fdm_lapl1d(
+		double * dst, const double * src,
+		double * l_x,
+		int * n_x);
+
+	void FDM_API fdm_lapl2d(
+		double * dst, const double * src,
+		double * l_x, double * l_y,
+		int * n_x, int * n_y);
+}
+
 #endif //_ASP_LAPL_H

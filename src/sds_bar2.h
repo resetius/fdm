@@ -2,7 +2,7 @@
 #define _SDS_BAR_H
 /*$Id$*/
 
-/* Copyright (c) 2003, 2004, 2005, 2006 Alexey Ozeritsky
+/* Copyright (c) 2003, 2004, 2005, 2006, 2014 Alexey Ozeritsky
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,6 +31,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "asp_macros.h"
+
 //______________ ключи Баротропного вихря на сфере ______________________
 
 #define _BARVORTEX_PURE_IM    //чисто неявная схема (u с крышкой под f - итерации)
@@ -58,7 +60,7 @@ namespace SDS {
  * \f$\phi \in [0,\pi/2]\f$ - широта
  * \f$\lambda \in [0,2\pi]\f$ - долгота
  */
-struct BaroclinConf 
+struct FDM_API BaroclinConf
 {
 	int steps;     //!<шагов
 	double tau;    //!<шаг счёта.
@@ -88,7 +90,7 @@ struct BaroclinConf
 	int filter;
 };
 
-class Baroclin
+class FDM_API Baroclin
 {
 private:
 	class Private;

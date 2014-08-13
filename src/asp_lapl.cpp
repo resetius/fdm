@@ -394,3 +394,22 @@ double Laplacian::lapl(const double * A, int i)
 		ret = 0;*/
 	return ret;
 }
+
+void fdm_lapl1d(
+	double * dst, const double * src,
+	double * l_x,
+	int * n_x)
+{
+	Laplacian lapl(*l_x, *n_x);
+	lapl.lapl(dst, src);
+}
+
+void fdm_lapl2d(
+	double * dst, const double * src,
+	double * l_x, double * l_y,
+	int * n_x, int * n_y)
+{
+	Laplacian2D lapl(*l_x, *l_y, *n_x, *n_y);
+	lapl.lapl(dst, src);
+}
+

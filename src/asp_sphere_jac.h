@@ -2,7 +2,7 @@
 #define _SPHERE_JAC_H
 /*$Id$*/
 
-/* Copyright (c) 2005, 2006 Alexey Ozeritsky
+/* Copyright (c) 2005, 2006, 2014 Alexey Ozeritsky
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,7 @@
 
 #include "asp_sphere_lapl.h"
 
-class SJacobian {
+class FDM_API SJacobian {
 	class Private;
 	Private * d;
 

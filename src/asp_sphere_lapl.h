@@ -31,6 +31,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "asp_macros.h"
+
 /**
  * Оператор Лапласа на сфере и полусфере
  */
@@ -39,7 +41,7 @@
   Шаги на сфере и полусфере
   суффикс _1 у переменных означает переменная в -1 степени
  */
-struct SSteps {
+struct FDM_API SSteps {
 	bool full;      //!<полная сфера ?
 	int n_phi;      //!<шагов по phi (широте)
 	int n_la;       //!<шагов по lambda (долготе)
@@ -76,7 +78,7 @@ struct SSteps {
   Дивергенция поля (u, v)
   dv(i,j) = 1/cos*[ d(cost*v(i,j))/dtheta + d(u(i,j))/dlambda ]
  */
-class SDiv: public SSteps {
+class FDM_API SDiv : public SSteps {
 public:
 	/*!
 	   Конструктор
@@ -94,7 +96,7 @@ public:
   Завихренность поля (u, v)
   vt(i,j) =  [-dv/dlambda + d(cost*u)/dtheta]/cost
  */
-class SVorticity: public SSteps {
+class FDM_API SVorticity : public SSteps {
 public:
 	/*!
 	   Конструктор
@@ -118,7 +120,7 @@ public:
    \f$\phi \in [0,\pi/2]\f$ - широта
    \f$\lambda \in [0,2\pi]\f$ - долгота
 */
-class SLaplacian {
+class FDM_API SLaplacian {
 	class Private;
 	Private *d;
 

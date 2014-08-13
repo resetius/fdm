@@ -740,7 +740,7 @@ void SJacobian::JV2T(double * dest, const double * u, const double * v)
 
 void SJacobian::JV2(double * dest, const double * u, const double * v)
 {
-	int i, j, m, n;
+	int i, j;
 	double J1, J2, J3;
 	double J1a, J2a, J3a;
 

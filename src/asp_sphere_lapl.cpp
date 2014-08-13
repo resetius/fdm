@@ -1,6 +1,6 @@
 /*$Id$*/
 
-/* Copyright (c) 2003-2011 Alexey Ozeritsky
+/* Copyright (c) 2003-2011,2014 Alexey Ozeritsky
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
