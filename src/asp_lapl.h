@@ -1,6 +1,6 @@
 /*$Id$*/
 
-/* Copyright (c) 2005, 2006 Alexey Ozeritsky
+/* Copyright (c) 2005, 2006, 2014 Alexey Ozeritsky
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -133,7 +133,7 @@ extern "C" {
 	void FDM_API fdm_lapl1d(
 		double * dst, const double * src,
 		double * l_x,
-		int * n_x);
+		int * n_x, int type);
 
 	void FDM_API fdm_lapl2d(
 		double * dst, const double * src,

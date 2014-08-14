@@ -398,9 +398,9 @@ double Laplacian::lapl(const double * A, int i)
 void fdm_lapl1d(
 	double * dst, const double * src,
 	double * l_x,
-	int * n_x)
+	int * n_x, int type)
 {
-	Laplacian lapl(*l_x, *n_x);
+	Laplacian lapl(*l_x, *n_x, type);
 	lapl.lapl(dst, src);
 }
 
