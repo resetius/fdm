@@ -1,4 +1,5 @@
 project(fdm)
+cmake_minimum_required(VERSION 2.8)
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}/lib")
 
