@@ -30,14 +30,14 @@
  */
 
 /**
- * Параметры сферической сетки -- шаги, число точек и тп
+ * РџР°СЂР°РјРµС‚СЂС‹ СЃС„РµСЂРёС‡РµСЃРєРѕР№ СЃРµС‚РєРё -- С€Р°РіРё, С‡РёСЃР»Рѕ С‚РѕС‡РµРє Рё С‚Рї
  */
 
 #include <vector>
 
 struct SData: public SSteps {
-	SLaplacian * lapl; //!<сферический оператор Лапласа
-	SJacobian  * jac;  //!<сферический якобиан
+	SLaplacian * lapl; //!<СЃС„РµСЂРёС‡РµСЃРєРёР№ РѕРїРµСЂР°С‚РѕСЂ Р›Р°РїР»Р°СЃР°
+	SJacobian  * jac;  //!<СЃС„РµСЂРёС‡РµСЃРєРёР№ СЏРєРѕР±РёР°РЅ
 
 	double tau;
 	double tau_1;
@@ -47,8 +47,8 @@ struct SData: public SSteps {
 	double backward_mult;
 	double backward_diag;
 
-	std::vector < double > LA;  //!<координаты по lambda
-	std::vector < double > PHI;  //!<координаты по phi
+	std::vector < double > LA;  //!<РєРѕРѕСЂРґРёРЅР°С‚С‹ РїРѕ lambda
+	std::vector < double > PHI;  //!<РєРѕРѕСЂРґРёРЅР°С‚С‹ РїРѕ phi
 
 	SData(int n_phi, int n_la, bool full)
 		: SSteps(n_phi, n_la, full),

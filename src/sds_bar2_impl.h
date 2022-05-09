@@ -32,7 +32,7 @@
  */
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-/*________ задача Баротропного вихря на сфере - реализация ________________*/
+/*________ Р·Р°РґР°С‡Р° Р‘Р°СЂРѕС‚СЂРѕРїРЅРѕРіРѕ РІРёС…СЂСЏ РЅР° СЃС„РµСЂРµ - СЂРµР°Р»РёР·Р°С†РёСЏ ________________*/
 
 #include <assert.h>
 #include <vector>
@@ -43,10 +43,10 @@ using namespace std;
 class Baroclin::Private: public SData {
 public:
 	Baroclin * p;
-	BaroclinConf *conf; //!<конфиг
+	BaroclinConf *conf; //!<РєРѕРЅС„РёРі
 
 	int nn;
-	vector < double > cor; //!<кориолис
+	vector < double > cor; //!<РєРѕСЂРёРѕР»РёСЃ
 
 	Private(BaroclinConf& _conf)
 		: SData(_conf.n_phi, _conf.n_la, _conf.full),
@@ -70,8 +70,8 @@ public:
 	}
 
 	/*!
-	   неявная схема с внутренними итерациями
-	   один шаг с правой частью \param f
+	   РЅРµСЏРІРЅР°СЏ СЃС…РµРјР° СЃ РІРЅСѓС‚СЂРµРЅРЅРёРјРё РёС‚РµСЂР°С†РёСЏРјРё
+	   РѕРґРёРЅ С€Р°Рі СЃ РїСЂР°РІРѕР№ С‡Р°СЃС‚СЊСЋ \param f
 	   */
 	void S_step_im(double *u11, double * u21, const double *u1, const double *u2, double t)
 	{
@@ -84,10 +84,10 @@ public:
 		double sigma1= conf->sigma1;
 		double tau   = conf->tau;
 
-		// правая часть 1:
+		// РїСЂР°РІР°СЏ С‡Р°СЃС‚СЊ 1:
 		// -J(0.5(u1+u1), 0.5(w1+w1)+l+h) - J(0.5(u2+u2),w2+w2)+
 		// + w1/tau - 0.5 (1-theta)sigma (w1-w2)+mu(1-theta)(\Delta w1)
-		// правая часть 2:
+		// РїСЂР°РІР°СЏ С‡Р°СЃС‚СЊ 2:
 		// -J(0.5(u1+u1), 0.5(w2+w2)) - J(0.5(u2+u2), 0.5(w1+w1)+l+h) -
 		// - 0.5 (1-theta)sigma (w1 + w2) + (1-theta) mu \Delta w2
 		// + w2/tau - alpha^2 u2/tau + alpha^2 J(0.5(u1+u1), 0.5(u2+u2)) -
@@ -244,7 +244,7 @@ public:
 		memcpy(u21, &u2_n[0], sz * sizeof(double));
 	}
 
-	//неявная схема с внутренними итерациями
+	//РЅРµСЏРІРЅР°СЏ СЃС…РµРјР° СЃ РІРЅСѓС‚СЂРµРЅРЅРёРјРё РёС‚РµСЂР°С†РёСЏРјРё
 	void L_step_im(double * u11, double * u21, 
 		const double * u1, const double * u2,
 		const double * z1, const double * z2)
@@ -258,11 +258,11 @@ public:
 		double sigma1= conf->sigma1;
 		double tau   = conf->tau;
 
-		// правая часть 1:
+		// РїСЂР°РІР°СЏ С‡Р°СЃС‚СЊ 1:
 		// - J(z1, 0.5(w1+w1)) - J(u1, L(z1)+l+h) -
 		// - J(z2, 0.5(w2+w2)) - J(0.5(u2+u2), L(z2)) +
 		// + w1/tau - 0.5 (1-theta)sigma (w1-w2)+mu(1-theta)(L w1)
-		// правая часть 2:
+		// РїСЂР°РІР°СЏ С‡Р°СЃС‚СЊ 2:
 		// - J(z1, 0.5(w2+w2)) - J(0.5(u1+u1), L(z2)) -
 		// - J(0.5(u2+u2), L(z1)+l+h) - J(z2, 0.5(w1+w1)) -
 		// - 0.5 (1-theta)sigma (w1 + w2) + (1-theta) mu L w2
@@ -429,7 +429,7 @@ public:
 		memcpy(u21, &u2_n[0], sz * sizeof(double));
 	}
 
-	//неявная схема с внутренними итерациями
+	//РЅРµСЏРІРЅР°СЏ СЃС…РµРјР° СЃ РІРЅСѓС‚СЂРµРЅРЅРёРјРё РёС‚РµСЂР°С†РёСЏРјРё
 	void L_1_step_im(double * u11, double * u21, 
 		const double * u1, const double * u2,
 		const double * z1, const double * z2)
@@ -443,11 +443,11 @@ public:
 		double sigma1= conf->sigma1;
 		double tau   = conf->tau;
 
-		// правая часть 1:
+		// РїСЂР°РІР°СЏ С‡Р°СЃС‚СЊ 1:
 		//  J(z1, 0.5(w1+w1)) + J(u1, L(z1)+l+h) +
 		// + J(z2, 0.5(w2+w2)) + J(0.5(u2+u2), L(z2)) +
 		// + w1/tau + 0.5 theta sigma (w1-w2) - mu theta (L w1)
-		// правая часть 2:
+		// РїСЂР°РІР°СЏ С‡Р°СЃС‚СЊ 2:
 		//  J(z1, 0.5(w2+w2)) + J(0.5(u1+u1), L(z2)) +
 		// + J(0.5(u2+u2), L(z1)+l+h) - J(z2, 0.5(w1+w1)) +
 		// + 0.5 theta sigma (w1 + w2) - theta mu L w2 +

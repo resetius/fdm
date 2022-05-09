@@ -30,7 +30,7 @@
  */
 
 /**
- *  Сферический Якобиан
+ *  РЎС„РµСЂРёС‡РµСЃРєРёР№ РЇРєРѕР±РёР°РЅ
  */
 
 #define _USE_MATH_DEFINES
@@ -50,12 +50,12 @@
 using namespace asp;
 using namespace std;
 
-//макросы для нахождения отступа в массиве для точки пространства
+//РјР°РєСЂРѕСЃС‹ РґР»СЏ РЅР°С…РѕР¶РґРµРЅРёСЏ РѕС‚СЃС‚СѓРїР° РІ РјР°СЃСЃРёРІРµ РґР»СЏ С‚РѕС‡РєРё РїСЂРѕСЃС‚СЂР°РЅСЃС‚РІР°
 #define  pOff(i, j) ( i ) * n_la + ( j )
 #define _pOff(i, j) ( i ) * d->n_la + ( j )
 
-//#define _JACOBIAN_TEST //если определено, то не домножается на 1/r
-                       //проверка относительно обычного скалярного произведения
+//#define _JACOBIAN_TEST //РµСЃР»Рё РѕРїСЂРµРґРµР»РµРЅРѕ, С‚Рѕ РЅРµ РґРѕРјРЅРѕР¶Р°РµС‚СЃСЏ РЅР° 1/r
+                       //РїСЂРѕРІРµСЂРєР° РѕС‚РЅРѕСЃРёС‚РµР»СЊРЅРѕ РѕР±С‹С‡РЅРѕРіРѕ СЃРєР°Р»СЏСЂРЅРѕРіРѕ РїСЂРѕРёР·РІРµРґРµРЅРёСЏ
 #define REGISTER_J( name , func ) \
 	void name(double * dst, const double *u, const double *v) \
 	{ \
@@ -70,7 +70,7 @@ using namespace std;
 
 class SJacobian::Private: public SSteps  {
 public:
-	vector < double > COS; //!<значения косинусов по широте
+	vector < double > COS; //!<Р·РЅР°С‡РµРЅРёСЏ РєРѕСЃРёРЅСѓСЃРѕРІ РїРѕ С€РёСЂРѕС‚Рµ
 	int nn;
 	Private(int _n_phi, int _n_la, bool _full)
 		:  SSteps(_n_phi, _n_la, _full),
@@ -124,7 +124,7 @@ public:
 
 	/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 	/*~~~~~~~~~~~~~~~~~~~~~~~~~~ J1 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-	/*!часть по phi*/
+	/*!С‡Р°СЃС‚СЊ РїРѕ phi*/
 	double J1_phi(const double *u, const double *v, int i, int j)
 	{
 		_DEBUG_ASSERT_RANGE(0, n_phi - 1, i);
@@ -166,7 +166,7 @@ public:
 
 	REGISTER_J(J1_phi, J1_phi);
 
-	/*!часть по lambda*/
+	/*!С‡Р°СЃС‚СЊ РїРѕ lambda*/
 	double J1_la(const double *u, const double *v, int i, int j)
 	{
 		_DEBUG_ASSERT_RANGE(0, n_phi - 1, i);
@@ -318,7 +318,7 @@ public:
 			j3 += (v[pOff(i__1, j_1)] - v[pOff(i__1, j__1)])
 				* u[pOff(i__1, j)];
 		} else if (full && i == 0) {
-			//южный полюс
+			//СЋР¶РЅС‹Р№ РїРѕР»СЋСЃ
 			int k    = (j + Ny/2    ) % Ny;
 			int k_1  = (j + Ny/2 - 1) % Ny;
 			int k__1 = (j + Ny/2 + 1) % Ny;
@@ -329,7 +329,7 @@ public:
 			j3 += (v[pOff(i__1, k_1)] - v[pOff(i__1, k__1)])
 				* u[pOff(i__1, k)];
 		} else if (i == Nx - 1) {
-			//северный полюс
+			//СЃРµРІРµСЂРЅС‹Р№ РїРѕР»СЋСЃ
 			//zero i
 			//j3 += 0;
 
@@ -560,7 +560,7 @@ public:
 	REGISTER_J(J2, J2);
 
 	/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-	/*~~~~~~~~~~~~~~~~~~~~~~J, схема Аракавы ~~~~~~~~~~~~~~~~~~~~~~~~~*/
+	/*~~~~~~~~~~~~~~~~~~~~~~J, СЃС…РµРјР° РђСЂР°РєР°РІС‹ ~~~~~~~~~~~~~~~~~~~~~~~~~*/
 	double J(const double *u, const double *v, int i, int j) {
 		return 0.3333333333333333333 * (
 			J1(u, v, i, j) +
@@ -570,7 +570,7 @@ public:
 
 	REGISTER_J(J, J);
 
-	/*!сопряжение по первому аргументу*/
+	/*!СЃРѕРїСЂСЏР¶РµРЅРёРµ РїРѕ РїРµСЂРІРѕРјСѓ Р°СЂРіСѓРјРµРЅС‚Сѓ*/
 	double JT1(const double *u, const double *v, int i, int j) {
 		return 0.3333333333333333333 * (
 			- J3(u, v, i, j)
@@ -580,7 +580,7 @@ public:
 
 	REGISTER_J(JT1, JT1);
 
-	/*!сопряжение по второму аргументу*/
+	/*!СЃРѕРїСЂСЏР¶РµРЅРёРµ РїРѕ РІС‚РѕСЂРѕРјСѓ Р°СЂРіСѓРјРµРЅС‚Сѓ*/
 	double JT2(const double *u, const double *v, int i, int j) {
 		return 0.3333333333333333333 * (
 			- J2(u, v, i, j)
