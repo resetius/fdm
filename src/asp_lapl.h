@@ -111,8 +111,8 @@ class FDM_API Laplacian {
 	double l_x;
 
 	int n_x;
-	int n; // размерность задачи
 	int type;
+	int n; // размерность задачи
 
 public:
 	enum {

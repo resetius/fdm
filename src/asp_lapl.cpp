@@ -344,7 +344,7 @@ void Laplacian2D::lapl_1(double * Dest, const double * Source,
 
 
 Laplacian::Laplacian(double l_x_, int n_x_, int type_)
-	: l_x(l_x_), n_x(n_x_), n(type == PERIODIC ? n_x : n_x + 1), type(type_)
+	: l_x(l_x_), n_x(n_x_), type(type_), n(type == PERIODIC ? n_x : n_x + 1)
 {
 	d_x    = l_x / n_x;
 	d_x2_1 = 1.0 / d_x / d_x;
