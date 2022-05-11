@@ -17,7 +17,7 @@ class matrix: public std::vector<T> {
     int rs;
 
 public:
-    matrix(int rows, int cols, int rs = 0): rows(rows), cols(cols), rs(rs?rs:cols)
+    matrix(int rows_, int cols_, int rs_ = 0): rows(rows_), cols(cols_), rs(rs_?rs_:cols)
     {
         vec.resize(rows*rs);
     }
@@ -60,11 +60,11 @@ int main() {
     int np = nx*ny; // количество внутренних точек давления (p)
     int nu = (nx-1)*ny; // количество внутренних точек скорости (u)
     int nv = nx*(ny-1); // количество внутренних точек скорости (v)
-    matrix<double> u(ny, nx-1), unext(ny, nx-1);
-    matrix<double> v(ny-1, nx), vnext(ny-1, nx);
-    matrix<double> p(ny, nx), pnext(ny, nx);
+    matrix<double> u(ny+2, nx+1), unext(ny+2, nx+1);
+    matrix<double> v(ny+1, nx+2), vnext(ny+1, nx+2);
+    matrix<double> p(ny+2, nx+2), pnext(ny+2, nx+2);
 
-    matrix<double> F(ny, nx-1), G(ny-1, nx);
+    matrix<double> F(ny+2, nx+1), G(ny+1, nx+2);
 
     /*
 
@@ -80,10 +80,11 @@ int main() {
 
      */
 
+    // TODO: boundary conditions
+
     // F
-    for (int j = 0; j < nx-1; j++) {
-        for (int k = 0; k < ny; k++) {
-            // TODO: boundary conditions
+    for (int j = 1; j < nx; j++) {
+        for (int k = 1; k <= ny; k++) {
             // 17.9
             F[k][j] = u[k][j] + dt*(
                 (u[k][j+1]-2*u[k][j]+u[k][j-1])/Re/dx2+
@@ -94,9 +95,8 @@ int main() {
                     )/dy);
         }
     }
-    for (int j = 0; j < nx; j++) {
-        for (int k = 0; k < ny-1; k++) {
-            // TODO: boundary conditions
+    for (int j = 1; j <= nx; j++) {
+        for (int k = 1; k < ny; k++) {
             // 17.11
             G[k][j] = v[k][j] + dt*(
                 (v[k][j+1]-2*v[k][j]+v[k][j-1])/Re/dx2+
