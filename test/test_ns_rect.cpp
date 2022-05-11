@@ -1,35 +1,15 @@
 #include <string>
 #include <vector>
 
+#include "matrix.h"
 #include "config.h"
 
 using namespace std;
+using namespace fdm;
 
 inline double sq(double x) {
     return x*x;
 }
-
-template<typename T>
-class matrix: public std::vector<T> {
-    std::vector<T> vec;
-    int rows;
-    int cols;
-    int rs;
-
-public:
-    matrix(int rows_, int cols_, int rs_ = 0): rows(rows_), cols(cols_), rs(rs_?rs_:cols)
-    {
-        vec.resize(rows*rs);
-    }
-
-    double& operator()(int y, int x) {
-        return vec[y*rs+x];
-    }
-
-    double* operator[](int y) {
-        return &vec[y*rs];
-    }
-};
 
 // Флетчер, том 2, страница 398
 int main() {
