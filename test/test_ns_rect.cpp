@@ -46,6 +46,8 @@ int main() {
 
     matrix<double> F(ny+2, nx+1), G(ny+1, nx+2);
 
+    vector<double> RHS(np);
+
     /*
 
             v=0,u=0
@@ -63,8 +65,8 @@ int main() {
     // TODO: boundary conditions
 
     // F
-    for (int j = 1; j < nx; j++) {
-        for (int k = 1; k <= ny; k++) {
+    for (int k = 1; k <= ny; k++) {
+        for (int j = 1; j < nx; j++) {
             // 17.9
             F[k][j] = u[k][j] + dt*(
                 (u[k][j+1]-2*u[k][j]+u[k][j-1])/Re/dx2+
@@ -75,8 +77,9 @@ int main() {
                     )/dy);
         }
     }
-    for (int j = 1; j <= nx; j++) {
-        for (int k = 1; k < ny; k++) {
+    // G
+    for (int k = 1; k < ny; k++) {
+        for (int j = 1; j <= nx; j++) {
             // 17.11
             G[k][j] = v[k][j] + dt*(
                 (v[k][j+1]-2*v[k][j]+v[k][j-1])/Re/dx2+
@@ -85,6 +88,15 @@ int main() {
                 0.25*((u[k][j]+  u[k+1][j])*  (v[k][j+1]+v[k][j])-
                       (u[k][j-1]+u[k+1][j-1])*(v[k][j]  +v[k][j-1])
                     )/dx);
+        }
+    }
+
+    // 17.3
+    for (int k = 1; k <= ny; k++) {
+        for (int j = 1; j <= nx; j++) {
+            // (j,k) -> row number
+            int id = (k-1)*nx+j-1;
+            //RHS[id] = F[]
         }
     }
 
