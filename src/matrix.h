@@ -43,7 +43,7 @@ public:
 
     T& operator[](int x) {
         verify(x >=0 && x < n);
-        return r[n];
+        return r[x];
     }
 };
 
