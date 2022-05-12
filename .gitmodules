@@ -1,0 +1,3 @@
+[submodule "deps/umfpack"]
+	path = deps/umfpack
+	url = git@github.com:resetius/umfpack.git
