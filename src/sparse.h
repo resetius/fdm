@@ -21,6 +21,13 @@ public:
         , Ai(std::move(other.Ai))
         , Ax(std::move(other.Ax))
     { }
+    csr_matrix& operator=(csr_matrix&& other) {
+        prev_row = other.prev_row;
+        Ap.swap(other.Ap);
+        Ai.swap(other.Ai);
+        Ax.swap(other.Ax);
+        return *this;
+    }
 
     void add(int row, int column, T value) {
         verify(row >= prev_row);
@@ -74,6 +81,13 @@ class umfpack_solver {
     csr_matrix<T> mat;
 
 public:
+    umfpack_solver()
+        : Symbolic(nullptr)
+        , Numeric(nullptr)
+    {
+        umfpack_di_defaults (Control);
+    }
+
     umfpack_solver(csr_matrix<T>&& matrix)
         : Symbolic(nullptr)
         , Numeric(nullptr)
@@ -86,6 +100,12 @@ public:
     {
         umfpack_di_free_symbolic (&Symbolic);
         umfpack_di_free_numeric (&Numeric);
+    }
+
+    umfpack_solver& operator=(csr_matrix<T>&& matrix)
+    {
+        mat = std::move(matrix);
+        return *this;
     }
 
     void solve(double* x, const double* b) {
