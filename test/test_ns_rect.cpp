@@ -1,6 +1,7 @@
 #include <string>
 #include <vector>
 #include <climits>
+#include <cmath>
 
 #include "matrix.h"
 #include "config.h"
@@ -21,11 +22,11 @@ int main() {
 
     c.open(config_fn);
 
-    double x1 = c.get("ns", "x1", -1.0);
-    double y1 = c.get("ns", "y1", -1.0);
+    double x1 = c.get("ns", "x1", -M_PI);
+    double y1 = c.get("ns", "y1", -M_PI);
 
-    double x2 = c.get("ns", "x2", 1.0);
-    double y2 = c.get("ns", "y2", 1.0);
+    double x2 = c.get("ns", "x2", M_PI);
+    double y2 = c.get("ns", "y2", M_PI);
 
     // число "ячеек"
     int nx = c.get("ns", "nx", 32);
@@ -65,6 +66,12 @@ int main() {
      */
 
     // TODO: boundary conditions
+    for (int k = 0; k < ny+2; k++) {
+        for (int j = 0; j < nx+1; j++) {
+            double y = y1+dy*k+dy/2;
+            u[k][j] = -sin(y/2-M_PI/2);
+        }
+    }
 
     // F
     for (int k = 1; k <= ny; k++) {
@@ -131,6 +138,17 @@ int main() {
     vector<double> x(np);
     umfpack_solver<double> solver(std::move(P));
     solver.solve(&x[0], &RHS[0]);
+
+    //for (int k = 0; k < ny+2; k++) {
+    //for (int j = 0; j < nx+1; j++) {
+    for (int k = 1; k <= ny; k++) {
+        for (int j = 1; j <= nx; j++) {
+            printf("%f ", x[pId(j,k)]);
+            //printf("%f ", u[k][j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
 #undef pId
     return 0;
 }
