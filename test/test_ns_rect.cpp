@@ -1,5 +1,6 @@
 #include <string>
 #include <vector>
+#include <climits>
 
 #include "matrix.h"
 #include "config.h"
@@ -10,6 +11,40 @@ using namespace fdm;
 inline double sq(double x) {
     return x*x;
 }
+
+template<typename T>
+class csr_matrix {
+    int prev_row = -1;
+
+public:
+    std::vector<int> Ap; // column indices of row i: Ap[i] .. Ap[i+1]
+    std::vector<int> Ai; // column
+    std::vector<T> Ax;
+
+    void add(int row, int column, T value) {
+        verify(row >= prev_row);
+        if (row != prev_row) {
+            int last = Ap.empty() ? -1 : Ap.back();
+            while (Ap.size() < row+1) {
+                Ap.push_back(last);
+            }
+            Ap[row] = Ai.size();
+        }
+        Ai.push_back(column);
+        Ax.push_back(value);
+
+        prev_row = row;
+    }
+
+    void close() {
+        Ap.push_back(Ai.size());
+        prev_row = INT_MAX;
+    }
+
+    void clear() {
+        Ap.clear(); Ai.clear(); Ax.clear(); prev_row = -1;
+    }
+};
 
 // Флетчер, том 2, страница 398
 int main() {
@@ -91,14 +126,41 @@ int main() {
         }
     }
 
+    csr_matrix<double> P;
+
+    P.clear();
+
+#define pId(j,k) ((k-1)*nx+j-1)
     // 17.3
     for (int k = 1; k <= ny; k++) {
         for (int j = 1; j <= nx; j++) {
             // (j,k) -> row number
-            int id = (k-1)*nx+j-1;
-            //RHS[id] = F[]
+            int id = pId(j,k);
+            // TODO: F[0][k], G[j][0] ...
+            RHS[id] = ((F[j][k]-F[j-1][k])/dx+(G[j][k]-G[j][k-1])/dy)/dt;
+
+            if (k > 1) {
+                P.add(id, pId(j,k-1), 1/dy2);
+            }
+            // TODO: bnd to RHS
+
+            if (j > 1) {
+                P.add(id, pId(j-1,k), 1/dx2);
+            }
+
+            P.add(id, pId(j,k), -2/dx2);
+            P.add(id, pId(j,k), -2/dy2);
+
+            if (j < nx) {
+                P.add(id, pId(j+1,k), 1/dx2);
+            }
+
+            if (k < ny) {
+                P.add(id, pId(j,k+1), 1/dy2);
+            }
         }
     }
-
+    P.close();
+#undef pId
     return 0;
 }
