@@ -2,6 +2,8 @@ project(fdm)
 cmake_minimum_required(VERSION 3.20)
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}/lib")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 file(GLOB SRC src/*.c src/*.cpp src/*.h)
 add_library(fdm SHARED ${SRC})
