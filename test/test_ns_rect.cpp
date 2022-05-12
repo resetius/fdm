@@ -23,6 +23,14 @@ public:
     std::vector<int> Ai; // column
     std::vector<T> Ax;
 
+    csr_matrix() = default;
+    csr_matrix(csr_matrix&& other)
+        : prev_row(other.prev_row)
+        , Ap(std::move(other.Ap))
+        , Ai(std::move(other.Ai))
+        , Ax(std::move(other.Ax))
+    { }
+
     void add(int row, int column, T value) {
         verify(row >= prev_row);
         if (row != prev_row) {
@@ -50,25 +58,72 @@ public:
     void clear() {
         Ap.clear(); Ai.clear(); Ax.clear(); prev_row = -1;
     }
+
+    void print() const {
+        for (auto ap: Ap) {
+            printf("%d ", ap);
+        }
+        printf("\n");
+        for (auto ai: Ai) {
+            printf("%d ", ai);
+        }
+        printf("\n");
+        for (auto ax: Ax) {
+            printf("%f ", ax);
+        }
+        printf("\n");
+    }
 };
 
 template<typename T>
 class umfpack_solver {
-    double Control_ [UMFPACK_CONTROL];
-    double Info_ [UMFPACK_INFO];
-    void *Symbolic_, *Numeric_;
+    double Control [UMFPACK_CONTROL];
+    double Info [UMFPACK_INFO];
+    void *Symbolic, *Numeric;
+    csr_matrix<T> mat;
 
 public:
-    umfpack_solver(const csr_matrix<T>& matrix)
-        : Symbolic_(nullptr), Numeric_(nullptr)
+    umfpack_solver(csr_matrix<T>&& matrix)
+        : Symbolic(nullptr)
+        , Numeric(nullptr)
+        , mat(std::move(matrix))
     {
-        umfpack_di_defaults (Control_);
+        umfpack_di_defaults (Control);
     }
 
     ~umfpack_solver()
     {
-        umfpack_di_free_symbolic (&Symbolic_);
-		umfpack_di_free_numeric (&Numeric_);
+        umfpack_di_free_symbolic (&Symbolic);
+        umfpack_di_free_numeric (&Numeric);
+    }
+
+    void solve(double* x, const double* b) {
+        int status;
+        if (Symbolic == nullptr)
+        {
+            status = umfpack_di_symbolic (mat.Ap.size()-1,
+                                          mat.Ap.size()-1,
+                                          &mat.Ap[0],
+                                          &mat.Ai[0],
+                                          &mat.Ax[0],
+                                          &Symbolic, Control, Info);
+            verify (status == UMFPACK_OK);
+		}
+
+        if (Numeric == nullptr)
+        {
+            status = umfpack_di_numeric (&mat.Ap[0],
+                                         &mat.Ai[0],
+                                         &mat.Ax[0],
+                                         Symbolic, &Numeric, Control, Info) ;
+            verify (status == UMFPACK_OK);
+        }
+
+        status = umfpack_di_solve (UMFPACK_At,
+                                   &mat.Ap[0],
+                                   &mat.Ai[0],
+                                   &mat.Ax[0], x, b, Numeric, Control, Info);
+        verify (status == UMFPACK_OK);
     }
 };
 
@@ -174,8 +229,7 @@ int main() {
                 P.add(id, pId(j-1,k), 1/dx2);
             }
 
-            P.add(id, pId(j,k), -2/dx2);
-            P.add(id, pId(j,k), -2/dy2);
+            P.add(id, pId(j,k), -2/dx2-2/dy2);
 
             if (j < nx) {
                 P.add(id, pId(j+1,k), 1/dx2);
@@ -187,6 +241,10 @@ int main() {
         }
     }
     P.close();
+
+    vector<double> x(np);
+    umfpack_solver<double> solver(std::move(P));
+    solver.solve(&x[0], &RHS[0]);
 #undef pId
     return 0;
 }
