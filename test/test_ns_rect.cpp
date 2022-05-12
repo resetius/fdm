@@ -5,6 +5,8 @@
 #include "matrix.h"
 #include "config.h"
 
+#include <umfpack.h>
+
 using namespace std;
 using namespace fdm;
 
