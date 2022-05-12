@@ -43,8 +43,32 @@ public:
         prev_row = INT_MAX;
     }
 
+    bool is_closed() const {
+        return prev_row == INT_MAX;
+    }
+
     void clear() {
         Ap.clear(); Ai.clear(); Ax.clear(); prev_row = -1;
+    }
+};
+
+template<typename T>
+class umfpack_solver {
+    double Control_ [UMFPACK_CONTROL];
+    double Info_ [UMFPACK_INFO];
+    void *Symbolic_, *Numeric_;
+
+public:
+    umfpack_solver(const csr_matrix<T>& matrix)
+        : Symbolic_(nullptr), Numeric_(nullptr)
+    {
+        umfpack_di_defaults (Control_);
+    }
+
+    ~umfpack_solver()
+    {
+        umfpack_di_free_symbolic (&Symbolic_);
+		umfpack_di_free_numeric (&Numeric_);
     }
 };
 
