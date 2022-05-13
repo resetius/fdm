@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "matrix.h"
+#include "matrix_plot.h"
 #include "config.h"
 #include "sparse.h"
 
@@ -135,20 +136,25 @@ int main() {
     }
     P.close();
 
-    vector<double> x(np);
+    matrix<double> x(ny, nx);
     umfpack_solver<double> solver(std::move(P));
-    solver.solve(&x[0], &RHS[0]);
+    solver.solve(&x[0][0], &RHS[0]);
 
     //for (int k = 0; k < ny+2; k++) {
     //for (int j = 0; j < nx+1; j++) {
     for (int k = 1; k <= ny; k++) {
         for (int j = 1; j <= nx; j++) {
-            printf("%f ", x[pId(j,k)]);
+            //printf("%f ", x[pId(j,k)]);
             //printf("%f ", u[k][j]);
         }
-        printf("\n");
+        //printf("\n");
     }
     printf("\n");
+
+    matrix_plotter plotter(x);
+    plotter.plot();
+
+
 #undef pId
     return 0;
 }

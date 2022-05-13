@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include "verify.h"
 
 namespace fdm {
@@ -9,15 +10,16 @@ class matrix { };
 
 template<typename T>
 class matrix_impl {
-protected:
+public:
     std::vector<T> vec;
-    int rows;
-    int cols;
-    int rs;
+    const int rows;
+    const int cols;
+    const int rs;
 
-    int x1,x2;
-    int y1,y2;
+    const int x1,x2;
+    const int y1,y2;
 
+protected:
     matrix_impl(int rows_, int cols_, int rs_ = 0)
         : rows(rows_), cols(cols_)
         , rs(rs_?rs_:cols)

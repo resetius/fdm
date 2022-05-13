@@ -15,11 +15,3 @@ target_link_libraries(fdm_slaplace fdm)
 
 add_executable(fdm_ns_rect test_ns_rect.cpp config.cpp)
 target_link_libraries(fdm_ns_rect fdm umfpack)
-
-if (OPENMP_FOUND)
-	set_target_properties(fdm_barvortex PROPERTIES LINK_FLAGS ${OpenMP_C_FLAGS})
-	set_target_properties(fdm_barvortex_forcing PROPERTIES LINK_FLAGS ${OpenMP_C_FLAGS})
-	set_target_properties(fdm_baroclin PROPERTIES LINK_FLAGS ${OpenMP_C_FLAGS})
-	set_target_properties(fdm_slaplace PROPERTIES LINK_FLAGS ${OpenMP_C_FLAGS})
-	set_target_properties(fdm_ns_rect PROPERTIES LINK_FLAGS ${OpenMP_C_FLAGS})
-endif (OPENMP_FOUND)

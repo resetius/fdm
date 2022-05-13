@@ -33,7 +33,7 @@ public:
         verify(row >= prev_row);
         if (row != prev_row) {
             int last = Ap.empty() ? -1 : Ap.back();
-            while (Ap.size() < row+1) {
+            while (static_cast<int>(Ap.size()) < row+1) {
                 Ap.push_back(last);
             }
             Ap[row] = Ai.size();
