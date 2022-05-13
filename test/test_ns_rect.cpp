@@ -43,8 +43,8 @@ int main() {
     int np = nx*ny; // количество внутренних точек давления (p)
     int nu = (nx-1)*ny; // количество внутренних точек скорости (u)
     int nv = nx*(ny-1); // количество внутренних точек скорости (v)
-    matrix<double> u(ny+2, nx+1), unext(ny+2, nx+1);
-    matrix<double> v(ny+1, nx+2), vnext(ny+1, nx+2);
+    matrix<double> u(-1, 0, nx+1, ny+1), unext(-1, 0, nx+1, ny+1);
+    matrix<double> v(0, -1, ny+1, nx+1), vnext(0, -1, ny+1, nx+1);
     matrix<double> p(ny+2, nx+2), pnext(ny+2, nx+2);
 
     matrix<double> F(ny+2, nx+1), G(ny+1, nx+2);
@@ -67,15 +67,15 @@ int main() {
 
     // TODO: boundary conditions
     for (int k = 0; k < ny+2; k++) {
-        for (int j = 0; j < nx+1; j++) {
+        for (int j = -1; j <= nx+1; j++) {
             double y = y1+dy*k+dy/2;
             u[k][j] = -sin(y/2-M_PI/2);
         }
     }
 
     // F
-    for (int k = 1; k <= ny; k++) {
-        for (int j = 1; j < nx; j++) {
+    for (int k = 1; k <= ny; k++) { // 3/2 ..
+        for (int j = 0; j <= nx; j++) { // 1/2 ..
             // 17.9
             F[k][j] = u[k][j] + dt*(
                 (u[k][j+1]-2*u[k][j]+u[k][j-1])/Re/dx2+
@@ -87,7 +87,7 @@ int main() {
         }
     }
     // G
-    for (int k = 1; k < ny; k++) {
+    for (int k = 0; k <= ny; k++) {
         for (int j = 1; j <= nx; j++) {
             // 17.11
             G[k][j] = v[k][j] + dt*(
