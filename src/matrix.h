@@ -49,6 +49,11 @@ public:
         verify(y >= this->y1 && y <= this->y2);
         return row<T>(&this->vec[(y-this->y1)*this->rs], this->x1, this->x2);
     }
+
+    row<const T> operator[](int y) const {
+        verify(y >= this->y1 && y <= this->y2);
+        return row<const T>(&this->vec[(y-this->y1)*this->rs], this->x1, this->x2);
+    }
 };
 
 template<typename T>
@@ -59,6 +64,10 @@ public:
     { }
 
     T* operator[](int y) {
+        return &this->vec[(y-this->y1)*this->rs]-this->x1;
+    }
+
+    const T* operator[](int y) const {
         return &this->vec[(y-this->y1)*this->rs]-this->x1;
     }
 };
@@ -104,11 +113,10 @@ public:
         return &acc[y][x]-&acc[y1][x1];
     }
 
-    template<bool other_check>
-    matrix<T,check>& operator=(const matrix<T,other_check>& other) {
+    matrix<T,check>& operator=(const matrix<T,check>& other) {
         for (int y = std::max(y1, other.y1); y < std::min(y2, other.y2); y++) {
             for (int x = std::max(x1, other.x1); x < std::min(y2, other.x2); x++) {
-                (*this)[y][x] = other[y][x];
+                (*this)[y][x] = other.acc[y][x];
             }
         }
         return *this;

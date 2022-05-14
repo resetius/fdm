@@ -165,11 +165,13 @@ int main() {
     umfpack_solver<double> solver(std::move(P));
     solver.solve(&x[1][1], &RHS[1][1]);
 
+    unext = u;
     for (int k = 1; k <= ny; k++) {
         for (int j = 1; j < nx; j++) {
             unext[k][j] = F[k][j]-dt/dx*(x[k][j+1]-x[k][j]);
         }
     }
+    vnext = v;
     for (int k = 1; k < ny; k++) {
         for (int j = 1; j <= nx; j++) {
             vnext[k][j] = G[k][j]-dt/dx*(x[k+1][j]-x[k][j]);
@@ -212,6 +214,16 @@ int main() {
                  .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
                  .devname("pngcairo")
                  .fname("vnext.png"));
+    plotter.plot(matrix_plotter::settings(F)
+                 .levels(10)
+                 .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
+                 .devname("pngcairo")
+                 .fname("F.png"));
+    plotter.plot(matrix_plotter::settings(G)
+                 .levels(10)
+                 .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
+                 .devname("pngcairo")
+                 .fname("G.png"));
 
     return 0;
 }
