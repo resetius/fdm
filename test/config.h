@@ -32,54 +32,54 @@
 
 struct ConfigSkeleton
 {
-	enum Flags
-	{
-		OPTIONAL = 0,
-		REQUIRED = 1
-	};
+    enum Flags
+    {
+        OPTIONAL = 0,
+        REQUIRED = 1
+    };
 
-	// parameter_name -> flags, docstring
-	typedef std::map < std::string, std::pair < Flags, std::string > > section_t;
-	// section_name -> section
-	typedef std::map < std::string, section_t > data_t;
+    // parameter_name -> flags, docstring
+    typedef std::map < std::string, std::pair < Flags, std::string > > section_t;
+    // section_name -> section
+    typedef std::map < std::string, section_t > data_t;
 
-	data_t data;
+    data_t data;
 
-	bool is_required(const std::string & section, const std::string & prm);
+    bool is_required(const std::string & section, const std::string & prm) const;
 };
 
 class Config
 {
-	typedef std::map < std::string, std::string > section_t;
-	typedef std::map < std::string, section_t > data_t;
+    typedef std::map < std::string, std::string > section_t;
+    typedef std::map < std::string, section_t > data_t;
 
-	data_t data;
-	std::string filename;
-	ConfigSkeleton skeleton;
+    data_t data;
+    std::string filename;
+    ConfigSkeleton skeleton;
 
-	void load(FILE * f);
+    void load(FILE * f);
 
 public:
-	Config();
-	~Config();
+    Config();
+    ~Config();
 
-	void set_skeleton(const ConfigSkeleton & s) { skeleton = s; }
-	void rewrite(int argc, char ** argv);
-	bool validate() const;
-	void help() const;
+    void set_skeleton(const ConfigSkeleton & s) { skeleton = s; }
+    void rewrite(int argc, char ** argv);
+    bool validate() const;
+    void help() const;
 
-	void open(const std::string & filename);
-	void save() const;
-	void print(FILE * f) const;
+    void open(const std::string & filename);
+    void save() const;
+    void print(FILE * f) const;
 
-	double get(const std::string & section, const std::string & name, double def);
-	double getd(const std::string & section, const std::string & name);
+    double get(const std::string & section, const std::string & name, double def) const;
+    double getd(const std::string & section, const std::string & name) const;
 
-	int get(const std::string & section, const std::string & name, int def);
-	int geti(const std::string & section, const std::string & name);
+    int get(const std::string & section, const std::string & name, int def) const;
+    int geti(const std::string & section, const std::string & name) const;
 
-	std::string get(const std::string & section, const std::string & name, const std::string & def);
-	std::string gets(const std::string & section, const std::string & name);
+    std::string get(const std::string & section, const std::string & name, const std::string & def) const;
+    std::string gets(const std::string & section, const std::string & name) const;
 };
 
 #endif /* GIDROSTABLE_CONFIG_H */
