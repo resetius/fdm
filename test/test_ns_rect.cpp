@@ -125,8 +125,8 @@ private:
     void init_bound() {
         // свободная стенка
         for (int k = 0; k < ny+2; k++) {
-            verify(fabs(u[k][-1] - u[k][1]) < 1e-14);
-            verify(fabs(u[k][nx+1] - u[k][nx-1]) < 1e-14);
+            verify(time_index>0||fabs(u[k][-1] - u[k][1]) < 1e-14);
+            verify(time_index>0||fabs(u[k][nx+1] - u[k][nx-1]) < 1e-14);
             u[k][-1] = u[k][1];
             u[k][nx+1] = u[k][nx-1];
         }
@@ -263,7 +263,7 @@ private:
 
 template<typename T, bool check>
 void calc(const Config& c) {
-    NSRect<double, true> ns(c);
+    NSRect<T, true> ns(c);
     /*
 
             v=0,u=0
@@ -278,18 +278,24 @@ void calc(const Config& c) {
 
      */
 
+    const int steps = c.get("ns", "steps", 1);
+    int i;
+
     ns.plot();
-    ns.step();
-    ns.plot();
+    for (i = 0; i < steps; i++) {
+        ns.step();
+        ns.plot();
+    }
 }
 
 // Флетчер, том 2, страница 398
-int main() {
+int main(int argc, char** argv) {
     string config_fn = "ns_rect.ini";
 
     Config c;
 
     c.open(config_fn);
+    c.rewrite(argc, argv);
 
     bool check = c.get("other", "check", 0) == 1;
     if (check) {
