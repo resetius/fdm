@@ -105,8 +105,8 @@ void output_psi(const char * prefix, const char * suffix,
     _fprintfwmatrix(Psibuf, &Psi[0], nlat, nlon, max(nlat, nlon), "%23.16le ");
 }
 
-void load_relief(double * cor, double *rel, long nlat, long nlon, 
-                 int full, int offset, 
+void load_relief(double * cor, double *rel, long nlat, long nlon,
+                 int full, int offset,
 				 const string & fn)
 {
 	fprintf(stderr, "loading relief\n");
@@ -136,7 +136,7 @@ void load_relief(double * cor, double *rel, long nlat, long nlon,
 		//if (rel_max < fabs(rel[i])) rel_max = fabs(rel[i]);
 	}
 
-	double dlat, dlon, phi, lambda;
+	double dlat, dlon, phi, lambda[[maybe_unused]];
 
 	if (full && !offset) {
 		dlat = M_PI / (nlat - 1);
@@ -225,10 +225,10 @@ void calc_barvortex_forcing(Config & config, int argc, char *argv[])
 	}
 
 	BarVortex::Conf conf;
-	double R   = 6.371e+6;
-	double H   = 5000;
+	double R   [[maybe_unused]]= 6.371e+6;
+	double H   [[maybe_unused]]= 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./omg;
+	double T0  [[maybe_unused]]= 1./omg;
 
 	int part_of_the_day = config.get("fdm", "part_of_the_day", 192);
 	conf.k1    = config.get("fdm", "k1", 1.0);
@@ -254,8 +254,8 @@ void calc_barvortex_forcing(Config & config, int argc, char *argv[])
 
 	int n = conf.n_phi * conf.n_la;
 
-	double t = 0;
-	double T = 2 * M_PI * 1000.0; //1445;//300 * 2.0 * M_PI;;
+	double t [[maybe_unused]]= 0;
+	double T [[maybe_unused]]= 2 * M_PI * 1000.0; //1445;//300 * 2.0 * M_PI;;
 
 	vector < double > cor(n);
 	vector < double > rel(n);

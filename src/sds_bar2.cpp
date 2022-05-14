@@ -26,12 +26,12 @@
  */
 /**
  * уравнение баротропного вихря на сфере
- * \f[\frac{\partial \delta du}{\partial t} 
-      + \rho J(u, \delta u + l + h) = 
+ * \f[\frac{\partial \delta du}{\partial t}
+      + \rho J(u, \delta u + l + h) =
 	  -\sigma \delta u + \mu \delta^2 u + f (u)
    \f]
  * \f[
-    \Delta u(\phi, \lambda, t) := \frac{1}{cos(\phi)} 
+    \Delta u(\phi, \lambda, t) := \frac{1}{cos(\phi)}
      \frac{\partial}{\partial \phi} cos(\phi) \frac{\partial u}{\partial \phi} +
     + \frac{1}{cos^2 \phi} \frac{\partial ^2 u}{\partial ^2 \lambda}
 	\f]
@@ -80,7 +80,7 @@ Baroclin::~Baroclin()
 {
 	delete d;
 }
-
+#if 0
 static void stat(int nn, double * d, char * mask)
 {
 	int i;
@@ -113,7 +113,7 @@ static void stat(int nn, double * d, char * mask)
 	printf("st:   med=%lf\n", med);
 }
 
-static void printfmasked(const double *A, const char * mask, 
+static void printfmasked(const double *A, const char * mask,
 						 const char * fname,
 						 int n_phi, int n_la)
 {
@@ -132,7 +132,7 @@ static void printfmasked(const double *A, const char * mask,
 	}
 	fclose(f);
 }
-
+#endif
 void Baroclin::S_step(double *u11, double * u21, const double *u1, const double *u2, double t)
 {
 	d->S_step_im(u11, u21, u1, u2, t);
@@ -152,7 +152,7 @@ void Baroclin::S(double *u11, double * u21, const double *u1, const double *u2) 
 	}
 }
 
-void Baroclin::L_step(double *u11, double * u21, const double *u1, const double *u2, 
+void Baroclin::L_step(double *u11, double * u21, const double *u1, const double *u2,
 		const double *z1, const double *z2)
 {
 	d->L_step_im(u11, u21, u1, u2, z1, z2);
@@ -163,7 +163,7 @@ void Baroclin::L_step(double *u11, double * u21, const double *u1, const double 
 	}
 }
 
-void Baroclin::L_1_step(double *u11, double * u21, const double *u1, const double *u2, 
+void Baroclin::L_1_step(double *u11, double * u21, const double *u1, const double *u2,
 		const double *z1, const double *z2)
 {
 	if (d->conf->filter) {
@@ -204,4 +204,3 @@ double Baroclin::lambda(int j)
 {
 	return d->LA[j];
 }
-

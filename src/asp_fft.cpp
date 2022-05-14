@@ -108,7 +108,7 @@ void FFT_free(fft * s)
 	*/
 	void pFFT_1(double *S, double *s1, double dx, int N, int n)
 	{
-		int p, s, j, idx, idx2, vm, k;
+		int p, s, j, idx, idx2, k;
 		int N_2 = N / 2;
 		double *a   = (double*)malloc((n + 1)*N * sizeof(double));
 		double * y  = (double*)malloc((N_2 + 1) * sizeof(double));
@@ -129,7 +129,7 @@ void FFT_free(fft * s)
 			//idx = _ipow(2, n - s - 1);
 			//vm  = _ipow(2, s);
 			idx = 1 << (n - s - 1);
-			vm  = 1 << s;
+			//vm  = 1 << s;
 			for (k = 1; k <= idx; k++) {
 				double s1 = 0.0;
 				double s2 = 0.0;

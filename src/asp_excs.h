@@ -27,7 +27,7 @@
 * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-/** 
+/**
  * Исключения.
  * Генерация исключительных ситуаций в программе.
  */
@@ -46,7 +46,7 @@ protected:
 public:
 	Exception() {}
 	Exception(const char * name): name_(name) {}
-	Exception(const char *file, int line) 
+	Exception(const char *file, int line)
 	{
 		std::ostringstream out;
 		out << file << ":" << line <<": Exception";
@@ -75,14 +75,8 @@ public:
 * переполнение индекса
 */
 class IndexOutOfRange: public Exception {
-private:
-	int l_;
-	int r_;
-	int idx_;
-
 public:
 	IndexOutOfRange(int l, int r, int idx)
-		:l_(l), r_(r), idx_(idx)
 	{
 		std::ostringstream out;
 		out << "IndexOutOfRange, index=" << idx << " range=["<<l<<","<<r<<"]";
@@ -140,7 +134,7 @@ public:
 * полудинамическая система не линеаризована
 */
 class NotLinearized: public NotImplemented {
-public:	
+public:
 	NotLinearized(const char *s, const char * file, int line)
 		:NotImplemented(s,file,line)
 	{

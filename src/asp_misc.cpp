@@ -212,11 +212,11 @@ double scalar(const double *X1, const double *X2, int k) {
 }
 
 	/*!линейное отображение вектора \param h
-	в вектор \param h1, вектор разлагается по 
+	в вектор \param h1, вектор разлагается по
 	ортогональному базису e,
 	размерность пространства n, размерность отображения nx,
 	вектора в базисе лежат по столбцам*/
-void linear_reflection(double *h1, const double *h, const double *e, 
+void linear_reflection(double *h1, const double *h, const double *e,
 					   const double *L, int n, int nx)
 {
 	double * c = (double*)malloc(nx * sizeof(double));
@@ -257,8 +257,8 @@ void linear_reflection(double *h1, const double *h, const double *e,
  * X - nx * n, Y - ny * n
  * nx, ny - число столбцов в матрицах
  */
-double matrix_cols_scalar(const double *X, const double *Y, 
-						  int i, int j, int nx, int ny, int n) 
+double matrix_cols_scalar(const double *X, const double *Y,
+						  int i, int j, int nx, int ny, int n)
 {
 	int k;
 	double sum = 0.0;
@@ -272,7 +272,7 @@ double matrix_cols_scalar(const double *X, const double *Y,
 	 * Матричная экспонента
 	 * @param Dest - результат экспонента от A.
 	 * @param A - матрица
-	 * @param n - размерность	 
+	 * @param n - размерность
 	 */
 void matrix_exp(double * Dest, const double * A, int n) {
 	int i, m;
@@ -284,7 +284,7 @@ void matrix_exp(double * Dest, const double * A, int n) {
 
 	load_identity_matrix(&e, n);
 	load_identity_matrix(&p, n);
-	
+
 	m = 1;
 	while (1) {
 		f *= m;
@@ -301,16 +301,16 @@ void matrix_exp(double * Dest, const double * A, int n) {
 
 		for (i = 0; i < size; i++) {
 			p[i] += e[i] / f;
-		}		
-		m ++;		
-	}	
+		}
+		m ++;
+	}
 	memcpy(Dest, p, n * n * sizeof(double));
 	free(e); free(p);
 }
 
 
 	/**
-	 * Умножение матриц. Умножение безопасное. 
+	 * Умножение матриц. Умножение безопасное.
 	 * Можно использовать одни и те же параметры для ответа и данных
 	 * @param Dest - результат
 	 * @param A
@@ -318,7 +318,7 @@ void matrix_exp(double * Dest, const double * A, int n) {
 	 * @param n
 	 * @return A*B
 	 */
-void matrix_mult(double * Dest, const double * S1, const double * S2, int n) 
+void matrix_mult(double * Dest, const double * S1, const double * S2, int n)
 {
 	int i, j, k;
 	int offset;
@@ -351,13 +351,13 @@ void matrix_mult(double * Dest, const double * S1, const double * S2, int n)
 			}
 		}
 	}
-				
+
 	if (need_to_free_A) free(A);
 	if (need_to_free_B) free(B);
 }
 
 	/**
-	 * Умножение матрицы на вектор . Умножение безопасное. 
+	 * Умножение матрицы на вектор . Умножение безопасное.
 	 * Можно использовать одни и те же параметры для ответа и данных
 	 * @param Dest - результат
 	 * @param A
@@ -365,8 +365,8 @@ void matrix_mult(double * Dest, const double * S1, const double * S2, int n)
 	 * @param n
 	 * @return A * v
 	 */
-void matrix_mult_vector(double * Dest, const double * A, const double * v, 
-						int n) 
+void matrix_mult_vector(double * Dest, const double * A, const double * v,
+						int n)
 {
 	int i, k;
 	double * C = (double*)malloc(n * sizeof(double));
@@ -382,7 +382,7 @@ void matrix_mult_vector(double * Dest, const double * A, const double * v,
 	free(C);
 }
 
-void matrix_mult_scalar(double * Dest, const double * A, double v, int n) 
+void matrix_mult_scalar(double * Dest, const double * A, double v, int n)
 {
 	int size = n * n;
 	int i;
@@ -400,7 +400,7 @@ void vector_mult_scalar(double * Dest, const double * A, double v, int n)
 }
 
 	/**
-	 * Сумма матриц. 
+	 * Сумма матриц.
 	 * @param Dest - результат
 	 * @param A
 	 * @param B
@@ -415,7 +415,7 @@ void matrix_sum(double * Dest, const double * A, const double * B, int n) {
 	}
 }
 
-void vector_sum(double * Dest, const double * A, const double * B, int n) 
+void vector_sum(double * Dest, const double * A, const double * B, int n)
 {
 	int i;
 	for (i = n - 1; i >= 0; --i) {
@@ -423,8 +423,8 @@ void vector_sum(double * Dest, const double * A, const double * B, int n)
 	}
 }
 
-void vector_sum1(double * Dest, const double * A, const double * B, 
-				 double k1, double k2, int n) 
+void vector_sum1(double * Dest, const double * A, const double * B,
+				 double k1, double k2, int n)
 {
 	int i;
 	for (i = n - 1; i >= 0; --i) {
@@ -432,8 +432,8 @@ void vector_sum1(double * Dest, const double * A, const double * B,
 	}
 }
 
-void vector_sum2(double * Dest, const double * A, const double * B, 
-				 double c, int n) 
+void vector_sum2(double * Dest, const double * A, const double * B,
+				 double c, int n)
 {
 	int i;
 	for (i = n - 1; i >= 0; --i) {
@@ -442,7 +442,7 @@ void vector_sum2(double * Dest, const double * A, const double * B,
 }
 
 	/**
-	 * Разность векторов. 
+	 * Разность векторов.
 	 * @param Dest - результат
 	 * @param A
 	 * @param B
@@ -545,7 +545,7 @@ void fprintfwmatrix(FILE*f, const double*A, int n, int k, int m, const char* for
 	char *local_format = (char*)malloc((len + 10)*sizeof(char));
 	for (j = 0, i = 0; i < len; ++i) {
 		if (i > 0
-			&& format[i - 1] == '%' 
+			&& format[i - 1] == '%'
 			&& format[i]     == '.')
 		{
 			local_format[j++] = '1';
@@ -655,7 +655,7 @@ void fprintimatrix(FILE*f, const int *A, int n, int m) {
 		fprintf(f,"\n");
 	}
 }
-	
+
 void fprintivector(FILE*f, const int*A, int n, int m) {
 	int i;
 	for (i = 0; i < n && i < m; i++) {
@@ -689,7 +689,7 @@ int _ipow(int x, int n) {
 void matrix2file(const double**M, int N1, int N2, const char* fname) {
 	int i,j;
 	FILE *f = fopen(fname,"w");
-	IOERR(f);                
+	IOERR(f);
     for (i = 0; i < N1; i++) {
         for (j = 0; j < N2; j++) {
             fprintf(f,"%.3e ",M[i][j]);
@@ -702,7 +702,7 @@ void matrix2file(const double**M, int N1, int N2, const char* fname) {
 void _matrix2file(const double *M, int N1, int N2, const char *fname) {
 	int i,j;
 	FILE *f = fopen(fname,"w");
-	IOERR(f);                
+	IOERR(f);
     for (i = 0; i < N1; i++) {
         for (j = 0; j < N2; j++) {
             fprintf(f,"%.3e ",M[i * N2 + j]);
@@ -747,7 +747,7 @@ double _matrix_diff(const double* M1, const double* M2, int N1, int N2) {
     return max;
 }
 
-double _matrix_inside_diff(const double *A, const double *B, int N1, int N2) 
+double _matrix_inside_diff(const double *A, const double *B, int N1, int N2)
 {
 	int i,j;
     double max = 0.0;
@@ -859,8 +859,8 @@ void load_identity_matrix(double **X, int n) {
 }
 
 /* возвращает три средние диагонали матрицы */
-void extract_tdiags_from_matrix(double *D, double *M, double *U, 
-								const double*A, int n) 
+void extract_tdiags_from_matrix(double *D, double *M, double *U,
+								const double*A, int n)
 {
 	int i;
 	M[0] = A[0];
@@ -890,7 +890,7 @@ void load_dim_matrix_from_txtfile(double **A, int *n, const char *filename) {
 
 //размер буфера для сохранения
 #define SB_MIN_SIZE 512
-void save_matrix_to_binfile(const double *A, int n, int m, 
+void save_matrix_to_binfile(const double *A, int n, int m,
 							int endian,
 							const char * separator,
 							const char *filename)
@@ -951,9 +951,9 @@ void save_matrix_to_binfile(const double *A, int n, int m,
 }
 
 #define LB_MIN_SIZE 512
-void load_matrix_from_binfile(double **A, int *n, int *m, 
+void load_matrix_from_binfile(double **A, int *n, int *m,
 							  int endian,
-							  const char * separator,							  
+							  const char * separator,
 							  const char *filename)
 {
 	FILE * f   = fopen(filename, "rb");
@@ -1069,7 +1069,7 @@ char * _fget_long_string(FILE *f, const char * separator, int *len)
 		}
 
 		memcpy(&str[i * LT_MIN_SIZE], buf, c);
-		if (count < (c - sep) || (feof(f) && count == (c - sep))) 
+		if (count < (c - sep) || (feof(f) && count == (c - sep)))
 		{
 			fseek(f, count - c + sep, SEEK_CUR);
 			str[i * LT_MIN_SIZE + count] = 0;
@@ -1131,8 +1131,8 @@ void load_matrix_from_txtfile(double **A, int *n, int *m, const char *filename)
 	double *nvec = 0;
 	double a;
 	char * str;
-	int pos = 0, i = 0;
-	int size, len;
+	int i = 0;
+	int size;
 	char * token;
 	const char * sep = " \t\r\n";
 
@@ -1149,10 +1149,8 @@ void load_matrix_from_txtfile(double **A, int *n, int *m, const char *filename)
 		return;
 	}
 
-	len  = strlen(str);
 	size = LT_MIN_SIZE;
 	i    = 0;
-	pos  = 0;
 
 	token = strtok(str, sep);
 	while (token) {
@@ -1182,9 +1180,7 @@ void load_matrix_from_txtfile(double **A, int *n, int *m, const char *filename)
 		str  = fget_long_string(f);
 		if (str == 0)
 			break;
-		len  = strlen(str);
 		i    = 0;
-		pos  = 0;
 		token= strtok(str, sep);
 		while (token && i < *m) {
 			if (sscanf(token, "%lf", &a) == 1) {
@@ -1197,7 +1193,7 @@ void load_matrix_from_txtfile(double **A, int *n, int *m, const char *filename)
 		if (i < *m)
 			continue;
 
-		nvec = (double*)realloc(M, *m * (*n + 1) * sizeof(double));		
+		nvec = (double*)realloc(M, *m * (*n + 1) * sizeof(double));
 		if (nvec) {
 			M = nvec;
 			memcpy(&M[*n * *m], vec, *m * sizeof(double));
@@ -1232,10 +1228,10 @@ void load_matrix_from_func(double **A, int n, double (*load_matrix_func)(int i, 
 	 * приоритет по файлу
 	 * если оба указателя ноль, то получаем сообщение об ошибке
 	 */
-void load_dim_matrix_from_txtfile_or_func(double **A, int *n, 
-										  const char *filename, 
-										  double (*load_matrix_func)(int i, int j)) 
-{	
+void load_dim_matrix_from_txtfile_or_func(double **A, int *n,
+										  const char *filename,
+										  double (*load_matrix_func)(int i, int j))
+{
 	if (filename != 0) {
 		load_dim_matrix_from_txtfile(A, n, filename);
 		return;
@@ -1247,8 +1243,8 @@ void load_dim_matrix_from_txtfile_or_func(double **A, int *n,
 	ERR(0, "filename or load_matrix_func must be > 0");
 }
 
-void gramm_matrix(double * g, const double *e1, const double *e2, 
-				  int m, int n) 
+void gramm_matrix(double * g, const double *e1, const double *e2,
+				  int m, int n)
 {
 	int i, j;
 	for (i = 0; i < m; ++i) {
@@ -1262,8 +1258,8 @@ void gramm_matrix(double * g, const double *e1, const double *e2,
 	 * @param Dest   - ответ размерности m * n
 	 * @param Source - исходная матрица размерности n * m
 	 */
-void matrix_copy_transposew(double * Dest, const double * Source , 
-							int n, int m) 
+void matrix_copy_transposew(double * Dest, const double * Source ,
+							int n, int m)
 {
 	double * A = Dest;
 	const double * B = Source;
@@ -1286,7 +1282,7 @@ void matrix_transposew(double * A, int n, int m) {
 	free(temp);
 }
 
-void random_initialize(double *a, int n) 
+void random_initialize(double *a, int n)
 {
 	static int init = 1;
 	int i;
@@ -1306,4 +1302,3 @@ void basis(double *vec, int n, int i)
 	vec[i] = 1;
 }
 }
-

@@ -82,12 +82,14 @@ public:
 	std::vector < double > C;
 	std::vector < double > RP;
 
-	conv_diags(int n): A(n), B(n), C(n), RP(n) 
+	conv_diags(int n): A(n), B(n), C(n), RP(n)
 	{
 	}
 
 	~conv_diags() {}
 };
+
+#if 0
 
 #ifdef _WIN32
 static double get_time()
@@ -107,7 +109,6 @@ static double get_time()
 
 	return buf.ru_utime.tv_sec*100.0+buf.ru_utime.tv_usec/10000.0;
 }
-
 static double get_full_time()
 {
 	struct timeval buf;
@@ -115,6 +116,7 @@ static double get_full_time()
 
 	return buf.tv_sec*100.0+buf.tv_usec/10000.0;
 }
+#endif
 #endif
 
 class SLaplacian::Private: public SSteps
@@ -712,8 +714,8 @@ public:
 	}
 
 
-	void add_diag_submatrix_to_matrix(double * A, double * RP, int n, double * F, 
-		double lm, int off, 
+	void add_diag_submatrix_to_matrix(double * A, double * RP, int n, double * F,
+		double lm, int off,
 		double mult, double diag)
 	{
 		int i = 0, j = 0, i1 = 0;
@@ -764,7 +766,7 @@ public:
 		RP[j] = F[i1];
 	}
 
-	void add_diag_to_matrix(double * A, int n, 
+	void add_diag_to_matrix(double * A, int n,
 		int x_off, int y_off, double diag)
 	{
 		int i = 0;
@@ -786,10 +788,10 @@ public:
 		double mult3,     double diag3,
 		double mult4,     double diag4,
 
-		double diag_w2,   
+		double diag_w2,
 		double diag_w1,
 		double diag_u2,
-		double diag_w1_2, 
+		double diag_w1_2,
 		double diag_w2_2)
 	{
 		int m;
@@ -810,7 +812,7 @@ public:
 		if (U1) UtoXY(&FU1[0], U1);
 		if (U2) UtoXY(&FU2[0], U2);
 
-		for (m = 0; m < n_la; m++) 
+		for (m = 0; m < n_la; m++)
 		{
 			// n_phi-1 x n_phi-1 laplacian submatrix
 			double * fw1 = &FW1[m * n_phi];
@@ -841,13 +843,13 @@ public:
 			memcpy(&FU2[m * n_phi + 1], &X[3 * n], n * sizeof(double));
 		}
 
-		XYtoU(oW1, &FW1[0]); 
+		XYtoU(oW1, &FW1[0]);
 		memset(oW1, 0, n_la * sizeof(double));
-		XYtoU(oW2, &FW2[0]); 
+		XYtoU(oW2, &FW2[0]);
 		memset(oW2, 0, n_la * sizeof(double));
-		XYtoU(oU1, &FU1[0]); 
+		XYtoU(oU1, &FU1[0]);
 		memset(oU1, 0, n_la * sizeof(double));
-		XYtoU(oU2, &FU2[0]); 
+		XYtoU(oU2, &FU2[0]);
 		memset(oU2, 0, n_la * sizeof(double));
 	}
 };
@@ -890,10 +892,10 @@ void SLaplacian::lapl_1(double * Dest, const double * Source, double mult, doubl
 }
 
 void SLaplacian::baroclin_1(
-							double * oW1, double * oW2, 
+							double * oW1, double * oW2,
 							double * oU1, double * oU2,
 
-							const double * W1, const double * W2, 
+							const double * W1, const double * W2,
 							const double * U1, const double * U2,
 
 							double mult1, double diag1,
@@ -901,15 +903,15 @@ void SLaplacian::baroclin_1(
 							double mult3, double diag3,
 							double mult4, double diag4,
 
-							double diag_w2, 
+							double diag_w2,
 							double diag_w1,
 							double diag_u2,
-							double diag_w1_2, 
+							double diag_w1_2,
 							double diag_w2_2)
 {
 	// нулевые граничные условия!
-	d->conv_baroclin(oW1, oW2, oU1, oU2, 
-		W1, W2, U1, U2, 
+	d->conv_baroclin(oW1, oW2, oU1, oU2,
+		W1, W2, U1, U2,
 		mult1, diag1, mult2, diag2, mult3, diag3, mult4, diag4,
 		diag_w2, diag_w1, diag_u2, diag_w1_2, diag_w2_2);
 }
@@ -962,6 +964,7 @@ void SLaplacian::filter_1(double *Dest, const double * Source)
 	d->XYtoU(Dest, &d->MF[0]);
 }
 
+#if 0
 static int ii(int i_phi, int i_la, int nLa) {
 	if (i_la < 0) {
 		i_la = (i_la+nLa);
@@ -971,8 +974,8 @@ static int ii(int i_phi, int i_la, int nLa) {
 	}
 	return i_phi*nLa+i_la;
 }
-
-static void vrt(double * vt, const double * u, const double * v, 
+#endif
+static void vrt(double * vt, const double * u, const double * v,
 	int n_la, int n_phi, double d_la, double d_phi)
 {
 	int i, j;
@@ -1024,7 +1027,7 @@ static void vrt(double * vt, const double * u, const double * v,
 }
 
 //TODO: check
-static void div(double * dv, const double * u, const double * v, 
+static void div(double * dv, const double * u, const double * v,
 	int n_la, int n_phi, double d_la, double d_phi)
 {
 	int i, j;

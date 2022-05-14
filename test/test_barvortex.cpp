@@ -41,7 +41,7 @@ double rp(double phi, double lambda, double t, const BarVortex::Conf * conf)
 	double omg = 2.*M_PI/24./60./60.; // ?
 	double T0  = 1./omg;
 	double R   = 6.371e+6;
-	double c   = T0*T0/R/R;
+	double c   [[maybe_unused]]= T0*T0/R/R;
 	double x   = phi;
 
 	double pt1 = -0.5 * (sin(x)*M_PI*x-2*sin(x)*x*x);
@@ -82,8 +82,8 @@ double u0(double phi, double lambda)
 double u1(double phi, double lambda)
 {
 	double omg = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./omg;
-	double R   = 6.371e+6;
+	double T0  [[maybe_unused]]= 1./omg;
+	double R   [[maybe_unused]]= 6.371e+6;
 
 	return sin(2. * phi);
 }
@@ -104,10 +104,10 @@ void set_fpe_except()
 void calc_barvortex_right_part()
 {
 	BarVortex::Conf conf;
-	double R   = 6.371e+6;
-	double H   = 5000;
+	double R   [[maybe_unused]]= 6.371e+6;
+	double H   [[maybe_unused]]= 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./omg;
+	double T0  [[maybe_unused]]= 1./omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
 	conf.tau   = 0.001;
@@ -122,11 +122,11 @@ void calc_barvortex_right_part()
 	conf.rp     = rp;
 	conf.filter = 1;
 
-	int n = conf.n_phi * conf.n_la;
+	int n[[maybe_unused]] = conf.n_phi * conf.n_la;
 
-	double t = 0;
-	double T = 30 * 2.0 * M_PI;;
-	int i = 0;
+	double t [[maybe_unused]]= 0;
+	double T [[maybe_unused]]= 30 * 2.0 * M_PI;;
+	int i[[maybe_unused]] = 0;
 
 
 	double * u0;
@@ -190,10 +190,10 @@ void LTOp(double * u, const double * v, vector < vector < double > > & z, BarVor
 void test_barvortex_linear()
 {
 	BarVortex::Conf conf;
-	double R   = 6.371e+6;
-	double H   = 5000;
+	double R   [[maybe_unused]]= 6.371e+6;
+	double H   [[maybe_unused]]= 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./omg;
+	double T0  [[maybe_unused]]= 1./omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
 	conf.tau   = 0.001;
@@ -213,7 +213,7 @@ void test_barvortex_linear()
 
 	double t = 0;
 	double T = 10;
-	int i = 0;
+	int i [[maybe_unused]]= 0;
 
 	BarVortex bv(conf);
 	vector < double > u(n);
@@ -258,10 +258,10 @@ void test_barvortex_linear()
 void test_barvortex()
 {
 	BarVortex::Conf conf;
-	double R   = 6.371e+6;
-	double H   = 5000;
+	double R   [[maybe_unused]]= 6.371e+6;
+	double H   [[maybe_unused]]= 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./omg;
+	double T0  [[maybe_unused]]= 1./omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
 	conf.tau   = 0.001;
@@ -399,7 +399,7 @@ void test_barvortex_plan(const char * srtm)
 {
 	BarVortex::Conf conf;
 	double R   = 6.371e+6;
-	double H   = 5000;
+	double H   [[maybe_unused]]= 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
 	double T0  = 1./omg;
 	conf.k1    = 1.0;
@@ -437,7 +437,7 @@ void test_barvortex_plan(const char * srtm)
 	const char * fn = srtm ? srtm : "";
 
 	if (fn) {
-		double * r; 
+		double * r;
 		int n1, n2;
 		asp::load_matrix_from_txtfile(&r, &n1, &n2, "rel.txt");
 		if (n1 == conf.n_phi && n2 == conf.n_la) {
@@ -479,20 +479,20 @@ void test_barvortex_plan(const char * srtm)
 	fprintf(stderr, "#initial:kornev1\n");
 	fprintf(stderr, "#build:$Id$\n");
 
-	double U0max = 30.;
+	double U0max [[maybe_unused]]= 30.;
 	double TE  = 1./omg;
 	double RE  = 6.371e+6;
 	double PSI0 = RE * RE / TE;
 	double U0    = R / T0;
-	double Ly    = M_PI / 2.0;
-	double Lx    = 2.0 * M_PI;
+	double Ly    [[maybe_unused]]= M_PI / 2.0;
+	double Lx    [[maybe_unused]]= 2.0 * M_PI;
 
 	for (i = 0; i < nlat; ++i)
 	{
 		for (j = 0; j < nlon; ++j)
 		{
 			double phi    = lapl.phi(i);
-			double lambda = lapl.lambda(j);
+			double lambda[[maybe_unused]] = lapl.lambda(j);
 
 			if (phi > 0) {
 				u[i * nlon + j] = (phi * (M_PI / 2. - phi) * 16 / M_PI / M_PI * 100.0 / U0);
@@ -550,10 +550,10 @@ void test_barvortex_plan(const char * srtm)
 void test_barvortex_real()
 {
 	BarVortex::Conf conf;
-	double R   = 6.371e+6;
-	double H   = 5000;
+	double R   [[maybe_unused]]= 6.371e+6;
+	double H   [[maybe_unused]]= 5000;
 	double omg = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./omg;
+	double T0  [[maybe_unused]]= 1./omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
 	conf.tau   = 0.001;
@@ -654,4 +654,3 @@ int main(int argc, char ** argv)
 //		calc_barvortex_right_part();
 //	}
 }
-

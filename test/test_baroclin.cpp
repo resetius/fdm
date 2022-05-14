@@ -34,12 +34,12 @@ double u2_t (double x, double y, double t)
 
 double rp_f1(double x, double y, double t, BaroclinConf * conf)
 {
-	double sigma = conf->sigma;
-	double mu    = conf->mu;
-	double sigma1= conf->sigma;
-	double mu1   = conf->mu;
-	double alpha = conf->alpha;
-	
+	double sigma [[maybe_unused]]= conf->sigma;
+	double mu    [[maybe_unused]]= conf->mu;
+	double sigma1[[maybe_unused]]= conf->sigma;
+	double mu1   [[maybe_unused]]= conf->mu;
+	double alpha [[maybe_unused]]= conf->alpha;
+
 	return -45*mu*sin(y+t)*x-(9./2.)*sigma*
 		ipow(cos(x),3)*sin(y+t)*sin(x)+(9./2.)*sigma*
 		ipow(cos(x),3)*sin(x)*cos(y+t)-10*sigma*
@@ -99,11 +99,11 @@ double rp_g1(double x, double y, double t, BaroclinConf * conf)
 
 double rp_f2(double x, double y, double t, BaroclinConf * conf)
 {
-	double sigma = conf->sigma;
-	double mu    = conf->mu;
-	double sigma1= conf->sigma;
-	double mu1   = conf->mu;
-	double alpha = conf->alpha;
+	double sigma [[maybe_unused]]= conf->sigma;
+	double mu    [[maybe_unused]]= conf->mu;
+	double sigma1[[maybe_unused]]= conf->sigma;
+	double mu1   [[maybe_unused]]= conf->mu;
+	double alpha [[maybe_unused]]= conf->alpha;
 
 	return -9*cos(y+t)*
 		ipow(cos(x),3)*sin(x)-20*x*cos(y+t)*
@@ -122,11 +122,11 @@ double rp_f2(double x, double y, double t, BaroclinConf * conf)
 
 double rp_g2(double x, double y, double t, BaroclinConf * conf)
 {
-	double sigma = conf->sigma;
-	double mu    = conf->mu;
-	double sigma1= conf->sigma;
-	double mu1   = conf->mu;
-	double alpha = conf->alpha;
+	double sigma [[maybe_unused]]= conf->sigma;
+	double mu    [[maybe_unused]]= conf->mu;
+	double sigma1[[maybe_unused]]= conf->sigma;
+	double mu1   [[maybe_unused]]= conf->mu;
+	double alpha [[maybe_unused]]= conf->alpha;
 
 	return -15*x*sin(y+t)*
 		ipow(cos(x),2)+20*x*sin(y+t)*
@@ -148,7 +148,7 @@ double rp1(double phi, double lambda, BaroclinConf * conf)
 	double omg = 2.*M_PI/24./60./60.; // ?
 	double T0  = 1./omg;
 	double R   = 6.371e+6;
-	double c   = T0*T0/R/R;
+	double c   [[maybe_unused]]= T0*T0/R/R;
 	double x   = phi;
 
 	double pt1 = -0.5 * (sin(x)*M_PI*x-2*sin(x)*x*x);
@@ -165,7 +165,7 @@ double rp2(double phi, double lambda, BaroclinConf * conf)
 	double omg = 2.*M_PI/24./60./60.; // ?
 	double T0  = 1./omg;
 	double R   = 6.371e+6;
-	double c   = T0*T0/R/R;
+	double c   [[maybe_unused]]= T0*T0/R/R;
 	double x   = phi;
 
 	double pt1 = -0.5 * (sin(x)*M_PI*x-2*sin(x)*x*x);
@@ -194,7 +194,7 @@ double u0(double phi, double lambda)
 	double T0  = 1./omg;
 	double R   = 6.371e+6;
 
-	return -T0/R * 16.0 / M_PI / M_PI * 30.0 * 
+	return -T0/R * 16.0 / M_PI / M_PI * 30.0 *
 		(M_PI/4 * phi * phi - phi * phi * phi / 3);
 }
 
@@ -225,10 +225,10 @@ void test_barvortex()
 {
 	BaroclinConf conf;
 	conf.steps = 1;
-	double R   = 6.371e+6;
-	double H   = 5000;
+	double R   [[maybe_unused]]= 6.371e+6;
+	double H   [[maybe_unused]]= 5000;
 	conf.omg   = 2.*M_PI/24./60./60.; // ?
-	double T0  = 1./conf.omg;
+	double T0  [[maybe_unused]]= 1./conf.omg;
 	conf.k1    = 1.0;
 	conf.k2    = 1.0;
 	conf.tau   = 0.0001;
@@ -301,8 +301,8 @@ void test_barvortex()
 
 		nr1 = bv.dist(&u11[0], &u1r[0], n);
 		nr2 = bv.dist(&u21[0], &u2r[0], n);
-		fprintf(stderr, "t=%le; nr=%le; nr=%le; min=%le; max=%le;\n", 
-				t, nr1, nr2, 
+		fprintf(stderr, "t=%le; nr=%le; nr=%le; min=%le; max=%le;\n",
+				t, nr1, nr2,
 				find_min(&u11[0], n),
 				find_max(&u11[0], n));
 
@@ -326,4 +326,3 @@ int main(int argc, char ** argv)
 	//set_fpe_except();
 	test_barvortex();
 }
-

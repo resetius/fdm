@@ -95,7 +95,7 @@ public:
 	   \param j_1  - j+1
 	 */
 	void find_i_j(
-		int & i__1, int & i, int & i_1, 
+		int & i__1, int & i, int & i_1,
 		int & j__1, int & j, int & j_1)
 	{
 		_DEBUG_ASSERT_RANGE(0, n_phi - 1, i);
@@ -241,7 +241,7 @@ public:
 		find_i_j(i__1, i, i_1, j__1, j, j_1);
 
 		if (0 < i && i < Nx - 1) {
-			j3_la += (v[pOff(i_1, j_1)] - v[pOff(i__1, j_1)]) 
+			j3_la += (v[pOff(i_1, j_1)] - v[pOff(i__1, j_1)])
 					* u[pOff(i, j_1)];
 			j3_la -= (v[pOff(i_1, j__1)] - v[pOff(i__1, j__1)])
 					* u[pOff(i, j__1)];
@@ -251,7 +251,7 @@ public:
 			int k_1  = (j + Ny/2 + 1) % Ny;
 			int k__1 = (j + Ny/2 - 1) % Ny;
 
-			j3_la += (v[pOff(i_1, j_1)] - v[pOff(i__1, k_1)]) 
+			j3_la += (v[pOff(i_1, j_1)] - v[pOff(i__1, k_1)])
 					* u[pOff(i, j_1)];
 			j3_la -= (v[pOff(i_1, j__1)] - v[pOff(i__1, k__1)])
 					* u[pOff(i, j__1)];
@@ -261,7 +261,7 @@ public:
 			//j3_la += 0.0;
 
 			//zero i + 1
-			//j3_la += ( - v[pOff(i__1, j_1)]) 
+			//j3_la += ( - v[pOff(i__1, j_1)])
 			//		* u[pOff(i, j_1)];
 			//j3_la -= ( - v[pOff(i__1, j__1)])
 			//		* u[pOff(i, j__1)];
@@ -269,12 +269,12 @@ public:
 			int k_1  = (j + Ny/2 + 1) % Ny;
 			int k__1 = (j + Ny/2 - 1) % Ny;
 
-			j3_la += (v[pOff(i_1, k_1)] - v[pOff(i__1, j_1)]) 
+			j3_la += (v[pOff(i_1, k_1)] - v[pOff(i__1, j_1)])
 					* u[pOff(i, j_1)];
 			j3_la -= (v[pOff(i_1, k__1)] - v[pOff(i__1, j__1)])
 					* u[pOff(i, j__1)];
 		} else {
-			j3_la += (v[pOff(i_1, j_1)]/* - v[pOff(i__1, j_1)]*/) 
+			j3_la += (v[pOff(i_1, j_1)]/* - v[pOff(i__1, j_1)]*/)
 					* u[pOff(i, j_1)];
 
 			j3_la -= (v[pOff(i_1, j__1)]/* - v[pOff(i__1, j__1)]*/)
@@ -405,12 +405,12 @@ public:
 			double u1 = u[pOff(i_1, j_1)];
 			double u2 = u[pOff(i__1, k_1)];
 			double v1 = v[pOff(i, j_1)];
-			double s1 = (u1 - u2) * v1;
+			double s1 [[maybe_unused]]= (u1 - u2) * v1;
 
 			double u11 = u[pOff(i_1, j__1)];
 			double u21 = u[pOff(i__1, k__1)];
 			double v2  = v[pOff(i, j__1)];
-			double s2  = (u11 - u21) * v2;
+			double s2  [[maybe_unused]]= (u11 - u21) * v2;
 
 			j2_la -= (u[pOff(i_1, j_1)] - u[pOff(i__1, k_1)]) *
 					(v[pOff(i, j_1)]);
@@ -432,12 +432,12 @@ public:
 			double u1 = u[pOff(i__1, k_1)];
 			double u2 = u[pOff(i_1, j_1)];
 			double v1 = v[pOff(i, j_1)];
-			double s1 = ((-0.5) * u1 - (-1.5) * u2) * v1;
+			double s1 [[maybe_unused]]= ((-0.5) * u1 - (-1.5) * u2) * v1;
 
 			double u11 = u[pOff(i__1, k__1)];
 			double u21 = u[pOff(i_1, j__1)];
 			double v2  = v[pOff(i, j__1)];
-			double s2  = ((-0.5) * u11 - (-1.5) * u21) * v2;
+			double s2  [[maybe_unused]]= ((-0.5) * u11 - (-1.5) * u21) * v2;
 
 			j2_la -= (u[pOff(i_1, k_1)] - u[pOff(i__1, j_1)]) *
 					(v[pOff(i, j_1)]);
@@ -508,20 +508,20 @@ public:
 			int k_1  = (j + Ny/2 - 1) % Ny; //- ?
 			int k__1 = (j + Ny/2 + 1) % Ny; //+ ?
 
-			double u1 = u[pOff(i_1, k_1)];
-			double u2 = u[pOff(i_1, k__1)];
-			double v1 = v[pOff(i_1, k)];
+			double u1 [[maybe_unused]]= u[pOff(i_1, k_1)];
+			double u2 [[maybe_unused]]= u[pOff(i_1, k__1)];
+			double v1 [[maybe_unused]]= v[pOff(i_1, k)];
 
-			double u12 = u[pOff(i__1, j_1)];
-			double u13 = u[pOff(i__1, j__1)];
-			double v2  = v[pOff(i__1, j)];
-			
+			double u12 [[maybe_unused]]= u[pOff(i__1, j_1)];
+			double u13 [[maybe_unused]]= u[pOff(i__1, j__1)];
+			double v2  [[maybe_unused]]= v[pOff(i__1, j)];
+
 			//j2 += (u[pOff(i_1, k_1)] - u[pOff(i_1, k__1)]) *
 			//	(v[pOff(i_1, k)]);
 
 			double s1 = (u[pOff(i_1, k_1)] - u[pOff(i_1, k__1)]) *
 				(v[pOff(i_1, k)]);
-			
+
 			j2 += s1;
 
 			double s2 = (u[pOff(i__1, j_1)] - u[pOff(i__1, j__1)]) *
@@ -587,7 +587,7 @@ public:
 	REGISTER_J(JT2, JT2);
 };
 
-SJacobian::SJacobian(int n_phi, int n_la, bool full) 
+SJacobian::SJacobian(int n_phi, int n_la, bool full)
 	: d(new Private(n_phi, n_la, full))
 {
 }
@@ -607,7 +607,7 @@ void SJacobian::J1(double *dest, const double *u, const double *v)
 	return d->J1(dest, u, v);
 }
 
-double SJacobian::J1T(const double *u, const double *v, 
+double SJacobian::J1T(const double *u, const double *v,
 					  int i, int j, int k)
 {
 	if (k == 1) {
@@ -617,7 +617,7 @@ double SJacobian::J1T(const double *u, const double *v,
 	}
 }
 
-void SJacobian::J1T(double *dest, const double *u, const double *v, 
+void SJacobian::J1T(double *dest, const double *u, const double *v,
 					int k)
 {
 	if (k == 1) {
@@ -639,7 +639,7 @@ void SJacobian::J2(double *dest, const double *u, const double *v)
 	return d->J2(dest, u, v);
 }
 
-double SJacobian::J2T(const double *u, const double *v, 
+double SJacobian::J2T(const double *u, const double *v,
 					  int i, int j, int k)
 {
 	if (k == 1) {
@@ -649,7 +649,7 @@ double SJacobian::J2T(const double *u, const double *v,
 	}
 }
 
-void SJacobian::J2T(double *dest, const double *u, const double *v, 
+void SJacobian::J2T(double *dest, const double *u, const double *v,
 					int k)
 {
 	if (k == 1) {
@@ -671,7 +671,7 @@ void SJacobian::J3(double *dest, const double *u, const double *v)
 	return d->J3(dest, u, v);
 }
 
-double SJacobian::J3T(const double *u, const double *v, 
+double SJacobian::J3T(const double *u, const double *v,
 					  int i, int j, int k)
 {
 	if (k == 1) {
@@ -681,7 +681,7 @@ double SJacobian::J3T(const double *u, const double *v,
 	}
 }
 
-void SJacobian::J3T(double *dest, const double *u, const double *v, 
+void SJacobian::J3T(double *dest, const double *u, const double *v,
 					int k)
 {
 	if (k == 1) {
@@ -812,8 +812,8 @@ void SJacobian::JV2(double * dest, const double * u, const double * v)
 
 		for (i = 1; i < Nx - 1; i++)
 		{
-			double j3_la;
-			double j3_phi;
+			double j3_la [[maybe_unused]];
+			double j3_phi [[maybe_unused]];
 
 			J1 = (ps[ (i+1) %Nx+j*Nx] - ps[ (i-1) %Nx+j*Nx]) * (om[ (i+Nx/2) %Nx + (j) *Nx] - om[ (i) %Nx+ (j-1) *Nx]) -
 			     (ps[ (i+Nx/2) %Nx+ (j) *Nx] - ps[ (i) %Nx+ (j-1) *Nx]) * (om[ (i+1) %Nx+j*Nx] - om[ (i-1) %Nx+j*Nx]);
