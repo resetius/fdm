@@ -236,7 +236,7 @@ public:
 	void checkFFT()
 	{
 //#ifndef _FFTW
-		use_fft = ft = FFT_init(FFT_PERIODIC, n_la);
+		use_fft = (ft = FFT_init(FFT_PERIODIC, n_la)) != nullptr;
 //#endif
 	}
 
