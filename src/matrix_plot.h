@@ -11,11 +11,40 @@
 namespace fdm {
 
 class matrix_plotter {
-public:
-    struct page {
-        double** data;
+    struct data {
+        double** d;
         int rows;
         int rs;
+
+        template<typename T>
+        data(const matrix<T>& matrix) {
+            d = (double**)malloc(matrix.rows*matrix.rs*sizeof(double*));
+            // transposed
+            for (int i = 0; i < matrix.rows; i++) {
+                d[i] = (double*)malloc(matrix.rs*sizeof(double));
+                memcpy(d[i], &matrix.vec[i*matrix.rs], matrix.rs*sizeof(double));
+            }
+            rows = matrix.rows;
+            rs = matrix.rs;
+        }
+
+        data() = default;
+        ~data();
+
+        data& operator=(data&& other) {
+            d = other.d;
+            rows = other.rows;
+            rs = other.rs;
+            other.d = nullptr;
+            return *this;
+        }
+    };
+
+public:
+    struct page {
+        data u;
+        data v;
+
         int nlevels = 10;
         double x1, x2;
         double y1, y2;
@@ -23,22 +52,16 @@ public:
         std::string ylab = "X";
         std::string tlab = "";
 
+        page() = default;
+        ~page() = default;
+
         template<typename T>
-        page(const matrix<T>& matrix) {
-            data = (double**)malloc(matrix.rows*matrix.rs*sizeof(double*));
-            // transposed
-            for (int i = 0; i < matrix.rows; i++) {
-                data[i] = (double*)malloc(matrix.rs*sizeof(double));
-                memcpy(data[i], &matrix.vec[i*matrix.rs], matrix.rs*sizeof(double));
-            }
-            rows = matrix.rows;
-            rs = matrix.rs;
-
-            x1 = 0; x2 = rs-1;
-            y1 = 0; y2 = rs-1;
+        page& scalar(const matrix<T>& matrix) {
+            u = data(matrix);
+            x1 = 0; x2 = u.rows-1;
+            y1 = 0; y2 = u.rs-1;
+            return *this;
         }
-
-        ~page();
 
         page& levels(int i) {
             nlevels = i;
@@ -94,11 +117,11 @@ public:
         clear();
 
         double mn, mx;
-        mn = mx = p.data[0][0];
-        for (int i = 0; i < p.rows; i++) {
-            for (int j = 0; j < p.rs; j++) {
-                mn = fmin(mn, p.data[i][j]);
-                mx = fmax(mx, p.data[i][j]);
+        mn = mx = p.u.d[0][0];
+        for (int i = 0; i < p.u.rows; i++) {
+            for (int j = 0; j < p.u.rs; j++) {
+                mn = fmin(mn, p.u.d[i][j]);
+                mx = fmax(mx, p.u.d[i][j]);
             }
         }
 

@@ -25,15 +25,15 @@ void matrix_plotter::clear() {
     levels = nullptr;
 }
 
-matrix_plotter::page::~page() {
-    if (data) {
+matrix_plotter::data::~data() {
+    if (d) {
         for (int i = 0; i < rows; i++) {
-            free(data[i]);
+            free(d[i]);
         }
     }
-    free(data);
+    free(d);
 
-    data = nullptr;
+    d = nullptr;
 }
 
 void matrix_plotter::plot_internal(const page& p) {
@@ -41,15 +41,15 @@ void matrix_plotter::plot_internal(const page& p) {
     pllab(p.xlab.c_str(), p.ylab.c_str(), p.tlab.c_str());
     pllsty(2);
     pl_setcontlabelparam(0.006, 0.6, 0.1, 1);
-    plcont(p.data, p.rows, p.rs, 1, p.rows, 1, p.rs, levels, p.nlevels, transform,
+    plcont(p.u.d, p.u.rows, p.u.rs, 1, p.u.rows, 1, p.u.rs, levels, p.nlevels, transform,
            const_cast<matrix_plotter::page*>(&p));
     //pladv(0);
 }
 
 void matrix_plotter::transform(double x, double y, double* tx, double* ty, void* data) {
     matrix_plotter::page* p = static_cast<matrix_plotter::page*>(data);
-    *tx = p->x1 + x/p->rs * (p->x2-p->x1+1);
-    *ty = p->y1 + y/p->rows * (p->y2-p->y1+1);
+    *tx = p->x1 + x/p->u.rs * (p->x2-p->x1+1);
+    *ty = p->y1 + y/p->u.rows * (p->y2-p->y1+1);
 }
 
 } // namespace fdm

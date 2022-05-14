@@ -97,15 +97,18 @@ public:
                                .sub(2, 2)
                                .devname("pngcairo")
                                .fname(format("step_%03d.png", time_index)));
-        plotter.plot(matrix_plotter::page(x)
+        plotter.plot(matrix_plotter::page()
+                     .scalar(x)
                      .levels(10)
                      .tlabel(format("P (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
-        plotter.plot(matrix_plotter::page(u)
+        plotter.plot(matrix_plotter::page()
+                     .scalar(u)
                      .levels(10)
                      .tlabel(format("U (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
-        plotter.plot(matrix_plotter::page(v)
+        plotter.plot(matrix_plotter::page()
+                     .scalar(v)
                      .levels(10)
                      .tlabel(format("V (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
@@ -118,10 +121,12 @@ public:
                                .devname("pngcairo")
                                .fname(format("step_extra_%03d.png", time_index)));
         plotter.plot(matrix_plotter::page(F)
+                     .scalar(F)
                      .levels(10)
                      .tlabel(format("F (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
-        plotter.plot(matrix_plotter::page(G)
+        plotter.plot(matrix_plotter::page()
+                     .scalar(G)
                      .levels(10)
                      .tlabel(format("G (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
