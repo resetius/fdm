@@ -45,7 +45,7 @@ int main() {
     int nu [[maybe_unused]] = (nx-1)*ny; // количество внутренних точек скорости (u)
     int nv [[maybe_unused]] = nx*(ny-1); // количество внутренних точек скорости (v)
     matrix<double> u(-1, 0, nx+1, ny+1), unext(-1, 0, nx+1, ny+1);
-    matrix<double> v(0, -1, ny+1, nx+1), vnext(0, -1, ny+1, nx+1);
+    matrix<double> v(0, -1, nx+1, ny+1), vnext(0, -1, nx+1, ny+1);
     matrix<double> p(ny+2, nx+2), pnext(ny+2, nx+2);
 
     matrix<double> F(0, 1, nx, ny), G(1, 0, nx, ny);
@@ -165,6 +165,16 @@ int main() {
     umfpack_solver<double> solver(std::move(P));
     solver.solve(&x[1][1], &RHS[1][1]);
 
+    for (int k = 1; k <= ny; k++) {
+        for (int j = 1; j < nx; j++) {
+            unext[k][j] = F[k][j]-dt/dx*(x[k][j+1]-x[k][j]);
+        }
+    }
+    for (int k = 1; k < ny; k++) {
+        for (int j = 1; j <= nx; j++) {
+            vnext[k][j] = G[k][j]-dt/dx*(x[k+1][j]-x[k][j]);
+        }
+    }
     //for (int k = 0; k < ny+2; k++) {
     //for (int j = 0; j < nx+1; j++) {
     for (int k = 1; k <= ny; k++) {
@@ -181,8 +191,27 @@ int main() {
                  .levels(10)
                  .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
                  .devname("pngcairo")
-                 .fname("1.png"));
-
+                 .fname("p.png"));
+    plotter.plot(matrix_plotter::settings(u)
+                 .levels(10)
+                 .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
+                 .devname("pngcairo")
+                 .fname("u.png"));
+    plotter.plot(matrix_plotter::settings(v)
+                 .levels(10)
+                 .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
+                 .devname("pngcairo")
+                 .fname("v.png"));
+    plotter.plot(matrix_plotter::settings(unext)
+                 .levels(10)
+                 .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
+                 .devname("pngcairo")
+                 .fname("unext.png"));
+    plotter.plot(matrix_plotter::settings(vnext)
+                 .levels(10)
+                 .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
+                 .devname("pngcairo")
+                 .fname("vnext.png"));
 
     return 0;
 }
