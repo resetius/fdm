@@ -31,7 +31,11 @@ class matrix_plotter {
         data() = default;
         ~data();
 
+        void clear();
+
         data& operator=(data&& other) {
+            clear();
+
             d = other.d;
             rows = other.rows;
             rs = other.rs;
@@ -58,6 +62,15 @@ public:
         template<typename T>
         page& scalar(const matrix<T>& matrix) {
             u = data(matrix);
+            x1 = 0; x2 = u.rows-1;
+            y1 = 0; y2 = u.rs-1;
+            return *this;
+        }
+
+        template<typename T>
+        page& vector(const matrix<T>& u_, const matrix<T>& v_) {
+            u = data(u_);
+            v = data(v_);
             x1 = 0; x2 = u.rows-1;
             y1 = 0; y2 = u.rs-1;
             return *this;

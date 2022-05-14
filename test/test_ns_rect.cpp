@@ -42,6 +42,7 @@ public:
     const double dx2, dy2;
 
     matrix u,v,p,x;
+    matrix ui, vi;
 
     matrix F,G,RHS;
 
@@ -67,6 +68,8 @@ public:
         , v(0, -1, nx+1, ny+1)
         , p(0, 0, nx+1, ny+1)
         , x(1, 1, nx, ny) // inner p
+        , ui(1, 1, nx, ny) // inner u
+        , vi(1, 1, nx, ny) // inner v
 
         , F(0, 1, nx, ny)
         , G(1, 0, nx, ny)
@@ -93,6 +96,8 @@ public:
 
     void plot()
     {
+        update_uvi();
+
         matrix_plotter plotter(matrix_plotter::settings()
                                .sub(2, 2)
                                .devname("pngcairo")
@@ -111,6 +116,11 @@ public:
                      .scalar(v)
                      .levels(10)
                      .tlabel(format("V (%.1e)", dt*time_index))
+                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
+        plotter.plot(matrix_plotter::page()
+                     .vector(ui, vi)
+                     .levels(10)
+                     .tlabel(format("UV (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
     }
 
@@ -271,6 +281,15 @@ private:
         }
 
         p = x;
+    }
+
+    void update_uvi() {
+        for (int k = 1; k <= ny; k++) {
+            for (int j = 1; j <= nx; j++) {
+                ui[k][j] = 0.5*(u[k][j-1] + u[k][j]);
+                vi[k][j] = 0.5*(v[k-1][j] + v[k][j]);
+            }
+        }
     }
 };
 
