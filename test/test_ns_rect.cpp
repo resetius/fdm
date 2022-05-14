@@ -149,10 +149,14 @@ int main() {
         }
         //printf("\n");
     }
-    printf("\n");
+    //printf("\n");
 
-    matrix_plotter plotter(x);
-    plotter.plot();
+    matrix_plotter plotter;
+    plotter.plot(matrix_plotter::settings(x)
+                 .levels(10)
+                 .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
+                 .devname("pngcairo")
+                 .fname("1.png"));
 
 
 #undef pId
