@@ -93,35 +93,42 @@ public:
 
     void plot()
     {
-        matrix_plotter plotter;
-        plotter.plot(matrix_plotter::settings(x)
+        matrix_plotter plotter(matrix_plotter::settings()
+                               .sub(2, 2)
+                               .devname("pngcairo")
+                               .fname(format("step_%03d.png", time_index)));
+        plotter.plot(matrix_plotter::page(x)
                      .levels(10)
-                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
-                     .devname("pngcairo")
-                     .fname(format("p_%03d.png", time_index)));
-        plotter.plot(matrix_plotter::settings(u)
+                     .tlabel(format("P (%.1e)", dt*time_index))
+                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
+        plotter.plot(matrix_plotter::page(u)
                      .levels(10)
-                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
-                     .devname("pngcairo")
-                     .fname(format("u_%03d.png")));
-        plotter.plot(matrix_plotter::settings(v)
+                     .tlabel(format("U (%.1e)", dt*time_index))
+                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
+        plotter.plot(matrix_plotter::page(v)
                      .levels(10)
-                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
-                     .devname("pngcairo")
-                     .fname(format("v_%03d.png")));
-        plotter.plot(matrix_plotter::settings(F)
+                     .tlabel(format("V (%.1e)", dt*time_index))
+                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
+    }
+
+    void plot_extra()
+    {
+        matrix_plotter plotter(matrix_plotter::settings()
+                               .sub(2, 1)
+                               .devname("pngcairo")
+                               .fname(format("step_extra_%03d.png", time_index)));
+        plotter.plot(matrix_plotter::page(F)
                      .levels(10)
-                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
-                     .devname("pngcairo")
-                     .fname(format("F_%03d.png")));
-        plotter.plot(matrix_plotter::settings(G)
+                     .tlabel(format("F (%.1e)", dt*time_index))
+                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
+        plotter.plot(matrix_plotter::page(G)
                      .levels(10)
-                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2)
-                     .devname("pngcairo")
-                     .fname(format("G_%03d.png")));
+                     .tlabel(format("G (%.1e)", dt*time_index))
+                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
     }
 
 private:
+    // TODO: check boundary conditions
     void init_bound() {
         // свободная стенка
         for (int k = 0; k < ny+2; k++) {
@@ -208,6 +215,7 @@ private:
         P_initialized = true;
     }
 
+    // TODO: check boundary conditions
     void poisson() {
         // 17.3
         for (int k = 1; k <= ny; k++) {
