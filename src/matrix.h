@@ -100,6 +100,10 @@ public:
         return acc[y];
     }
 
+    int index(int y, int x) {
+        return &acc[y][x]-&acc[y1][x1];
+    }
+
     template<bool other_check>
     matrix<T,check>& operator=(const matrix<T,other_check>& other) {
         for (int y = std::max(y1, other.y1); y < std::min(y2, other.y2); y++) {

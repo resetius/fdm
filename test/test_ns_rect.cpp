@@ -50,7 +50,7 @@ int main() {
 
     matrix<double> F(0, 1, nx, ny), G(1, 0, nx, ny);
 
-    vector<double> RHS(np);
+    matrix<double> RHS(1, 1, nx, ny);
 
     /*
 
@@ -124,47 +124,46 @@ int main() {
 
     P.clear();
 
-#define pId(j,k) ((k-1)*nx+j-1)
     // 17.3
     for (int k = 1; k <= ny; k++) {
         for (int j = 1; j <= nx; j++) {
             // (j,k) -> row number
-            int id = pId(j,k);
-            RHS[id] = ((F[k][j]-F[k][j-1])/dx+(G[k][j]-G[k-1][j])/dy)/dt;
+            int id = RHS.index(k,j);
+            RHS[k][j] = ((F[k][j]-F[k][j-1])/dx+(G[k][j]-G[k-1][j])/dy)/dt;
 
             if (k > 1) {
-                P.add(id, pId(j,k-1), 1/dy2);
+                P.add(id, RHS.index(k-1,j), 1/dy2);
             } else {
-                RHS[id] -= p[k-1][j]/dy2;
+                RHS[k][j] -= p[k-1][j]/dy2;
             }
 
             if (j > 1) {
-                P.add(id, pId(j-1,k), 1/dx2);
+                P.add(id, RHS.index(k,j-1), 1/dx2);
             } else {
-                RHS[id] -= p[k][j-1]/dx2;
+                RHS[k][j] -= p[k][j-1]/dx2;
             }
 
-            P.add(id, pId(j,k), -2/dx2-2/dy2);
+            P.add(id, RHS.index(k,j), -2/dx2-2/dy2);
 
             if (j < nx) {
-                P.add(id, pId(j+1,k), 1/dx2);
+                P.add(id, RHS.index(k, j+1), 1/dx2);
             } else {
-                RHS[id] -= p[k][j+1]/dx2;
+                RHS[k][j] -= p[k][j+1]/dx2;
             }
 
             if (k < ny) {
-                P.add(id, pId(j,k+1), 1/dy2);
+                P.add(id, RHS.index(k+1,j), 1/dy2);
             } else {
-                RHS[id] -= p[k+1][j]/dy2;
+                RHS[k][j] -= p[k+1][j]/dy2;
             }
         }
     }
     P.close();
     //P.print();
 
-    matrix<double> x(ny, nx);
+    matrix<double> x(1, 1, nx, ny);
     umfpack_solver<double> solver(std::move(P));
-    solver.solve(&x[0][0], &RHS[0]);
+    solver.solve(&x[1][1], &RHS[1][1]);
 
     //for (int k = 0; k < ny+2; k++) {
     //for (int j = 0; j < nx+1; j++) {
@@ -185,6 +184,5 @@ int main() {
                  .fname("1.png"));
 
 
-#undef pId
     return 0;
 }
