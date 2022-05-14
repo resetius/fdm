@@ -41,14 +41,14 @@ int main() {
     double dx2 = dx*dx;
     double dy2 = dy*dy;
 
-    int np = nx*ny; // количество внутренних точек давления (p)
-    int nu = (nx-1)*ny; // количество внутренних точек скорости (u)
-    int nv = nx*(ny-1); // количество внутренних точек скорости (v)
+    int np [[maybe_unused]] = nx*ny; // количество внутренних точек давления (p)
+    int nu [[maybe_unused]] = (nx-1)*ny; // количество внутренних точек скорости (u)
+    int nv [[maybe_unused]] = nx*(ny-1); // количество внутренних точек скорости (v)
     matrix<double> u(-1, 0, nx+1, ny+1), unext(-1, 0, nx+1, ny+1);
     matrix<double> v(0, -1, ny+1, nx+1), vnext(0, -1, ny+1, nx+1);
     matrix<double> p(ny+2, nx+2), pnext(ny+2, nx+2);
 
-    matrix<double> F(ny+2, nx+1), G(ny+1, nx+2);
+    matrix<double> F(0, 1, nx, ny), G(1, 0, nx, ny);
 
     vector<double> RHS(np);
 
@@ -67,11 +67,30 @@ int main() {
      */
 
     // TODO: boundary conditions
+
+    // начальное условие
     for (int k = 0; k < ny+2; k++) {
         for (int j = -1; j <= nx+1; j++) {
             double y = y1+dy*k+dy/2;
             u[k][j] = -sin(y/2-M_PI/2);
         }
+    }
+    // свободная стенка
+    for (int k = 0; k < ny+2; k++) {
+        verify(fabs(u[k][-1] - u[k][1]) < 1e-14);
+        verify(fabs(u[k][nx+1] - u[k][nx-1]) < 1e-14);
+        u[k][-1] = u[k][1];
+        u[k][nx+1] = u[k][nx-1];
+    }
+    // твердая стенка
+    for (int j = -1; j <= nx+1; j++) {
+        // низ
+        // u[1/2][j] = 0 <- стенка
+        // u[1/2][j] = 0 = 0.5 (u[1][j] + u[0][j])
+        // verify(fabs(u[0][j] + u[1][j]) < 1e-14);
+        u[0][j] = -u[1][j];
+        // верх
+        u[ny+1][j] = -u[ny][j];
     }
 
     // F
@@ -111,26 +130,32 @@ int main() {
         for (int j = 1; j <= nx; j++) {
             // (j,k) -> row number
             int id = pId(j,k);
-            // TODO: F[0][k], G[j][0] ...
-            RHS[id] = ((F[j][k]-F[j-1][k])/dx+(G[j][k]-G[j][k-1])/dy)/dt;
+            RHS[id] = ((F[k][j]-F[k][j-1])/dx+(G[k][j]-G[k-1][j])/dy)/dt;
 
             if (k > 1) {
                 P.add(id, pId(j,k-1), 1/dy2);
+            } else {
+                RHS[id] -= p[k-1][j]/dy2;
             }
-            // TODO: bnd to RHS
 
             if (j > 1) {
                 P.add(id, pId(j-1,k), 1/dx2);
+            } else {
+                RHS[id] -= p[k][j-1]/dx2;
             }
 
             P.add(id, pId(j,k), -2/dx2-2/dy2);
 
             if (j < nx) {
                 P.add(id, pId(j+1,k), 1/dx2);
+            } else {
+                RHS[id] -= p[k][j+1]/dx2;
             }
 
             if (k < ny) {
                 P.add(id, pId(j,k+1), 1/dy2);
+            } else {
+                RHS[id] -= p[k+1][j]/dy2;
             }
         }
     }
@@ -142,13 +167,13 @@ int main() {
 
     //for (int k = 0; k < ny+2; k++) {
     //for (int j = 0; j < nx+1; j++) {
-    for (int k = 1; k <= ny; k++) {
-        for (int j = 1; j <= nx; j++) {
+    //for (int k = 1; k <= ny; k++) {
+    //for (int j = 1; j <= nx; j++) {
             //printf("%f ", x[pId(j,k)]);
             //printf("%f ", u[k][j]);
-        }
+    //}
         //printf("\n");
-    }
+    //}
     //printf("\n");
 
     matrix_plotter plotter;
