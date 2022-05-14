@@ -19,7 +19,7 @@ public:
         double** data;
         int rows;
         int rs;
-        int nlevels;
+        int nlevels = 10;
         std::string dname = "pngcairo";
         std::string fname_ = "1.png";
         double x1, x2;
@@ -28,6 +28,7 @@ public:
         template<typename T>
         settings(const matrix<T>& matrix) {
             data = (double**)malloc(matrix.rows*matrix.rs*sizeof(double*));
+            // transposed
             for (int i = 0; i < matrix.rows; i++) {
                 data[i] = (double*)malloc(matrix.rs*sizeof(double));
                 memcpy(data[i], &matrix.vec[i*matrix.rs], matrix.rs*sizeof(double));

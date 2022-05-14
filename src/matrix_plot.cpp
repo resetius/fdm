@@ -31,13 +31,14 @@ void matrix_plotter::plot_internal(const settings& s) {
     plsdev(s.dname.c_str());
     plsfnam(s.fname_.c_str());
     plscolor(0);
+    //plsdiori(3);
 
     plinit();
-    plenv(s.x1, s.x2, s.y1, s.y2, 0, 0);
-    pllab("X", "Y", "");
+    plenv(s.y1, s.y2, s.x1, s.x2, 0, 0);
+    pllab("Y", "X", "");
     pllsty(2);
     pl_setcontlabelparam(0.006, 0.6, 0.1, 1);
-    plcont(s.data, s.rs, s.rows, 1, s.rs, 1, s.rows, levels, s.nlevels, transform,
+    plcont(s.data, s.rows, s.rs, 1, s.rows, 1, s.rs, levels, s.nlevels, transform,
            const_cast<matrix_plotter::settings*>(&s));
     plend();
 }
