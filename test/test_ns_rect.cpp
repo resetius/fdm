@@ -160,6 +160,7 @@ int main() {
         }
     }
     P.close();
+    //P.print();
 
     matrix<double> x(ny, nx);
     umfpack_solver<double> solver(std::move(P));
@@ -167,13 +168,13 @@ int main() {
 
     //for (int k = 0; k < ny+2; k++) {
     //for (int j = 0; j < nx+1; j++) {
-    //for (int k = 1; k <= ny; k++) {
-    //for (int j = 1; j <= nx; j++) {
-            //printf("%f ", x[pId(j,k)]);
+    for (int k = 1; k <= ny; k++) {
+    for (int j = 1; j <= nx; j++) {
+        //printf("%0.1e ", x[k-1][j-1]);
             //printf("%f ", u[k][j]);
-    //}
-        //printf("\n");
-    //}
+    }
+    //printf("\n");
+    }
     //printf("\n");
 
     matrix_plotter plotter;
