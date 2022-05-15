@@ -78,7 +78,7 @@ public:
     {
         // начальное условие
         for (int k = 0; k < ny+2; k++) {
-            for (int j = -1; j <= nx+1; j++) {
+            for (int j = -1; j <= 0 /*nx+1*/; j++) {
                 double y = y1+dy*k+dy/2;
                 u[k][j] = -sin(y/2-M_PI/2);
             }
@@ -104,12 +104,12 @@ public:
                                .devname("pngcairo")
                                .fname(format("step_%03d.png", time_index)));
         plotter.plot(matrix_plotter::page()
-                     .scalar(u)
+                     .scalar(ui)
                      .levels(10)
                      .tlabel(format("U (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
         plotter.plot(matrix_plotter::page()
-                     .scalar(v)
+                     .scalar(vi)
                      .levels(10)
                      .tlabel(format("V (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
@@ -148,10 +148,18 @@ private:
     void init_bound() {
         // свободная стенка
         for (int k = 0; k < ny+2; k++) {
-            verify(time_index>0||fabs(u[k][-1] - u[k][1]) < 1e-14);
-            verify(time_index>0||fabs(u[k][nx+1] - u[k][nx-1]) < 1e-14);
-            u[k][-1] = u[k][1];
-            u[k][nx+1] = u[k][nx-1];
+            //verify(time_index>0||fabs(u[k][-1] - u[k][1]) < 1e-14);
+            //verify(time_index>0||fabs(u[k][nx+1] - u[k][nx-1]) < 1e-14);
+            //u[k][-1] = u[k][1];
+            //u[k][nx+1] = u[k][nx-1];
+            // выход
+            u[k][nx+1] = u[k][nx] = u[k][nx-1];
+        }
+        for (int k = -1; k <= ny+1; k++) {
+            // вход
+            v[k][0] = -v[k][1];
+            // выход
+            v[k][nx+1] = v[k][nx];
         }
         // твердая стенка
         for (int j = -1; j <= nx+1; j++) {
@@ -162,6 +170,19 @@ private:
             u[0][j] = -u[1][j];
             // верх
             u[ny+1][j] = -u[ny][j];
+        }
+        // давление
+        for (int k = 0; k <= ny+1; k++) {
+            // лево
+            p[k][0] = p[k][1];
+            // право
+            p[k][nx+1] = p[k][nx];
+        }
+        for (int j = 0; j <= nx+1; j++) {
+            // низ
+            p[0][j] = p[1][j];
+            // верх
+            p[ny+1][j] = p[ny][j];
         }
     }
 
