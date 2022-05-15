@@ -4,9 +4,13 @@
 #include <cmath>
 
 #include "tensor.h"
+#include "matrix_plot.h"
 #include "config.h"
+#include "sparse.h"
+#include "asp_misc.h"
 
 using namespace std;
+using namespace fdm;
 
 template<typename T, bool check>
 class NSCyl {
@@ -14,15 +18,37 @@ public:
     using tensor = fdm::tensor<T,3,check>;
     using matrix = fdm::tensor<T,2,check>;
 
+    const double R, r;
+    const double h1, h2;
+
     const double Re;
     const double dt;
 
+    const int nr, nz, nphi;
+    const double dr, dz, dphi;
+
+    umfpack_solver<T> solver;
+    int time_index = 0;
+
     NSCyl(const Config& c)
-        : Re(c.get("ns", "Re", 1.0))
+        : R(c.get("ns", "R", M_PI))
+        , r(c.get("ns", "r", M_PI/2))
+        , h1(c.get("ns", "h1", 0))
+        , h2(c.get("ns", "h2", 10))
+        , Re(c.get("ns", "Re", 1.0))
         , dt(c.get("ns", "dt", 0.001))
+
+        , nr(c.get("ns", "nr", 32))
+        , nz(c.get("ns", "nz", 32))
+        , nphi(c.get("ns", "nphi", 32))
+        , dr((R-r)/nr)
+        , dz((h2-h1)/nz)
+        , dphi(2*M_PI/nphi)
     { }
 
-    void step() { }
+    void step() {
+        time_index++;
+    }
     void plot() { }
 };
 
