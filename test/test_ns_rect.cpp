@@ -104,11 +104,6 @@ public:
                                .devname("pngcairo")
                                .fname(format("step_%03d.png", time_index)));
         plotter.plot(matrix_plotter::page()
-                     .scalar(x)
-                     .levels(10)
-                     .tlabel(format("P (%.1e)", dt*time_index))
-                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
-        plotter.plot(matrix_plotter::page()
                      .scalar(u)
                      .levels(10)
                      .tlabel(format("U (%.1e)", dt*time_index))
@@ -117,6 +112,11 @@ public:
                      .scalar(v)
                      .levels(10)
                      .tlabel(format("V (%.1e)", dt*time_index))
+                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
+        plotter.plot(matrix_plotter::page()
+                     .scalar(x)
+                     .levels(10)
+                     .tlabel(format("P (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
         plotter.plot(matrix_plotter::page()
                      .vector(ui, vi)
@@ -312,12 +312,16 @@ void calc(const Config& c) {
      */
 
     const int steps = c.get("ns", "steps", 1);
+    const int plot_interval = c.get("plot", "interval", 100);
     int i;
 
     ns.plot();
     for (i = 0; i < steps; i++) {
         ns.step();
-        ns.plot();
+
+        if ((i+1) % plot_interval == 0) {
+            ns.plot();
+        }
     }
 }
 
