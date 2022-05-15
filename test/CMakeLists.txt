@@ -16,5 +16,8 @@ target_link_libraries(fdm_slaplace fdm)
 add_executable(fdm_ns_rect test_ns_rect.cpp config.cpp)
 target_link_libraries(fdm_ns_rect fdm umfpack)
 
+add_executable(fdm_ns_cyl test_ns_cyl.cpp config.cpp)
+target_link_libraries(fdm_ns_cyl fdm umfpack)
+
 add_executable(test_tensor test_tensor.cpp)
 target_link_libraries(test_tensor fdm)
