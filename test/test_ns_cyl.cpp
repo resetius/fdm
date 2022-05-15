@@ -20,14 +20,23 @@ public:
 
     const double R, r;
     const double h1, h2;
+    const double U0; // скорость вращения внутреннего цилиндра
 
     const double Re;
     const double dt;
 
     const int nr, nz, nphi;
     const double dr, dz, dphi;
+    const double dr2, dz2, dphi2;
+
+    tensor u /*r*/,v/*z*/,w/*phi*/;
+    tensor p,x;
+    tensor RHS;
+    matrix psi; // срез по плоскости Oyz
 
     umfpack_solver<T> solver;
+    umfpack_solver<T> solver_stream; // для функции тока по срезу
+
     int time_index = 0;
 
     NSCyl(const Config& c)
@@ -35,15 +44,24 @@ public:
         , r(c.get("ns", "r", M_PI/2))
         , h1(c.get("ns", "h1", 0))
         , h2(c.get("ns", "h2", 10))
+        , U0(c.get("ns", "u0", 1))
         , Re(c.get("ns", "Re", 1.0))
         , dt(c.get("ns", "dt", 0.001))
 
         , nr(c.get("ns", "nr", 32))
         , nz(c.get("ns", "nz", 32))
         , nphi(c.get("ns", "nphi", 32))
-        , dr((R-r)/nr)
-        , dz((h2-h1)/nz)
-        , dphi(2*M_PI/nphi)
+        , dr((R-r)/nr), dz((h2-h1)/nz), dphi(2*M_PI/nphi)
+        , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
+
+          // phi, z, r
+        , u{{0, nphi, 0, nz+1, 0, nr+1}} // check bounds
+        , v{{0, nphi, 0, nz+1, 0, nr+1}} // check bounds
+        , w{{0, nphi, 0, nz+1, 0, nr+1}} // check bounds
+        , p({0, nphi, 0, nz+1, 0, nr+1})
+        , x({0, nphi, 0, nz+1, 0, nr+1})
+        , RHS({0, nphi-1, 1, nz, 1, nr})
+        , psi({1, nz, 1, nr})
     { }
 
     void step() {
