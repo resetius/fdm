@@ -291,7 +291,7 @@ void FDM_API basis(double *vec, int n, int i);
 /**
  * printf-like format
  */
-std::string format(const char* format, ...);
+std::string FDM_API format(const char* format, ...);
 inline double sq(double x) {
     return x*x;
 }
