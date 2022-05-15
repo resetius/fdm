@@ -42,7 +42,6 @@ public:
     bool P_initialized = false;
 
     umfpack_solver<T> solver;
-    umfpack_solver<T> stream_solver; // for stream function
     int time_index = 0;
 
     NSRect(const Config& c)
