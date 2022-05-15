@@ -36,6 +36,7 @@
 #include <math.h>
 #include <time.h>
 #include <assert.h>
+#include <cstdarg>
 
 #include "asp_macros.h"
 #include "asp_misc.h"
@@ -1301,4 +1302,14 @@ void basis(double *vec, int n, int i)
 	memset(vec, 0, n * sizeof(double));
 	vec[i] = 1;
 }
+
+__thread static char _format_buf[32768];
+std::string format(const char* format, ...) {
+    va_list args;
+    va_start (args, format);
+    vsnprintf(_format_buf, sizeof(_format_buf), format, args);
+    va_end(args);
+    return _format_buf;
 }
+
+} // namespace asp

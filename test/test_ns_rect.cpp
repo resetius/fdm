@@ -2,29 +2,18 @@
 #include <vector>
 #include <climits>
 #include <cmath>
-#include <cstdarg>
 
 #include "matrix.h"
 #include "matrix_plot.h"
 #include "config.h"
 #include "sparse.h"
+#include "asp_misc.h"
 
 using namespace std;
 using namespace fdm;
 
-inline double sq(double x) {
-    return x*x;
-}
-
-char _format_buf[32768];
-
-static std::string format(const char* format, ...) {
-    va_list args;
-    va_start (args, format);
-    vsnprintf(_format_buf, sizeof(_format_buf), format, args);
-    va_end(args);
-    return _format_buf;
-}
+using asp::format;
+using asp::sq;
 
 // Флетчер, том 2, страница 398
 template<typename T, bool check>
