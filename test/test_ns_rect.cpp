@@ -47,10 +47,13 @@ public:
 
     matrix F,G,RHS;
 
+    matrix psi;
+
     csr_matrix<T> P;
     bool P_initialized = false;
 
     umfpack_solver<T> solver;
+    umfpack_solver<T> stream_solver; // for stream function
     int time_index = 0;
 
     NSRect(const Config& c)
@@ -75,6 +78,7 @@ public:
         , F(0, 1, nx, ny)
         , G(1, 0, nx, ny)
         , RHS(1, 1, nx, ny)
+        , psi(1, 1, nx, ny)
     {
         // начальное условие
         for (int k = 0; k < ny+2; k++) {
@@ -83,13 +87,14 @@ public:
                 u[k][j] = -sin(y/2-M_PI/2);
             }
         }
+
+        init_P();
     }
 
     void step()
     {
         init_bound();
         FG();
-        init_P();
         poisson();
         update_uvp();
         ++time_index;
@@ -98,6 +103,7 @@ public:
     void plot()
     {
         update_uvi();
+        update_stream();
 
         matrix_plotter plotter(matrix_plotter::settings()
                                .sub(2, 2)
@@ -114,15 +120,20 @@ public:
                      .tlabel(format("V (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
         plotter.plot(matrix_plotter::page()
-                     .scalar(x)
+                     .scalar(p)
                      .levels(10)
                      .tlabel(format("P (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
         plotter.plot(matrix_plotter::page()
-                     .vector(ui, vi)
+                     .scalar(psi)
                      .levels(10)
-                     .tlabel(format("UV (%.1e)", dt*time_index))
+                     .tlabel(format("Psi (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
+//        plotter.plot(matrix_plotter::page()
+//                     .vector(ui, vi)
+//                     .levels(10)
+//                     .tlabel(format("UV (%.1e)", dt*time_index))
+//                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
     }
 
     void plot_extra()
@@ -252,7 +263,6 @@ private:
         P_initialized = true;
     }
 
-    // TODO: check boundary conditions
     void poisson() {
         // 17.3
         for (int k = 1; k <= ny; k++) {
@@ -287,6 +297,24 @@ private:
         }
 
         solver.solve(&x[1][1], &RHS[1][1]);
+    }
+
+    void update_stream() {
+        for (int k = 1; k <= ny; k++) {
+            for (int j = 1; j <= nx; j++) {
+                RHS[k][j] = (v[k][j]-v[k][j-1])/dx-(u[k][j]-u[k-1][j])/dy;
+                // zero conditions
+
+                /*
+                if (k <= 1)  { RHS[k][j] -= 1/dy2; }
+                if (j <= 1)  { RHS[k][j] -= 1/dx2; }
+                if (j >= nx) { RHS[k][j] -= 1/dx2; }
+                if (k >= ny) { RHS[k][j] -= 1/dy2; }
+                */
+            }
+        }
+
+        solver.solve(&psi[1][1], &RHS[1][1]);
     }
 
     void update_uvp() {
