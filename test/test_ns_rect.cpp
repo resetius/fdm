@@ -2,6 +2,7 @@
 #include <vector>
 #include <climits>
 #include <cmath>
+#include <cstdarg>
 
 #include "matrix.h"
 #include "matrix_plot.h"
