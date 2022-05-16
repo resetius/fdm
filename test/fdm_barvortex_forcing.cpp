@@ -33,6 +33,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 
 #include "sds_bar.h"
 #include "asp_misc.h"
@@ -136,7 +137,7 @@ void load_relief(double * cor, double *rel, long nlat, long nlon,
 		//if (rel_max < fabs(rel[i])) rel_max = fabs(rel[i]);
 	}
 
-	double dlat, dlon, phi, lambda[[maybe_unused]];
+	double dlat = -1, dlon = -1, phi, lambda[[maybe_unused]];
 
 	if (full && !offset) {
 		dlat = M_PI / (nlat - 1);
@@ -151,6 +152,8 @@ void load_relief(double * cor, double *rel, long nlat, long nlon,
 		dlat = M_PI / (double)(2 * (nlat - 1) + 1);
 		dlon = 2. * M_PI / nlon;
 	}
+
+    assert(dlat > 0); assert(dlon > 0);
 
 	for (int i = 0; i < nlat; ++i)
 	{
