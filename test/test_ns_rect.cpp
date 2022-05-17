@@ -96,26 +96,26 @@ public:
         matrix_plotter plotter(matrix_plotter::settings()
                                .sub(2, 2)
                                .devname("pngcairo")
-                               .fname(format("step_%03d.png", time_index)));
+                               .fname(format("step_%07d.png", time_index)));
         plotter.plot(matrix_plotter::page()
                      .scalar(ui)
                      .levels(10)
-                     .tlabel(format("U (%.1e)", dt*time_index))
+                     .tlabel(format("U (t=%.1e, |max|=%.1e)", dt*time_index, ui.maxabs()))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
         plotter.plot(matrix_plotter::page()
                      .scalar(vi)
                      .levels(10)
-                     .tlabel(format("V (%.1e)", dt*time_index))
+                     .tlabel(format("V (t=%.1e, |max|=%.1e)", dt*time_index, vi.maxabs()))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
         plotter.plot(matrix_plotter::page()
                      .scalar(p)
                      .levels(10)
-                     .tlabel(format("P (%.1e)", dt*time_index))
+                     .tlabel(format("P (t=%.1e, |max|=%.1e)", dt*time_index, p.maxabs()))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
         plotter.plot(matrix_plotter::page()
                      .scalar(psi)
                      .levels(10)
-                     .tlabel(format("Psi (%.1e)", dt*time_index))
+                     .tlabel(format("Psi (t=%.1e, |max|=%.1e)", dt*time_index, psi.maxabs()))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
 //        plotter.plot(matrix_plotter::page()
 //                     .vector(ui, vi)

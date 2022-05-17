@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <numeric>
 #include "verify.h"
 
 namespace fdm {
@@ -109,8 +110,15 @@ public:
         return acc[y];
     }
 
-    int index(int y, int x) {
+    int index(int y, int x) const {
         return &acc[y][x]-&acc[y1][x1];
+    }
+
+    T maxabs() const {
+        return std::accumulate(vec.begin(), vec.end(), 0.0, [](T a, T b) {
+            a = std::abs(a); b = std::abs(b);
+            return a<b?b:a;
+        });
     }
 
     matrix<T,check>& operator=(const matrix<T,check>& other) {
