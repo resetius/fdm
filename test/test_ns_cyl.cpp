@@ -31,7 +31,7 @@ public:
 
     tensor u /*r*/,v/*z*/,w/*phi*/;
     tensor p,x;
-    tensor RHS;
+    tensor F,G,H,RHS;
     matrix psi; // срез по плоскости Oyz
 
     umfpack_solver<T> solver;
@@ -60,6 +60,9 @@ public:
         , w{{0, nphi, 0, nz+1, 0, nr+1}} // check bounds
         , p({0, nphi, 0, nz+1, 0, nr+1})
         , x({0, nphi, 0, nz+1, 0, nr+1})
+        , F({0, nphi-1, 1, nz, 1, nr}) // check bounds
+        , G({0, nphi-1, 1, nz, 1, nr}) // check bounds
+        , H({0, nphi-1, 1, nz, 1, nr}) // check bounds
         , RHS({0, nphi-1, 1, nz, 1, nr})
         , psi({1, nz, 1, nr})
     { }
@@ -68,6 +71,25 @@ public:
         time_index++;
     }
     void plot() { }
+
+private:
+    void FGH() {
+        // F
+        for (int k = 1; k <= nz; k++) { // 3/2 ..
+            for (int j = 0; j <= nr; j++) { // 1/2 ..
+                // 17.9
+                F[0][k][j] = u[0][k][j] + dt*(
+                    (u[0][k][j+1]-2*u[0][k][j]+u[0][k][j-1])/Re/dr2+
+                    (u[0][k-1][j]-2*u[0][k][j]+u[0][k+1][j])/Re/dz2-
+                    (sq(0.5*(u[0][k][j]+u[0][k][j+1]))-sq(0.5*(u[k][j-1]+u[0][k][j])))/dr-
+                    0.25*((u[0][k]  [j]+u[0][k+1][j])*(v[0][k]  [j+1]+v[0][k]  [j])-
+                          (u[0][k-1][j]+u[0][k]  [j])*(v[0][k-1][j+1]+v[0][k-1][j])
+                        )/dz);
+            }
+        }
+        // G
+        // H
+    }
 };
 
 template<typename T, bool check>
