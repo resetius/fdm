@@ -33,5 +33,16 @@ void run() {
 int main() {
     run<false>();
     run<true>();
+
+    tensor<double, 2, true, tensor_flags<tensor_flag::periodic>> t({0, 4, -1, 1});
+    t[0][1] = 10;
+    t[4][1] = 11;
+    verify(t[0][1] == t[5][1]);
+    verify(t[-1][1] == t[4][1]);
+
+    tensor<double, 2, true, tensor_flags<tensor_flag::periodic>> t2({-1, 4, -1, 2});
+    t2[-1][2] = 20;
+    verify(t2[5][2] == t2[-1][2]);
+
     return 0;
 }

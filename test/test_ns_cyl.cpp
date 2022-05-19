@@ -15,7 +15,8 @@ using namespace fdm;
 template<typename T, bool check>
 class NSCyl {
 public:
-    using tensor = fdm::tensor<T,3,check>;
+    using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
+    using tensor = fdm::tensor<T,3,check,tensor_flags>;
     using matrix = fdm::tensor<T,2,check>;
 
     const double R, r;
