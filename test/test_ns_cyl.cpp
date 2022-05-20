@@ -11,6 +11,7 @@
 
 using namespace std;
 using namespace fdm;
+using asp::sq;
 
 template<typename T, bool check>
 class NSCyl {
@@ -72,27 +73,83 @@ public:
     { }
 
     void step() {
+        init_bound();
+        FGH();
+        poisson();
+        update_uvwp();
         time_index++;
     }
     void plot() { }
 
 private:
+    void init_bound() {
+    }
+
     void FGH() {
         // F
-        for (int k = 1; k <= nz; k++) { // 3/2 ..
-            for (int j = 0; j <= nr; j++) { // 1/2 ..
-                // 17.9
-                F[0][k][j] = u[0][k][j] + dt*(
-                    (u[0][k][j+1]-2*u[0][k][j]+u[0][k][j-1])/Re/dr2+
-                    (u[0][k-1][j]-2*u[0][k][j]+u[0][k+1][j])/Re/dz2-
-                    (sq(0.5*(u[0][k][j]+u[0][k][j+1]))-sq(0.5*(u[k][j-1]+u[0][k][j])))/dr-
-                    0.25*((u[0][k]  [j]+u[0][k+1][j])*(v[0][k]  [j+1]+v[0][k]  [j])-
-                          (u[0][k-1][j]+u[0][k]  [j])*(v[0][k-1][j+1]+v[0][k-1][j])
-                        )/dz);
+        for (int i = 1; i <= nphi; i++) {
+            for (int k = 1; k <= nz; k++) { // 3/2 ..
+                for (int j = 0; j <= nr; j++) { // 1/2 ..
+                    // 17.9
+                    F[i][k][j] = u[i][k][j] + dt*(
+                        (u[i][k][j+1]-2*u[i][k][j]+u[i][k][j-1])/Re/dr2+
+                        (u[i][k-1][j]-2*u[i][k][j]+u[i][k+1][j])/Re/dz2+
+                        (u[i-1][k][j]-2*u[i][k][j]+u[i+1][k][j])/Re/dphi2-
+                        (sq(0.5*(u[i][k][j]+u[i][k][j+1]))-sq(0.5*(u[i][k][j-1]+u[i][k][j])))/dr-
+
+                        0.25*((u[i][k]  [j]+u[i][k+1][j])*(v[i][k]  [j+1]+v[i][k]  [j])-
+                              (u[i][k-1][j]+u[i][k]  [j])*(v[i][k-1][j+1]+v[i][k-1][j])
+                            )/dz-
+
+                        0.25*((u[i][k]  [j]+u[i+1][k][j])*(w[i][k]  [j+1]+w[i][k]  [j])-
+                              (u[i-1][k][j]+u[i][k]  [j])*(w[i-1][k][j+1]+w[i-1][k][j]) // TODO:check
+                            )/dphi);
+                }
             }
         }
         // G
+        for (int i = 1; i <= nphi; i++) {
+            for (int k = 0; k <= nz; k++) {
+                for (int j = 1; j <= nr; j++) {
+                    // 17.11
+                    G[i][k][j] = v[i][k][j] + dt*(
+                        (v[i][k][j+1]-2*v[i][k][j]+v[i][k][j-1])/Re/dr2+
+                        (v[i][k+1][j]-2*v[i][k][j]+v[i][k-1][j])/Re/dz2+
+                        (v[i+1][k][j]-2*v[i][k][j]+v[i+1][k][j])/Re/dphi2-
+                        (sq(0.5*(v[i][k][j]+v[i][k+1][j]))-sq(0.5*(v[i][k-1][j]+v[i][k][j])))/dz-
+
+                        0.25*((u[i][k][j]+  u[i][k+1][j])*  (v[i][k][j+1]+v[i][k][j])-
+                              (u[i][k][j-1]+u[i][k+1][j-1])*(v[i][k][j]  +v[i][k][j-1])
+                            )/dr-
+
+                        0.25*((w[i][k][j]+  w[i+1][k][j])*  (v[i][k][j+1]+v[i][k][j])-
+                              (w[i][k][j-1]+w[i+1][k][j-1])*(v[i][k][j]  +v[i][k][j-1]) // TODO:check
+                            )/dphi);
+                }
+            }
+        }
         // H
+        for (int i = 0; i <= nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                for (int j = 1; j <= nr; j++) {
+                    H[i][k][j] = w[i][k][j] + dt*(
+                        (w[i][k][j+1]-2*w[i][k][j]+w[i][k][j-1])/Re/dr2+
+                        (w[i][k+1][j]-2*w[i][k][j]+w[i][k-1][j])/Re/dz2+
+                        (w[i+1][k][j]-2*w[i][k][j]+w[i+1][k][j])/Re/dphi2-
+                        (sq(0.5*(w[i+1][k][j]+w[i][k][j]))-sq(0.5*(w[i-1][k][j]+w[i][k][j])))/dphi-
+
+                        // TODO:check
+
+                        0.25*((u[i][k][j]+  u[i][k+1][j])*  (w[i][k][j+1]+w[i][k][j])-
+                              (u[i][k][j-1]+u[i][k+1][j-1])*(w[i][k][j]  +w[i][k][j-1])
+                            )/dr-
+
+                        0.25*((w[i][k][j]+  w[i+1][k][j])*  (v[i][k][j+1]+v[i][k][j])-
+                              (w[i][k][j-1]+w[i+1][k][j-1])*(v[i][k][j]  +v[i][k][j-1])
+                            )/dz);
+                }
+            }
+        }
     }
 
     void init_P() {
@@ -136,6 +193,76 @@ private:
         solver = std::move(P);
 
         P_initialized = true;
+    }
+
+    void poisson() {
+        for (int i = 1; i <= nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                for (int j = 1; j <= nr; j++) {
+                    RHS[i][k][j] = ((F[i][k][j]-F[i][k][j-1])/dr
+                                    +(G[i][k][j]-G[i][k-1][j])/dz
+                                    +(H[i][k][j]-H[i-1][k][j])/dphi)/dt;
+
+                    if (i <= 1) {
+                        RHS[i][k][j] -= p[i-1][k][j]/dphi2;
+                    }
+                    if (k <= 1) {
+                        RHS[i][k][j] -= p[i][k-1][j]/dz2;
+                    }
+                    if (j <= 1) {
+                        RHS[i][k][j] -= p[i][k][j-1]/dr2;
+                    }
+
+
+                    if (j >= nr) {
+                        RHS[i][k][j] -= p[i][k][j+1]/dr2;
+                    }
+                    if (k >= nz) {
+                        RHS[i][k][j] -= p[i][k+1][j]/dz2;
+                    }
+                    if (i >= nphi) {
+                        RHS[i][k][j] -= p[i+1][k][j]/dphi2;
+                    }
+                }
+            }
+        }
+
+        solver.solve(&x[1][1][1], &RHS[1][1][1]);
+    }
+
+    void update_uvwp() {
+        for (int i = 1; i <= nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                for (int j = 1; j < nr; j++) {
+                    u[i][k][j] = F[i][k][j]-dt/dr*(x[i][k][j+1]-x[i][k][j]);
+                }
+            }
+        }
+
+        for (int i = 1; i <= nphi; i++) {
+            for (int k = 1; k < nz; k++) {
+                for (int j = 1; j <= nr; j++) {
+                    v[i][k][j] = G[i][k][j]-dt/dz*(x[i][k+1][j]-x[i][k][j]);
+                }
+            }
+        }
+
+        for (int i = 1; i < nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                for (int j = 1; j <= nr; j++) {
+                    w[i][k][j] = H[i][k][j]-dt/dphi*(x[i+1][k][j]-x[i][k][j]);
+                }
+            }
+        }
+
+        // TODO: check
+        for (int i = 1; i < nphi; i++) {
+            for (int k = 1; k < nz; k++) {
+                for (int j = 1; j < nr; j++) {
+                    p[i][k][j] = x[i][k][j];
+                }
+            }
+        }
     }
 };
 
