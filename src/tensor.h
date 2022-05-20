@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <algorithm>
+#include <numeric>
 #include "verify.h"
 
 namespace fdm {
@@ -145,9 +146,12 @@ public:
 
 template<typename T, int rank, bool check=true, typename F = tensor_flags<>>
 class tensor {
+public:
     std::vector<int> offsets;
     std::vector<int> sizes;
     std::vector<T> vec;
+
+private:
     tensor_accessor<T, rank, check, F> acc;
 
 public:
@@ -168,6 +172,13 @@ public:
 
     int index(const std::array<int,rank>& indices /*z,y,x*/) {
         return acc.off(&indices[0], 0) - &vec[0];
+    }
+
+    T maxabs() const {
+        return std::accumulate(vec.begin(), vec.end(), 0.0, [](T a, T b) {
+            a = std::abs(a); b = std::abs(b);
+            return a<b?b:a;
+        });
     }
 
 private:

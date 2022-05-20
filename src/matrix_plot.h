@@ -7,6 +7,8 @@
 #include <plplot.h>
 
 #include "matrix.h"
+#include "tensor.h"
+#include "verify.h"
 
 namespace fdm {
 
@@ -18,14 +20,26 @@ class matrix_plotter {
 
         template<typename T>
         data(const matrix<T>& matrix) {
-            d = (double**)malloc(matrix.rows*matrix.rs*sizeof(double*));
             // transposed
-            for (int i = 0; i < matrix.rows; i++) {
-                d[i] = (double*)malloc(matrix.rs*sizeof(double));
-                memcpy(d[i], &matrix.vec[i*matrix.rs], matrix.rs*sizeof(double));
-            }
             rows = matrix.rows;
             rs = matrix.rs;
+            d = (double**)malloc(rows*rs*sizeof(double*));
+            for (int i = 0; i < rows; i++) {
+                d[i] = (double*)malloc(rs*sizeof(double));
+                memcpy(d[i], &matrix.vec[i*rs], rs*sizeof(double));
+            }
+        }
+
+        template<typename T>
+        data(const tensor<T,2>& matrix) {
+            rs = matrix.sizes[0];
+            rows = matrix.vec.size() / rs;
+            verify(matrix.vec.size() % rs == 0);
+            d = (double**)malloc(rows*rs*sizeof(double*));
+            for (int i = 0; i < rows; i++) {
+                d[i] = (double*)malloc(rs*sizeof(double));
+                memcpy(d[i], &matrix.vec[i*rs], rs*sizeof(double));
+            }
         }
 
         data() = default;
@@ -68,7 +82,24 @@ public:
         }
 
         template<typename T>
+        page& scalar(const tensor<T,2>& matrix) {
+            u = data(matrix);
+            x1 = 0; x2 = u.rows-1;
+            y1 = 0; y2 = u.rs-1;
+            return *this;
+        }
+
+        template<typename T>
         page& vector(const matrix<T>& u_, const matrix<T>& v_) {
+            u = data(u_);
+            v = data(v_);
+            x1 = 0; x2 = u.rows-1;
+            y1 = 0; y2 = u.rs-1;
+            return *this;
+        }
+
+        template<typename T>
+        page& vector(const tensor<T,2>& u_, const tensor<T,2>& v_) {
             u = data(u_);
             v = data(v_);
             x1 = 0; x2 = u.rows-1;

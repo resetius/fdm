@@ -11,6 +11,8 @@
 
 using namespace std;
 using namespace fdm;
+
+using asp::format;
 using asp::sq;
 
 template<typename T, bool check>
@@ -35,6 +37,7 @@ public:
     tensor p,x;
     tensor F,G,H,RHS;
     matrix psi; // срез по плоскости Oyz
+    matrix ui, vi; // срез по плоскости Oyz
 
     csr_matrix<T> P;
     bool P_initialized = false;
@@ -70,6 +73,8 @@ public:
         , H({0, nphi-1, 1, nz, 1, nr}) // check bounds
         , RHS({0, nphi-1, 1, nz, 1, nr})
         , psi({1, nz, 1, nr})
+        , ui({1, nz, 1, nr}) // inner u
+        , vi({1, nz, 1, nr}) // inner v
     { }
 
     void step() {
@@ -79,7 +84,29 @@ public:
         update_uvwp();
         time_index++;
     }
-    void plot() { }
+
+    void plot() {
+        update_uvi();
+        matrix_plotter plotter(matrix_plotter::settings()
+                               .sub(2, 2)
+                               .devname("pngcairo")
+                               .fname(format("step_%07d.png", time_index)));
+        plotter.plot(matrix_plotter::page()
+                     .scalar(ui)
+                     .levels(10)
+                     .tlabel(format("U (t=%.1e, |max|=%.1e)", dt*time_index, ui.maxabs()))
+                     .bounds(r+dr/2, h1+dz/2, r-dr/2, h2-dz/2));
+        plotter.plot(matrix_plotter::page()
+                     .scalar(vi)
+                     .levels(10)
+                     .tlabel(format("V (t=%.1e, |max|=%.1e)", dt*time_index, vi.maxabs()))
+                     .bounds(r+dr/2, h1+dz/2, r-dr/2, h2-dz/2));
+        plotter.plot(matrix_plotter::page()
+                     .vector(ui, vi)
+                     .levels(10)
+                     .tlabel(format("UV (%.1e)", dt*time_index))
+                     .bounds(r+dr/2, h1+dz/2, r-dr/2, h2-dz/2));
+    }
 
 private:
     void init_bound() {
@@ -261,6 +288,15 @@ private:
                 for (int j = 1; j < nr; j++) {
                     p[i][k][j] = x[i][k][j];
                 }
+            }
+        }
+    }
+
+    void update_uvi() {
+        for (int k = 1; k <= nz; k++) {
+            for (int j = 1; j <= nr; j++) {
+                ui[k][j] = 0.5*(u[0][k][j-1] + u[0][k][j]);
+                vi[k][j] = 0.5*(v[0][k-1][j] + v[0][k][j]);
             }
         }
     }
