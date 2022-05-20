@@ -66,6 +66,10 @@ public:
             );
     }
 
+    auto off(int* indices, int i) {
+        return (*this)[indices[i]].off(indices, i+1);
+    }
+
 private:
     int adjust_and_check(int y) const {
         if constexpr(has_tensor_flag(F::head, tensor_flag::periodic)) {
@@ -101,6 +105,10 @@ public:
     T operator[](int x) const {
         return vec[x];
     }
+
+    T* off(int* indices, int i) {
+        return &(*this)[indices[i]];
+    }
 };
 
 template<typename T, typename F>
@@ -129,6 +137,10 @@ public:
         verify(offsets[2*index] <= x && x <= offsets[2*index+1]);
         return vec[x];
     }
+
+    T* off(int* indices, int i) {
+        return &(*this)[indices[i]];
+    }
 };
 
 template<typename T, int rank, bool check=true, typename F = tensor_flags<>>
@@ -152,6 +164,10 @@ public:
 
     auto operator[](int y) {
         return acc[y];
+    }
+
+    int index(const std::array<int,rank>& indices /*z,y,x*/) {
+        return acc.off(&indices[0], 0) - &vec[0];
     }
 
 private:

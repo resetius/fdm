@@ -35,6 +35,9 @@ public:
     tensor F,G,H,RHS;
     matrix psi; // срез по плоскости Oyz
 
+    csr_matrix<T> P;
+    bool P_initialized = false;
+
     umfpack_solver<T> solver;
     umfpack_solver<T> solver_stream; // для функции тока по срезу
 
@@ -90,6 +93,47 @@ private:
         }
         // G
         // H
+    }
+
+    void init_P() {
+        if (P_initialized) {
+            return;
+        }
+
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                for (int j = 1; j <= nr; j++) {
+                    int id = RHS.index({i,k,j});
+
+                    P.add(id, RHS.index(i-1,k,j), 1/dphi2);
+
+                    if (k > 1) {
+                        P.add(id, RHS.index(i,k-1,j), 1/dz2);
+                    }
+
+                    if (j > 1) {
+                        P.add(id, RHS.index(i,k,j-1), 1/dr2);
+                    }
+
+                    P.add(id, RHS.index(i,k,j), -2/dr2-2/dz2-2/dphi2);
+
+                    if (j < nr) {
+                        P.add(id, RHS.index(i,k,j+1, 1/dr2));
+                    }
+
+                    if (k < nz) {
+                        P.add(id, RHS.index(i,k+1,j));
+                    }
+
+                    P.add(id, RHS.index(i+1,k,j), 1/dphi2);
+                }
+            }
+        }
+        P.close();
+
+        solver = std::move(P);
+
+        P_initialized = true;
     }
 };
 
