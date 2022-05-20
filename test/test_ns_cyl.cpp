@@ -104,28 +104,30 @@ private:
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
                     int id = RHS.index({i,k,j});
+                    double r = i*dr-dr/2;
+                    double r2 = r*r;
 
-                    P.add(id, RHS.index(i-1,k,j), 1/dphi2);
+                    P.add(id, RHS.index(i-1,k,j), 1/dphi2/r2);
 
                     if (k > 1) {
                         P.add(id, RHS.index(i,k-1,j), 1/dz2);
                     }
 
                     if (j > 1) {
-                        P.add(id, RHS.index(i,k,j-1), 1/dr2);
+                        P.add(id, RHS.index(i,k,j-1), (r-0.5*dr)/dr2/r);
                     }
 
-                    P.add(id, RHS.index(i,k,j), -2/dr2-2/dz2-2/dphi2);
+                    P.add(id, RHS.index(i,k,j), -2/dr2-2/dz2-2/dphi2/r2);
 
                     if (j < nr) {
-                        P.add(id, RHS.index(i,k,j+1, 1/dr2));
+                        P.add(id, RHS.index(i,k,j+1, (r+0.5*dr)/dr2/r));
                     }
 
                     if (k < nz) {
-                        P.add(id, RHS.index(i,k+1,j));
+                        P.add(id, RHS.index(i,k+1,j), 1/dz2);
                     }
 
-                    P.add(id, RHS.index(i+1,k,j), 1/dphi2);
+                    P.add(id, RHS.index(i+1,k,j), 1/dphi2/r2);
                 }
             }
         }
