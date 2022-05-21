@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <vector>
 #include <algorithm>
 #include <numeric>
@@ -67,7 +68,7 @@ public:
             );
     }
 
-    auto off(int* indices, int i) {
+    auto off(const int* indices, int i) {
         return (*this)[indices[i]].off(indices, i+1);
     }
 
@@ -107,7 +108,7 @@ public:
         return vec[x];
     }
 
-    T* off(int* indices, int i) {
+    T* off(const int* indices, int i) {
         return &(*this)[indices[i]];
     }
 };
@@ -139,7 +140,7 @@ public:
         return vec[x];
     }
 
-    T* off(int* indices, int i) {
+    T* off(const int* indices, int i) {
         return &(*this)[indices[i]];
     }
 };

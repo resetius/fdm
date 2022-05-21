@@ -75,7 +75,9 @@ public:
         , psi({1, nz, 1, nr})
         , ui({1, nz, 1, nr}) // inner u
         , vi({1, nz, 1, nr}) // inner v
-    { }
+    {
+        init_P();
+    }
 
     void step() {
         init_bound();
@@ -204,27 +206,27 @@ private:
                     double r = r0+j*dr-dr/2;
                     double r2 = r*r;
 
-                    P.add(id, RHS.index(i-1,k,j), 1/dphi2/r2);
+                    P.add(id, RHS.index({i-1,k,j}), 1/dphi2/r2);
 
                     if (k > 1) {
-                        P.add(id, RHS.index(i,k-1,j), 1/dz2);
+                        P.add(id, RHS.index({i,k-1,j}), 1/dz2);
                     }
 
                     if (j > 1) {
-                        P.add(id, RHS.index(i,k,j-1), (r-0.5*dr)/dr2/r);
+                        P.add(id, RHS.index({i,k,j-1}), (r-0.5*dr)/dr2/r);
                     }
 
-                    P.add(id, RHS.index(i,k,j), -2/dr2-2/dz2-2/dphi2/r2);
+                    P.add(id, RHS.index({i,k,j}), -2/dr2-2/dz2-2/dphi2/r2);
 
                     if (j < nr) {
-                        P.add(id, RHS.index(i,k,j+1, (r+0.5*dr)/dr2/r));
+                        P.add(id, RHS.index({i,k,j+1}), (r+0.5*dr)/dr2/r);
                     }
 
                     if (k < nz) {
-                        P.add(id, RHS.index(i,k+1,j), 1/dz2);
+                        P.add(id, RHS.index({i,k+1,j}), 1/dz2);
                     }
 
-                    P.add(id, RHS.index(i+1,k,j), 1/dphi2/r2);
+                    P.add(id, RHS.index({i+1,k,j}), 1/dphi2/r2);
                 }
             }
         }
