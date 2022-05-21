@@ -231,6 +231,7 @@ private:
             }
         }
         P.close();
+        P.sort_rows();
 
         solver = std::move(P);
 

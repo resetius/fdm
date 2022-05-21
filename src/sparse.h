@@ -49,6 +49,34 @@ public:
         prev_row = INT_MAX;
     }
 
+    void sort_rows() {
+        verify(is_closed());
+        std::vector<int> indices(Ax.size());
+        std::vector<double> ax(Ax.size());
+        std::vector<int> ai(Ai.size());
+        for (int i = 0; i < Ap.size()-1; i++) {
+            int sz = Ap[i+1]-Ap[i];
+            indices.resize(sz);
+            ax.resize(sz);
+            ai.resize(sz);
+
+            std::iota(indices.begin(), indices.end(), 0);
+            std::sort(indices.begin(), indices.end(), [&](int a, int b) {
+                return Ai[Ap[i]+a] < Ai[Ap[i]+b];
+            });
+
+
+            int k = 0;
+            for (auto j : indices) {
+                ai[k] = Ai[Ap[i] + j];
+                ax[k] = Ax[Ap[i] + j];
+                k++;
+            }
+            memcpy(&Ai[Ap[i]], &ai[0], sz*sizeof(int));
+            memcpy(&Ax[Ap[i]], &ax[0], sz*sizeof(double));
+        }
+    }
+
     bool is_closed() const {
         return prev_row == INT_MAX;
     }
