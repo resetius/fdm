@@ -22,7 +22,7 @@ public:
     using tensor = fdm::tensor<T,3,check,tensor_flags>;
     using matrix = fdm::tensor<T,2,check>;
 
-    const double R, r;
+    const double R, r0;
     const double h1, h2;
     const double U0; // скорость вращения внутреннего цилиндра
 
@@ -49,7 +49,7 @@ public:
 
     NSCyl(const Config& c)
         : R(c.get("ns", "R", M_PI))
-        , r(c.get("ns", "r", M_PI/2))
+        , r0(c.get("ns", "r", M_PI/2))
         , h1(c.get("ns", "h1", 0))
         , h2(c.get("ns", "h2", 10))
         , U0(c.get("ns", "u0", 1))
@@ -59,7 +59,7 @@ public:
         , nr(c.get("ns", "nr", 32))
         , nz(c.get("ns", "nz", 32))
         , nphi(c.get("ns", "nphi", 32))
-        , dr((R-r)/nr), dz((h2-h1)/nz), dphi(2*M_PI/nphi)
+        , dr((R-r0)/nr), dz((h2-h1)/nz), dphi(2*M_PI/nphi)
         , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
 
           // phi, z, r
@@ -95,17 +95,17 @@ public:
                      .scalar(ui)
                      .levels(10)
                      .tlabel(format("U (t=%.1e, |max|=%.1e)", dt*time_index, ui.maxabs()))
-                     .bounds(r+dr/2, h1+dz/2, r-dr/2, h2-dz/2));
+                     .bounds(r0+dr/2, h1+dz/2, r0-dr/2, h2-dz/2));
         plotter.plot(matrix_plotter::page()
                      .scalar(vi)
                      .levels(10)
                      .tlabel(format("V (t=%.1e, |max|=%.1e)", dt*time_index, vi.maxabs()))
-                     .bounds(r+dr/2, h1+dz/2, r-dr/2, h2-dz/2));
+                     .bounds(r0+dr/2, h1+dz/2, r0-dr/2, h2-dz/2));
         plotter.plot(matrix_plotter::page()
                      .vector(ui, vi)
                      .levels(10)
                      .tlabel(format("UV (%.1e)", dt*time_index))
-                     .bounds(r+dr/2, h1+dz/2, r-dr/2, h2-dz/2));
+                     .bounds(r0+dr/2, h1+dz/2, r0-dr/2, h2-dz/2));
     }
 
 private:
@@ -117,11 +117,16 @@ private:
         for (int i = 1; i <= nphi; i++) {
             for (int k = 1; k <= nz; k++) { // 3/2 ..
                 for (int j = 0; j <= nr; j++) { // 1/2 ..
+                    double r = r0+dr*j;
+                    double r2 = (r+0.5*dr)/r;
+                    double r1 = (r-0.5*dr)/r;
+                    double rr = r*r;
+
                     // 17.9
                     F[i][k][j] = u[i][k][j] + dt*(
-                        (u[i][k][j+1]-2*u[i][k][j]+u[i][k][j-1])/Re/dr2+
-                        (u[i][k-1][j]-2*u[i][k][j]+u[i][k+1][j])/Re/dz2+
-                        (u[i-1][k][j]-2*u[i][k][j]+u[i+1][k][j])/Re/dphi2-
+                        (r2*u[i][k][j+1]-2*u[i][k][j]+r1*u[i][k][j-1])/Re/dr2+
+                        (   u[i][k+1][j]-2*u[i][k][j]+   u[i][k-1][j])/Re/dz2+
+                        (   u[i+1][k][j]-2*u[i][k][j]+   u[i-1][k][j])/Re/dphi2/rr-
                         (sq(0.5*(u[i][k][j]+u[i][k][j+1]))-sq(0.5*(u[i][k][j-1]+u[i][k][j])))/dr-
 
                         0.25*((u[i][k]  [j]+u[i][k+1][j])*(v[i][k]  [j+1]+v[i][k]  [j])-
@@ -130,7 +135,7 @@ private:
 
                         0.25*((u[i]  [k][j]+u[i+1][k][j])*(w[i]  [k][j+1]+w[i]  [k][j])-
                               (u[i-1][k][j]+u[i]  [k][j])*(w[i-1][k][j+1]+w[i-1][k][j])
-                            )/dphi);
+                            )/dphi/r);
                 }
             }
         }
@@ -138,11 +143,16 @@ private:
         for (int i = 1; i <= nphi; i++) {
             for (int k = 0; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
+                    double r = r0+dr*j-dr/2;
+                    double r2 = (r+0.5*dr)/r;
+                    double r1 = (r-0.5*dr)/r;
+                    double rr = r*r;
+
                     // 17.11
                     G[i][k][j] = v[i][k][j] + dt*(
-                        (v[i][k][j+1]-2*v[i][k][j]+v[i][k][j-1])/Re/dr2+
-                        (v[i][k+1][j]-2*v[i][k][j]+v[i][k-1][j])/Re/dz2+
-                        (v[i+1][k][j]-2*v[i][k][j]+v[i+1][k][j])/Re/dphi2-
+                        (r2*v[i][k][j+1]-2*v[i][k][j]+r1*v[i][k][j-1])/Re/dr2+
+                        (   v[i][k+1][j]-2*v[i][k][j]+   v[i][k-1][j])/Re/dz2+
+                        (   v[i+1][k][j]-2*v[i][k][j]+   v[i-1][k][j])/Re/dphi2/rr-
                         (sq(0.5*(v[i][k][j]+v[i][k+1][j]))-sq(0.5*(v[i][k-1][j]+v[i][k][j])))/dz-
 
                         0.25*((u[i][k][j]+  u[i][k+1][j])*  (v[i][k][j+1]+v[i][k][j])-
@@ -151,19 +161,24 @@ private:
 
                         0.25*((w[i]  [k][j]+w[i]  [k+1][j])*(v[i]  [k][j]+v[i+1][k][j])-
                               (w[i-1][k][j]+w[i-1][k+1][j])*(v[i-1][k][j]+v[i]  [k][j])
-                            )/dphi);
+                            )/dphi/r);
                 }
             }
         }
         // H
-        for (int i = 0; i <= nphi; i++) {
+        for (int i = 0; i < nphi; i++) { // 1/2 ...
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
+                    double r = r0+dr*j-dr/2;
+                    double r2 = (r+0.5*dr)/r;
+                    double r1 = (r-0.5*dr)/r;
+                    double rr = r*r;
+
                     H[i][k][j] = w[i][k][j] + dt*(
-                        (w[i][k][j+1]-2*w[i][k][j]+w[i][k][j-1])/Re/dr2+
-                        (w[i][k+1][j]-2*w[i][k][j]+w[i][k-1][j])/Re/dz2+
-                        (w[i+1][k][j]-2*w[i][k][j]+w[i+1][k][j])/Re/dphi2-
-                        (sq(0.5*(w[i+1][k][j]+w[i][k][j]))-sq(0.5*(w[i-1][k][j]+w[i][k][j])))/dphi-
+                        (r2*w[i][k][j+1]-2*w[i][k][j]+r1*w[i][k][j-1])/Re/dr2+
+                        (   w[i][k+1][j]-2*w[i][k][j]+   w[i][k-1][j])/Re/dz2+
+                        (   w[i+1][k][j]-2*w[i][k][j]+   w[i-1][k][j])/Re/dphi2/rr-
+                        (sq(0.5*(w[i+1][k][j]+w[i][k][j]))-sq(0.5*(w[i-1][k][j]+w[i][k][j])))/dphi/r-
 
                         0.25*((u[i+1][k][j]+  u[i][k][j])*  (w[i][k][j+1]+w[i][k][j])-
                               (u[i+1][k][j-1]+u[i][k][j-1])*(w[i][k][j]  +w[i][k][j-1])
@@ -186,7 +201,7 @@ private:
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
                     int id = RHS.index({i,k,j});
-                    double r = i*dr-dr/2;
+                    double r = r0+j*dr-dr/2;
                     double r2 = r*r;
 
                     P.add(id, RHS.index(i-1,k,j), 1/dphi2/r2);
