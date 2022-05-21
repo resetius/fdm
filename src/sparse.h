@@ -86,35 +86,7 @@ class umfpack_solver {
         return buf;
     }
 
-public:
-    umfpack_solver()
-        : Symbolic(nullptr)
-        , Numeric(nullptr)
-    {
-        umfpack_di_defaults (Control);
-    }
-
-    umfpack_solver(csr_matrix<T>&& matrix)
-        : Symbolic(nullptr)
-        , Numeric(nullptr)
-        , mat(std::move(matrix))
-    {
-        umfpack_di_defaults (Control);
-    }
-
-    ~umfpack_solver()
-    {
-        umfpack_di_free_symbolic (&Symbolic);
-        umfpack_di_free_numeric (&Numeric);
-    }
-
-    umfpack_solver& operator=(csr_matrix<T>&& matrix)
-    {
-        mat = std::move(matrix);
-        return *this;
-    }
-
-    void solve(double* x, const double* b) {
+    void prepare() {
         int status;
         if (Symbolic == nullptr)
         {
@@ -135,6 +107,46 @@ public:
                                          Symbolic, &Numeric, Control, Info) ;
             verify (status == UMFPACK_OK, format(status));
         }
+    }
+
+    void clear()
+    {
+        umfpack_di_free_symbolic (&Symbolic);
+        umfpack_di_free_numeric (&Numeric);
+    }
+
+public:
+    umfpack_solver()
+        : Symbolic(nullptr)
+        , Numeric(nullptr)
+    {
+        umfpack_di_defaults (Control);
+    }
+
+    umfpack_solver(csr_matrix<T>&& matrix)
+        : Symbolic(nullptr)
+        , Numeric(nullptr)
+        , mat(std::move(matrix))
+    {
+        umfpack_di_defaults (Control);
+        prepare();
+    }
+
+    ~umfpack_solver()
+    {
+        clear();
+    }
+
+    umfpack_solver& operator=(csr_matrix<T>&& matrix)
+    {
+        clear();
+        mat = std::move(matrix);
+        prepare();
+        return *this;
+    }
+
+    void solve(double* x, const double* b) {
+        int status;
 
         status = umfpack_di_solve (UMFPACK_At,
                                    &mat.Ap[0],
