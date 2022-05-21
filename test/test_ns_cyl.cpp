@@ -38,6 +38,7 @@ public:
     tensor F,G,H,RHS;
     matrix psi; // срез по плоскости Oyz
     matrix ui, vi; // срез по плоскости Oyz
+    matrix wi; // срез по плоскости Oxy
 
     csr_matrix<T> P;
     bool P_initialized = false;
@@ -75,6 +76,7 @@ public:
         , psi({1, nz, 1, nr})
         , ui({1, nz, 1, nr}) // inner u
         , vi({1, nz, 1, nr}) // inner v
+        , wi({0, nphi-1, 0, nr+1})
     {
         init_P();
     }
@@ -97,17 +99,22 @@ public:
                      .scalar(ui)
                      .levels(10)
                      .tlabel(format("U (t=%.1e, |max|=%.1e)", dt*time_index, ui.maxabs()))
-                     .bounds(r0+dr/2, h1+dz/2, r0-dr/2, h2-dz/2));
+                     .bounds(r0+dr/2, h1+dz/2, R-dr/2, h2-dz/2));
         plotter.plot(matrix_plotter::page()
                      .scalar(vi)
                      .levels(10)
                      .tlabel(format("V (t=%.1e, |max|=%.1e)", dt*time_index, vi.maxabs()))
-                     .bounds(r0+dr/2, h1+dz/2, r0-dr/2, h2-dz/2));
+                     .bounds(r0+dr/2, h1+dz/2, R-dr/2, h2-dz/2));
+        plotter.plot(matrix_plotter::page()
+                     .scalar(wi)
+                     .levels(10)
+                     .tlabel(format("W (t=%.1e, |max|=%.1e)", dt*time_index, wi.maxabs()))
+                     .bounds(r0+dr/2, 0, R-dr/2, 2*M_PI));
         plotter.plot(matrix_plotter::page()
                      .vector(ui, vi)
                      .levels(10)
                      .tlabel(format("UV (%.1e)", dt*time_index))
-                     .bounds(r0+dr/2, h1+dz/2, r0-dr/2, h2-dz/2));
+                     .bounds(r0+dr/2, h1+dz/2, R-dr/2, h2-dz/2));
     }
 
 private:
@@ -320,6 +327,14 @@ private:
                 ui[k][j] = 0.5*(u[0][k][j-1] + u[0][k][j]);
                 vi[k][j] = 0.5*(v[0][k-1][j] + v[0][k][j]);
             }
+        }
+
+        for (int i = 0; i < nphi; i++) {
+            for (int j = 0; j <= nr; j++) {
+                wi[i][j] = w[i][nz/2][j];
+                //printf("%.1e ", wi[i][j]);
+            }
+            //printf("\n");
         }
     }
 };
