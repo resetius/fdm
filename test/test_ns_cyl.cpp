@@ -246,7 +246,7 @@ private:
     }
 
     void poisson() {
-        for (int i = 1; i <= nphi; i++) {
+        for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
                     double r = r0+dr*j-dr/2;
@@ -273,11 +273,11 @@ private:
             }
         }
 
-        solver.solve(&x[1][1][1], &RHS[1][1][1]);
+        solver.solve(&x[0][1][1], &RHS[0][1][1]);
     }
 
     void update_uvwp() {
-        for (int i = 1; i <= nphi; i++) {
+        for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j < nr; j++) {
                     //double r = r0+dr*j;
@@ -286,7 +286,7 @@ private:
             }
         }
 
-        for (int i = 1; i <= nphi; i++) {
+        for (int i = 0; i < nphi; i++) {
             for (int k = 1; k < nz; k++) {
                 for (int j = 1; j <= nr; j++) {
                     //double r = r0+dr*j-dr/2;
@@ -295,7 +295,7 @@ private:
             }
         }
 
-        for (int i = 1; i < nphi; i++) {
+        for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
                     double r = r0+dr*j-dr/2;
@@ -305,7 +305,7 @@ private:
         }
 
         // TODO: check
-        for (int i = 1; i <= nphi; i++) {
+        for (int i = 0; i < nphi; i++) {
             for (int k = 1; k < nz; k++) {
                 for (int j = 1; j < nr; j++) {
                     p[i][k][j] = x[i][k][j];
