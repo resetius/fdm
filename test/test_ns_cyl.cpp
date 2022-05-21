@@ -63,13 +63,13 @@ public:
         , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
 
           // phi, z, r
-        , u{{0, nphi, 0, nz+1, 0, nr+1}} // check bounds
-        , v{{0, nphi, 0, nz+1, 0, nr+1}} // check bounds
-        , w{{0, nphi, 0, nz+1, 0, nr+1}} // check bounds
-        , p({0, nphi, 0, nz+1, 0, nr+1})
-        , x({0, nphi, 0, nz+1, 0, nr+1})
-        , F({0, nphi-1, 1, nz, 1, nr}) // check bounds
-        , G({0, nphi-1, 1, nz, 1, nr}) // check bounds
+        , u{{0, nphi-1, 0, nz+1, -1, nr+1}} // check bounds
+        , v{{0, nphi-1, -1, nz+1, 0, nr+1}} // check bounds
+        , w{{0, nphi-1, 0, nz+1, 0, nr+1}} // check bounds
+        , p({0, nphi-1, 0, nz+1, 0, nr+1})
+        , x({0, nphi-1, 0, nz+1, 0, nr+1})
+        , F({0, nphi-1, 1, nz, 0, nr}) // check bounds
+        , G({0, nphi-1, 0, nz, 1, nr}) // check bounds
         , H({0, nphi-1, 1, nz, 1, nr}) // check bounds
         , RHS({0, nphi-1, 1, nz, 1, nr})
         , psi({1, nz, 1, nr})
@@ -128,8 +128,8 @@ private:
                               (u[i][k-1][j]+u[i][k]  [j])*(v[i][k-1][j+1]+v[i][k-1][j])
                             )/dz-
 
-                        0.25*((u[i][k]  [j]+u[i+1][k][j])*(w[i][k]  [j+1]+w[i][k]  [j])-
-                              (u[i-1][k][j]+u[i][k]  [j])*(w[i-1][k][j+1]+w[i-1][k][j]) // TODO:check
+                        0.25*((u[i]  [k][j]+u[i+1][k][j])*(w[i]  [k][j+1]+w[i]  [k][j])-
+                              (u[i-1][k][j]+u[i]  [k][j])*(w[i-1][k][j+1]+w[i-1][k][j])
                             )/dphi);
                 }
             }
@@ -149,8 +149,8 @@ private:
                               (u[i][k][j-1]+u[i][k+1][j-1])*(v[i][k][j]  +v[i][k][j-1])
                             )/dr-
 
-                        0.25*((w[i][k][j]+  w[i+1][k][j])*  (v[i][k][j+1]+v[i][k][j])-
-                              (w[i][k][j-1]+w[i+1][k][j-1])*(v[i][k][j]  +v[i][k][j-1]) // TODO:check
+                        0.25*((w[i]  [k][j]+w[i]  [k+1][j])*(v[i]  [k][j]+v[i+1][k][j])-
+                              (w[i-1][k][j]+w[i-1][k+1][j])*(v[i-1][k][j]+v[i]  [k][j])
                             )/dphi);
                 }
             }
@@ -165,14 +165,12 @@ private:
                         (w[i+1][k][j]-2*w[i][k][j]+w[i+1][k][j])/Re/dphi2-
                         (sq(0.5*(w[i+1][k][j]+w[i][k][j]))-sq(0.5*(w[i-1][k][j]+w[i][k][j])))/dphi-
 
-                        // TODO:check
-
-                        0.25*((u[i][k][j]+  u[i][k+1][j])*  (w[i][k][j+1]+w[i][k][j])-
-                              (u[i][k][j-1]+u[i][k+1][j-1])*(w[i][k][j]  +w[i][k][j-1])
+                        0.25*((u[i+1][k][j]+  u[i][k][j])*  (w[i][k][j+1]+w[i][k][j])-
+                              (u[i+1][k][j-1]+u[i][k][j-1])*(w[i][k][j]  +w[i][k][j-1])
                             )/dr-
 
-                        0.25*((w[i][k][j]+  w[i+1][k][j])*  (v[i][k][j+1]+v[i][k][j])-
-                              (w[i][k][j-1]+w[i+1][k][j-1])*(v[i][k][j]  +v[i][k][j-1])
+                        0.25*((w[i][k][j]+  w[i][k+1][j])*(v[i][k]  [j]+v[i+1][k]  [j])-
+                              (w[i][k-1][j]+w[i][k]  [j])*(v[i][k-1][j]+v[i+1][k-1][j])
                             )/dz);
                 }
             }
