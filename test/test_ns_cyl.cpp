@@ -112,6 +112,13 @@ public:
 
 private:
     void init_bound() {
+        // внутренний цилиндр
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 0; k <= nz+1; k++) {
+                // 0.5*(w[i][k][0] + w[i][k][1]) = U0
+                w[i][k][0] = 2*U0 - w[i][k][1];
+            }
+        }
     }
 
     void FGH() {
@@ -242,29 +249,25 @@ private:
         for (int i = 1; i <= nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
+                    double r = r0+dr*j-dr/2;
+
                     RHS[i][k][j] = ((F[i][k][j]-F[i][k][j-1])/dr
                                     +(G[i][k][j]-G[i][k-1][j])/dz
-                                    +(H[i][k][j]-H[i-1][k][j])/dphi)/dt;
+                                    +(H[i][k][j]-H[i-1][k][j])/dphi/r)/dt;
 
-                    if (i <= 1) {
-                        RHS[i][k][j] -= p[i-1][k][j]/dphi2;
-                    }
                     if (k <= 1) {
                         RHS[i][k][j] -= p[i][k-1][j]/dz2;
                     }
                     if (j <= 1) {
-                        RHS[i][k][j] -= p[i][k][j-1]/dr2;
+                        RHS[i][k][j] -= (r-dr/2)/r*p[i][k][j-1]/dr2;
                     }
 
 
                     if (j >= nr) {
-                        RHS[i][k][j] -= p[i][k][j+1]/dr2;
+                        RHS[i][k][j] -= (r+dr/2)/r*p[i][k][j+1]/dr2;
                     }
                     if (k >= nz) {
                         RHS[i][k][j] -= p[i][k+1][j]/dz2;
-                    }
-                    if (i >= nphi) {
-                        RHS[i][k][j] -= p[i+1][k][j]/dphi2;
                     }
                 }
             }
@@ -277,6 +280,7 @@ private:
         for (int i = 1; i <= nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j < nr; j++) {
+                    //double r = r0+dr*j;
                     u[i][k][j] = F[i][k][j]-dt/dr*(x[i][k][j+1]-x[i][k][j]);
                 }
             }
@@ -285,6 +289,7 @@ private:
         for (int i = 1; i <= nphi; i++) {
             for (int k = 1; k < nz; k++) {
                 for (int j = 1; j <= nr; j++) {
+                    //double r = r0+dr*j-dr/2;
                     v[i][k][j] = G[i][k][j]-dt/dz*(x[i][k+1][j]-x[i][k][j]);
                 }
             }
@@ -293,13 +298,14 @@ private:
         for (int i = 1; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
-                    w[i][k][j] = H[i][k][j]-dt/dphi*(x[i+1][k][j]-x[i][k][j]);
+                    double r = r0+dr*j-dr/2;
+                    w[i][k][j] = H[i][k][j]-dt/dphi/r*(x[i+1][k][j]-x[i][k][j]);
                 }
             }
         }
 
         // TODO: check
-        for (int i = 1; i < nphi; i++) {
+        for (int i = 1; i <= nphi; i++) {
             for (int k = 1; k < nz; k++) {
                 for (int j = 1; j < nr; j++) {
                     p[i][k][j] = x[i][k][j];
