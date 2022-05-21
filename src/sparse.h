@@ -79,6 +79,12 @@ class umfpack_solver {
     double Info [UMFPACK_INFO];
     void *Symbolic, *Numeric;
     csr_matrix<T> mat;
+    char buf[256];
+
+    char* format(int status) {
+        snprintf(buf, sizeof(buf), "status: %d", status);
+        return buf;
+    }
 
 public:
     umfpack_solver()
@@ -118,8 +124,8 @@ public:
                                           &mat.Ai[0],
                                           &mat.Ax[0],
                                           &Symbolic, Control, Info);
-            verify (status == UMFPACK_OK);
-		}
+            verify (status == UMFPACK_OK, format(status));
+        }
 
         if (Numeric == nullptr)
         {
@@ -127,14 +133,14 @@ public:
                                          &mat.Ai[0],
                                          &mat.Ax[0],
                                          Symbolic, &Numeric, Control, Info) ;
-            verify (status == UMFPACK_OK);
+            verify (status == UMFPACK_OK, format(status));
         }
 
         status = umfpack_di_solve (UMFPACK_At,
                                    &mat.Ap[0],
                                    &mat.Ai[0],
                                    &mat.Ax[0], x, b, Numeric, Control, Info);
-        verify (status == UMFPACK_OK);
+        verify (status == UMFPACK_OK, format(status));
     }
 };
 
