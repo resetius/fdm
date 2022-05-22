@@ -58,7 +58,7 @@ void matrix_plotter::plot_internal(const page& p) {
     //pladv(0);
 }
 
-void matrix_plotter::transform(double x, double y, double* tx, double* ty, void* data) {
+void matrix_plotter::transform(double y, double x, double* ty, double* tx, void* data) {
     matrix_plotter::page* p = static_cast<matrix_plotter::page*>(data);
     *tx = p->x1 + x/p->u.rs * (p->x2-p->x1+1);
     *ty = p->y1 + y/p->u.rows * (p->y2-p->y1+1);
