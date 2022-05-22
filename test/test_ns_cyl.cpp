@@ -133,6 +133,20 @@ private:
                 w[i][k][0] = 2*U0 - w[i][k][1];
             }
         }
+
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 0; k <= nz+1; k++) {
+                p[i][k][0] = -p[i][k][1];
+                p[i][k][nr+1] = -p[i][k][nr];
+            }
+        }
+
+        for (int i = 0; i < nphi; i++) {
+            for (int j = 0; j <= nr+1; j++) {
+                p[i][0][j] = -p[i][1][j];
+                p[i][nz+1][j] = -p[i][nz][j];
+            }
+        }
     }
 
     void FGH() {
