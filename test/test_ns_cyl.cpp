@@ -87,6 +87,7 @@ public:
         poisson();
         update_uvwp();
         time_index++;
+        //update_uvi(); // remove
     }
 
     void plot() {
@@ -95,24 +96,30 @@ public:
                                .sub(2, 2)
                                .devname("pngcairo")
                                .fname(format("step_%07d.png", time_index)));
+
         plotter.plot(matrix_plotter::page()
                      .scalar(ui)
                      .levels(10)
+                     .labels("Z", "R", "")
                      .tlabel(format("U (t=%.1e, |max|=%.1e)", dt*time_index, ui.maxabs()))
                      .bounds(r0+dr/2, h1+dz/2, R-dr/2, h2-dz/2));
         plotter.plot(matrix_plotter::page()
                      .scalar(vi)
                      .levels(10)
+                     .labels("Z", "R", "")
                      .tlabel(format("V (t=%.1e, |max|=%.1e)", dt*time_index, vi.maxabs()))
                      .bounds(r0+dr/2, h1+dz/2, R-dr/2, h2-dz/2));
         plotter.plot(matrix_plotter::page()
                      .scalar(wi)
                      .levels(10)
+                     .labels("PHI", "R", "")
                      .tlabel(format("W (t=%.1e, |max|=%.1e)", dt*time_index, wi.maxabs()))
                      .bounds(r0+dr/2, 0, R-dr/2, 2*M_PI));
+
         plotter.plot(matrix_plotter::page()
                      .vector(ui, vi)
                      .levels(10)
+                     .labels("Z", "R", "")
                      .tlabel(format("UV (%.1e)", dt*time_index))
                      .bounds(r0+dr/2, h1+dz/2, R-dr/2, h2-dz/2));
     }
@@ -319,6 +326,13 @@ private:
                 }
             }
         }
+
+
+        //for (int j = 1; j <= nr; j++) {
+            //printf("%.1e ", w[nphi/2][nz/2][j]);
+            //printf("%.1e ", w[1][nz/2][j]);
+            //}
+            //printf("\n");
     }
 
     void update_uvi() {
@@ -336,6 +350,7 @@ private:
             }
             //printf("\n");
         }
+        //printf("\n");
     }
 };
 
