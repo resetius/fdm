@@ -53,7 +53,7 @@ public:
         , r0(c.get("ns", "r", M_PI/2))
         , h1(c.get("ns", "h1", 0))
         , h2(c.get("ns", "h2", 10))
-        , U0(c.get("ns", "u0", 1))
+        , U0(c.get("ns", "u0", 1.0))
         , Re(c.get("ns", "Re", 1.0))
         , dt(c.get("ns", "dt", 0.001))
 
@@ -88,6 +88,9 @@ public:
         update_uvwp();
         time_index++;
         //update_uvi(); // remove
+        printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
+               p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
+               RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
     }
 
     void plot() {
@@ -130,10 +133,18 @@ private:
         for (int i = 0; i < nphi; i++) {
             for (int k = 0; k <= nz+1; k++) {
                 // 0.5*(w[i][k][0] + w[i][k][1]) = U0
-                w[i][k][0] = 2*U0 - w[i][k][1];
+                w[i][k][0] = 2*U0 - w[i][k][1]; // inner
+                w[i][k][nr+1] = -w[i][k][nr]; // outer
+            }
+        }
+        for (int i = 0; i < nphi; i++) {
+            for (int k = -1; k <= nz+1; k++) {
+                v[i][k][0]    = - v[i][k][1]; // inner
+                v[i][k][nr+1] = -v[i][k][nr]; // outer
             }
         }
 
+        /*
         for (int i = 0; i < nphi; i++) {
             for (int k = 0; k <= nz+1; k++) {
                 p[i][k][0] = -p[i][k][1];
@@ -147,10 +158,11 @@ private:
                 p[i][nz+1][j] = -p[i][nz][j];
             }
         }
+        */
     }
 
     void FGH() {
-        // F
+        // F (r)
         for (int i = 1; i <= nphi; i++) {
             for (int k = 1; k <= nz; k++) { // 3/2 ..
                 for (int j = 0; j <= nr; j++) { // 1/2 ..
@@ -164,7 +176,7 @@ private:
                         (r2*u[i][k][j+1]-2*u[i][k][j]+r1*u[i][k][j-1])/Re/dr2+
                         (   u[i][k+1][j]-2*u[i][k][j]+   u[i][k-1][j])/Re/dz2+
                         (   u[i+1][k][j]-2*u[i][k][j]+   u[i-1][k][j])/Re/dphi2/rr-
-                        (sq(0.5*(u[i][k][j]+u[i][k][j+1]))-sq(0.5*(u[i][k][j-1]+u[i][k][j])))/dr-
+                        (r2*sq(0.5*(u[i][k][j]+u[i][k][j+1]))-r1*sq(0.5*(u[i][k][j-1]+u[i][k][j])))/r/dr-
 
                         0.25*((u[i][k]  [j]+u[i][k+1][j])*(v[i][k]  [j+1]+v[i][k]  [j])-
                               (u[i][k-1][j]+u[i][k]  [j])*(v[i][k-1][j+1]+v[i][k-1][j])
@@ -172,11 +184,17 @@ private:
 
                         0.25*((u[i]  [k][j]+u[i+1][k][j])*(w[i]  [k][j+1]+w[i]  [k][j])-
                               (u[i-1][k][j]+u[i]  [k][j])*(w[i-1][k][j+1]+w[i-1][k][j])
-                            )/dphi/r);
+                            )/dphi/r
+
+                        // TODO: check
+                        +sq(0.5*(w[i][k][j+1]+w[i][k][j]))/r-u[i][k][j]/rr/Re
+                        -2*( 0.5*(w[i]  [k][j+1]+w[i]  [k][j])
+                            -0.5*(w[i-1][k][j+1]+w[i-1][k][j]))/rr/dphi/Re
+                        );
                 }
             }
         }
-        // G
+        // G (z)
         for (int i = 1; i <= nphi; i++) {
             for (int k = 0; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
@@ -192,17 +210,19 @@ private:
                         (   v[i+1][k][j]-2*v[i][k][j]+   v[i-1][k][j])/Re/dphi2/rr-
                         (sq(0.5*(v[i][k][j]+v[i][k+1][j]))-sq(0.5*(v[i][k-1][j]+v[i][k][j])))/dz-
 
-                        0.25*((u[i][k][j]+  u[i][k+1][j])*  (v[i][k][j+1]+v[i][k][j])-
-                              (u[i][k][j-1]+u[i][k+1][j-1])*(v[i][k][j]  +v[i][k][j-1])
+                        // TODO: check
+                        0.25*(r2*(u[i][k][j]+  u[i][k+1][j])*  (v[i][k][j+1]+v[i][k][j])-
+                              r1*(u[i][k][j-1]+u[i][k+1][j-1])*(v[i][k][j]  +v[i][k][j-1])
                             )/dr-
 
                         0.25*((w[i]  [k][j]+w[i]  [k+1][j])*(v[i]  [k][j]+v[i+1][k][j])-
                               (w[i-1][k][j]+w[i-1][k+1][j])*(v[i-1][k][j]+v[i]  [k][j])
-                            )/dphi/r);
+                            )/dphi/r
+                        );
                 }
             }
         }
-        // H
+        // H (phi)
         for (int i = 0; i < nphi; i++) { // 1/2 ...
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
@@ -217,13 +237,21 @@ private:
                         (   w[i+1][k][j]-2*w[i][k][j]+   w[i-1][k][j])/Re/dphi2/rr-
                         (sq(0.5*(w[i+1][k][j]+w[i][k][j]))-sq(0.5*(w[i-1][k][j]+w[i][k][j])))/dphi/r-
 
-                        0.25*((u[i+1][k][j]+  u[i][k][j])*  (w[i][k][j+1]+w[i][k][j])-
-                              (u[i+1][k][j-1]+u[i][k][j-1])*(w[i][k][j]  +w[i][k][j-1])
+                        // TODO: check
+                        0.25*(r2*(u[i+1][k][j]+  u[i][k][j])*  (w[i][k][j+1]+w[i][k][j])-
+                              r1*(u[i+1][k][j-1]+u[i][k][j-1])*(w[i][k][j]  +w[i][k][j-1])
                             )/dr-
 
                         0.25*((w[i][k][j]+  w[i][k+1][j])*(v[i][k]  [j]+v[i+1][k]  [j])-
                               (w[i][k-1][j]+w[i][k]  [j])*(v[i][k-1][j]+v[i+1][k-1][j])
-                            )/dz);
+                            )/dz
+
+                        // TODO: check
+
+                        -w[i][k][j]*0.5*(u[i+1][k][j]+u[i][k][j])/r-w[i][k][j]/rr/Re
+                        +2*( 0.5*(u[i+1][k][j]+u[i]  [k][j])
+                           -0.5*(u[i]  [k][j]+u[i-1][k][j]))/rr/dphi/Re
+                        );
                 }
             }
         }
@@ -240,6 +268,16 @@ private:
                     int id = RHS.index({i,k,j});
                     double r = r0+j*dr-dr/2;
                     double r2 = r*r;
+                    double rm1 = (r-0.5*dr)/r;
+                    double rm2 = (r+0.5*dr)/r;
+                    double rm = 0;
+                    double zm = 0;
+
+                    /*if (j > 1)  { rm += rm1; }
+                    if (j < nr) { rm += rm2; }
+                    if (k > 1)  { zm += 1; }
+                    if (k < nz) { zm += 1; }*/
+                    zm = 2; rm = 2;
 
                     P.add(id, RHS.index({i-1,k,j}), 1/dphi2/r2);
 
@@ -251,7 +289,7 @@ private:
                         P.add(id, RHS.index({i,k,j-1}), (r-0.5*dr)/dr2/r);
                     }
 
-                    P.add(id, RHS.index({i,k,j}), -2/dr2-2/dz2-2/dphi2/r2);
+                    P.add(id, RHS.index({i,k,j}), -rm/dr2-zm/dz2-2/dphi2/r2);
 
                     if (j < nr) {
                         P.add(id, RHS.index({i,k,j+1}), (r+0.5*dr)/dr2/r);
@@ -279,7 +317,7 @@ private:
                 for (int j = 1; j <= nr; j++) {
                     double r = r0+dr*j-dr/2;
 
-                    RHS[i][k][j] = ((F[i][k][j]-F[i][k][j-1])/dr
+                    RHS[i][k][j] = (((r+0.5*dr)*F[i][k][j]-(r-0.5*dr)*F[i][k][j-1])/r/dr
                                     +(G[i][k][j]-G[i][k-1][j])/dz
                                     +(H[i][k][j]-H[i-1][k][j])/dphi/r)/dt;
 
