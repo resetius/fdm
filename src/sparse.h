@@ -54,7 +54,7 @@ public:
         std::vector<int> indices(Ax.size());
         std::vector<double> ax(Ax.size());
         std::vector<int> ai(Ai.size());
-        for (int i = 0; i < Ap.size()-1; i++) {
+        for (int i = 0; i < static_cast<int>(Ap.size())-1; i++) {
             int sz = Ap[i+1]-Ap[i];
             indices.resize(sz);
             ax.resize(sz);
