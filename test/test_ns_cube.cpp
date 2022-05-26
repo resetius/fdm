@@ -100,8 +100,8 @@ public:
         update_uvwp();
         time_index++;
         //update_uvi(); // remove
-        printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
-               p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
+        printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
+               dt*time_index, p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
                RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
     }
 
@@ -160,6 +160,55 @@ private:
             for (int j = -1; j <= nz+1; j++) {
                 // 0.5*(u[nz+1][k][j] + u[nz][k][j]) = U0
                 u[nz+1][k][j] = 2*U0 - u[nz][k][j];
+            }
+        }
+
+        // div=0 на границе
+        // инициализация узлов за пределами области
+        for (int i = 0; i <= nz+1; i++) {
+            for (int k = 0; k <= ny+1; k++) {
+                u[i][k][-1]   = u[i][k][1];
+                u[i][k][nx+1] = u[i][k][nx-1];
+            }
+        }
+
+        for (int i = 0; i <= nz+1; i++) {
+            for (int j = 0; j <= nx+1; j++) {
+                v[i][-1][j]   = v[i][1][j];
+                v[i][ny+1][j] = v[i][ny-1][j];
+            }
+        }
+
+        for (int k = 0; k <= ny+1; k++) {
+            for (int j = 0; j <= nx+1; j++) {
+                w[-1][k][j]   = w[1][k][j];
+                w[nz+1][k][j] = w[nz-1][k][j];
+            }
+        }
+
+        // давление
+        for (int i = 1; i <= nx; i++) {
+            for (int k = 1; k <= ny; k++) {
+                p[i][k][0]  = p[i][k][1] -
+                    (u[i][k][1]-2*u[i][k][0]+u[i][k][-1])/Re/dx;
+                p[i][k][nx+1] = p[i][k][nx]-
+                    (u[i][k][nx+1]-2*u[i][k][nx]+u[i][k][nx-1])/Re/dx;
+            }
+        }
+        for (int i = 1; i <= nx; i++) {
+            for (int j = 1; j <= nx; j++) {
+                p[i][0][j]    = p[i][1][j] -
+                    (v[i][1][j]-2*v[i][0][j]+v[i][-1][j])/Re/dy;
+                p[i][ny+1][j] = p[i][ny][j]-
+                    (v[i][ny+1][j]-2*v[i][ny][j]+v[i][ny-1][j])/Re/dy;
+            }
+        }
+        for (int k = 1; k <= ny; k++) {
+            for (int j = 1; j <= nx; j++) {
+                p[0][k][j]    = p[1][k][j] -
+                    (w[1][k][j]-2*w[0][k][j]+w[-1][k][j])/Re/dz;
+                p[nz+1][k][j] = p[nz][k][j]-
+                    (w[nz+1][k][j]-2*w[nz][k][j]+w[nz-1][k][j])/Re/dz;
             }
         }
     }
@@ -303,6 +352,9 @@ private:
                                     +(G[i][k][j]-G[i][k-1][j])/dy
                                     +(H[i][k][j]-H[i-1][k][j])/dz)/dt;
 
+                    if (i <= 1) {
+                        RHS[i][k][j] -= p[i-1][k][j]/dz2;
+                    }
                     if (k <= 1) {
                         RHS[i][k][j] -= p[i][k-1][j]/dy2;
                     }
@@ -316,6 +368,9 @@ private:
                     }
                     if (k >= ny) {
                         RHS[i][k][j] -= p[i][k+1][j]/dy2;
+                    }
+                    if (i >= nz) {
+                        RHS[i][k][j] -= p[i+1][k][j]/dz2;
                     }
                 }
             }
