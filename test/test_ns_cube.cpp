@@ -3,6 +3,7 @@
 #include <climits>
 #include <cmath>
 #include <chrono>
+#include <cstdio>
 
 #include "tensor.h"
 #include "matrix_plot.h"
@@ -151,6 +152,30 @@ public:
                      .labels("Z", "Y", "")
                      .tlabel(format("VW (x=const) (%.1e)", dt*time_index))
                      .bounds(y1+dy/2, z1+dz/2, y2-dy/2, z2-dz/2));
+
+        FILE* f = fopen(format("step_%07d.vtk", time_index).c_str(), "wb");
+        fprintf(f, "# vtk DataFile Version 3.0\n");
+        fprintf(f, "step %d\n", time_index);
+        fprintf(f, "ASCII\n");
+        fprintf(f, "DATASET STRUCTURED_POINTS\n");
+        fprintf(f, "DIMENSIONS %d %d %d\n", nx, ny, nz);
+        fprintf(f, "ASPECT_RATIO 1 1 1\n");
+        fprintf(f, "ORIGIN %f %f %f\n", x1+dx/2, y1+dy/2, z1+dz/2);
+        fprintf(f, "SPACING %f %f %f\n", dx, dy, dz);
+        fprintf(f, "POINT_DATA %d", nx*ny*nz);
+        fprintf(f, "VECTORS u double\n");
+        for (int i = 1; i <= nz; i++) {
+            for (int k = 1; k <= ny; k++) {
+                for (int j = 1; j <= nx; j++) {
+                    fprintf(f, "%f %f %f\n",
+                            0.5*(u[i][k][j]+u[i][k][j-1]),
+                            0.5*(v[i][k][j]+v[i][k-1][j]),
+                            0.5*(w[i][k][j]+w[i-1][k][j])
+                        );
+                }
+            }
+        }
+        fclose(f);
     }
 
 private:
