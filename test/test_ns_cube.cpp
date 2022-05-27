@@ -50,6 +50,7 @@ public:
     umfpack_solver<T> solver_stream; // для функции тока по срезу
 
     int time_index = 0;
+    int plot_time_index = -1;
 
     NSCube(const Config& c)
         : x1(c.get("ns", "x1", -M_PI))
@@ -152,6 +153,10 @@ public:
                      .labels("Z", "Y", "")
                      .tlabel(format("VW (x=const) (%.1e)", dt*time_index))
                      .bounds(y1+dy/2, z1+dz/2, y2-dy/2, z2-dz/2));
+    }
+
+    void vtk_out() {
+        update_uvi();
 
         FILE* f = fopen(format("step_%07d.vtk", time_index).c_str(), "wb");
         fprintf(f, "# vtk DataFile Version 3.0\n");
@@ -452,6 +457,10 @@ private:
     }
 
     void update_uvi() {
+        if (time_index == plot_time_index) {
+            return;
+        }
+
         for (int k = 1; k <= ny; k++) {
             for (int j = 1; j <= nx; j++) {
                 uz[k][j] = 0.5*(u[nz/2][k][j-1] + u[nz/2][k][j]);
@@ -472,6 +481,8 @@ private:
                 wx[i][k] = 0.5*(w[i-1][k][nx/2] + w[i][k][nx/2]);
             }
         }
+
+        plot_time_index = time_index;
     }
 };
 
@@ -483,9 +494,16 @@ void calc(const Config& c) {
 
     const int steps = c.get("ns", "steps", 1);
     const int plot_interval = c.get("plot", "interval", 100);
+    const int png = c.get("plot", "png", 1);
+    const int vtk = c.get("plot", "vtk", 0);
     int i;
 
-    ns.plot();
+    if (png) {
+        ns.plot();
+    }
+    if (vtk) {
+        ns.vtk_out();
+    }
 
     auto t1 = steady_clock::now();
 
@@ -493,7 +511,12 @@ void calc(const Config& c) {
         ns.step();
 
         if ((i+1) % plot_interval == 0) {
-            ns.plot();
+            if (png) {
+                ns.plot();
+            }
+            if (vtk) {
+                ns.vtk_out();
+            }
         }
     }
 
