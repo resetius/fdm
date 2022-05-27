@@ -68,7 +68,8 @@ public:
         , v{{0, nphi-1, -1, nz+1, 0, nr+1}} // check bounds
         , w{{0, nphi-1, 0, nz+1, 0, nr+1}} // check bounds
         , p({0, nphi-1, 0, nz+1, 0, nr+1})
-        , x({0, nphi-1, 0, nz+1, 0, nr+1})
+
+        , x({0, nphi-1, 1, nz, 1, nr})
         , F({0, nphi-1, 1, nz, 0, nr}) // check bounds
         , G({0, nphi-1, 0, nz, 1, nr}) // check bounds
         , H({0, nphi-1, 1, nz, 1, nr}) // check bounds
@@ -144,21 +145,39 @@ private:
             }
         }
 
-        /*
+        // div=0 на границе
+        // инициализация узлов за пределами области
         for (int i = 0; i < nphi; i++) {
             for (int k = 0; k <= nz+1; k++) {
-                p[i][k][0] = -p[i][k][1];
-                p[i][k][nr+1] = -p[i][k][nr];
+                u[i][k][-1]   = u[i][k][1];
+                u[i][k][nr+1] = u[i][k][nr-1];
             }
         }
 
         for (int i = 0; i < nphi; i++) {
             for (int j = 0; j <= nr+1; j++) {
-                p[i][0][j] = -p[i][1][j];
-                p[i][nz+1][j] = -p[i][nz][j];
+                v[i][-1][j]   = v[i][1][j];
+                v[i][nz+1][j] = v[i][nz-1][j];
             }
         }
-        */
+
+        // давление
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                p[i][k][0]  = p[i][k][1] -
+                    (u[i][k][1]-2*u[i][k][0]+u[i][k][-1])/Re/dr;
+                p[i][k][nr+1] = p[i][k][nr]-
+                    (u[i][k][nr+1]-2*u[i][k][nr]+u[i][k][nr-1])/Re/dr;
+            }
+        }
+        for (int i = 0; i < nphi; i++) {
+            for (int j = 1; j <= nr; j++) {
+                p[i][0][j]    = p[i][1][j] -
+                    (v[i][1][j]-2*v[i][0][j]+v[i][-1][j])/Re/dz;
+                p[i][nz+1][j] = p[i][nz][j]-
+                    (v[i][nz+1][j]-2*v[i][nz][j]+v[i][nz-1][j])/Re/dz;
+            }
+        }
     }
 
     void FGH() {
@@ -268,8 +287,8 @@ private:
                     int id = RHS.index({i,k,j});
                     double r = r0+j*dr-dr/2;
                     double r2 = r*r;
-                    double rm1 = (r-0.5*dr)/r;
-                    double rm2 = (r+0.5*dr)/r;
+                    //double rm1 = (r-0.5*dr)/r;
+                    //double rm2 = (r+0.5*dr)/r;
                     double rm = 0;
                     double zm = 0;
 
