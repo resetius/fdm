@@ -217,7 +217,7 @@ private:
         }
 
         // давление
-        for (int i = 1; i <= nx; i++) {
+        for (int i = 1; i <= nz; i++) {
             for (int k = 1; k <= ny; k++) {
                 p[i][k][0]  = p[i][k][1] -
                     (u[i][k][1]-2*u[i][k][0]+u[i][k][-1])/Re/dx;
@@ -225,7 +225,7 @@ private:
                     (u[i][k][nx+1]-2*u[i][k][nx]+u[i][k][nx-1])/Re/dx;
             }
         }
-        for (int i = 1; i <= nx; i++) {
+        for (int i = 1; i <= nz; i++) {
             for (int j = 1; j <= nx; j++) {
                 p[i][0][j]    = p[i][1][j] -
                     (v[i][1][j]-2*v[i][0][j]+v[i][-1][j])/Re/dy;
