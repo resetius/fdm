@@ -39,19 +39,26 @@ public:
     tensor u /*x*/,v/*y*/,w/*z*/;
     tensor p,x;
     tensor F,G,H,RHS;
+    matrix RHS_x,RHS_y,RHS_z;
 
-    matrix psi; // срез по плоскости Oxy
+    matrix psi_x;
+    matrix psi_y;
+    matrix psi_z; // срез по плоскости Oxy
     matrix uz, vz; // срез по плоскости Oxy
     matrix uy, wy; // срез по плоскости Oxz
     matrix vx, wx; // срез по плоскости Oyz
 
     csr_matrix<T> P;
-    bool P_initialized = false;
+    csr_matrix<T> P_x; // для функции тока
+    csr_matrix<T> P_y; // для функции тока
+    csr_matrix<T> P_z; // для функции тока
 
     umfpack_solver<T> solver;
-    umfpack_solver<T> solver_stream; // для функции тока по срезу
+    umfpack_solver<T> solver_stream_x; // для функции тока по срезу
+    umfpack_solver<T> solver_stream_y; // для функции тока по срезу
+    umfpack_solver<T> solver_stream_z; // для функции тока по срезу
 
-    gmres_solver<T> gmres_solver;
+    //gmres_solver<T> gmres_solver;
 
     int time_index = 0;
     int plot_time_index = -1;
@@ -84,19 +91,27 @@ public:
         , G({1, nz, 0, ny, 1, nx})
         , H({0, nz, 1, ny, 1, nx})
         , RHS({1, nz, 1, ny, 1, nx})
-        , psi({1, ny, 1, nx})
 
-        , uz({1, ny, 1, nx}) // inner u
-        , vz({1, ny, 1, nx}) // inner v
+        , RHS_x({1, nz, 1, ny})
+        , RHS_y({1, nz, 1, nx})
+        , RHS_z({1, ny, 1, nx})
 
-        , uy({1, nz, 1, nx})
-        , wy({1, nz, 1, nx})
+        , psi_x({1, nz, 1, ny})
+        , psi_y({1, nz, 1, nx})
+        , psi_z({1, ny, 1, nx})
 
-        , vx({1, nz, 1, ny})
-        , wx({1, nz, 1, ny})
-        , gmres_solver(1000, 100, 1e-4)
+        , uz({0, ny, 0, nx}) // inner u
+        , vz({0, ny, 0, nx}) // inner v
+
+        , uy({0, nz, 0, nx})
+        , wy({0, nz, 0, nx})
+
+        , vx({0, nz, 0, ny})
+        , wx({0, nz, 0, ny})
+          //, gmres_solver(1000, 100, 1e-4)
     {
         init_P();
+        init_P_slices();
     }
 
     void step() {
@@ -114,6 +129,8 @@ public:
 
     void plot() {
         update_uvi();
+        update_stream();
+
         matrix_plotter plotter(matrix_plotter::settings()
                                .sub(2, 3)
                                .devname("pngcairo")
@@ -137,27 +154,52 @@ public:
                      .labels("Z", "X", "")
                      .tlabel(format("W (t=%.1e, |max|=%.1e)", dt*time_index, wy.maxabs()))
                      .bounds(x1+dx/2, z1+dz/2, x2-dx/2, z2-dz/2));
-
+/*
         plotter.plot(matrix_plotter::page()
                      .vector(uz, vz)
                      .levels(10)
                      .labels("Y", "X", "")
                      .tlabel(format("UV (z=const) (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
+*/
+        plotter.plot(matrix_plotter::page()
+                     .scalar(psi_z)
+                     .levels(10)
+                     .labels("Y", "X", "")
+                     .tlabel(format("UV (z=const) (%.1e)", dt*time_index))
+                     .bounds(x1+dx/2, y1+dy/2, x2-dx/2, y2-dy/2));
 
+/*
         plotter.plot(matrix_plotter::page()
                      .vector(uy, wy)
                      .levels(10)
                      .labels("Z", "X", "")
                      .tlabel(format("UW (y=const) (%.1e)", dt*time_index))
                      .bounds(x1+dx/2, z1+dz/2, x2-dx/2, z2-dz/2));
+*/
 
+        plotter.plot(matrix_plotter::page()
+                     .scalar(psi_y)
+                     .levels(10)
+                     .labels("Z", "X", "")
+                     .tlabel(format("UW (y=const) (%.1e)", dt*time_index))
+                     .bounds(x1+dx/2, z1+dz/2, x2-dx/2, z2-dz/2));
+
+/*
         plotter.plot(matrix_plotter::page()
                      .vector(vx, wx)
                      .levels(10)
                      .labels("Z", "Y", "")
                      .tlabel(format("VW (x=const) (%.1e)", dt*time_index))
                      .bounds(y1+dy/2, z1+dz/2, y2-dy/2, z2-dz/2));
+*/
+        plotter.plot(matrix_plotter::page()
+                     .scalar(psi_x)
+                     .levels(10)
+                     .labels("Z", "Y", "")
+                     .tlabel(format("VW (x=const) (%.1e)", dt*time_index))
+                     .bounds(y1+dy/2, z1+dz/2, y2-dy/2, z2-dz/2));
+
     }
 
     void vtk_out() {
@@ -331,18 +373,10 @@ private:
     }
 
     void init_P() {
-        if (P_initialized) {
-            return;
-        }
-
         for (int i = 1; i <= nz; i++) {
             for (int k = 1; k <= ny; k++) {
                 for (int j = 1; j <= nx; j++) {
                     int id = RHS.index({i,k,j});
-                    /*if (j > 1)  { rm += rm1; }
-                    if (j < nr) { rm += rm2; }
-                    if (k > 1)  { zm += 1; }
-                    if (k < nz) { zm += 1; }*/
                     if (i > 1) {
                         P.add(id, RHS.index({i-1,k,j}), 1/dz2);
                     }
@@ -376,8 +410,87 @@ private:
 
         solver = std::move(P);
         //gmres_solver = std::move(P);
+    }
 
-        P_initialized = true;
+    void init_P_slices() {
+        for (int i = 1; i <= nz; i++) {
+            for (int k = 1; k <= ny; k++) {
+                int id = RHS_x.index({i,k});
+                if (i > 1) {
+                    P_x.add(id, RHS_x.index({i-1,k}), 1/dz2);
+                }
+
+                if (k > 1) {
+                    P_x.add(id, RHS_x.index({i,k-1}), 1/dy2);
+                }
+
+                P_x.add(id, RHS_x.index({i,k}), -2/dy2-2/dz2);
+
+                if (k < ny) {
+                    P_x.add(id, RHS_x.index({i,k+1}), 1/dy2);
+                }
+
+                if (i < nz) {
+                    P_x.add(id, RHS_x.index({i+1,k}), 1/dz2);
+                }
+            }
+        }
+        P_x.close();
+
+        solver_stream_x = std::move(P_x);
+
+
+        for (int i = 1; i <= nz; i++) {
+            for (int j = 1; j <= nx; j++) {
+                int id = RHS_y.index({i,j});
+                if (i > 1) {
+                    P_y.add(id, RHS_y.index({i-1,j}), 1/dz2);
+                }
+
+                if (j > 1) {
+                    P_y.add(id, RHS_y.index({i,j-1}), 1/dx2);
+                }
+
+                P_y.add(id, RHS_y.index({i,j}), -2/dx2-2/dz2);
+
+                if (j < nx) {
+                    P_y.add(id, RHS_y.index({i,j+1}), 1/dx2);
+                }
+
+                if (i < nz) {
+                    P_y.add(id, RHS_y.index({i+1,j}), 1/dz2);
+                }
+            }
+        }
+        P_y.close();
+
+        solver_stream_y = std::move(P_y);
+
+        for (int k = 1; k <= ny; k++) {
+            for (int j = 1; j <= nx; j++) {
+                int id = RHS_z.index({k,j});
+                if (k > 1) {
+                    P_z.add(id, RHS_z.index({k-1,j}), 1/dy2);
+                }
+
+                if (j > 1) {
+                    P_z.add(id, RHS_z.index({k,j-1}), 1/dx2);
+                }
+
+                P_z.add(id, RHS_z.index({k,j}), -2/dx2-2/dy2);
+
+                if (j < nx) {
+                    P_z.add(id, RHS_z.index({k,j+1}), 1/dx2);
+                }
+
+                if (k < ny) {
+                    P_z.add(id, RHS_z.index({k+1,j}), 1/dy2);
+                }
+            }
+        }
+        P_z.close();
+
+        solver_stream_z = std::move(P_z);
     }
 
     void poisson() {
@@ -414,6 +527,36 @@ private:
 
         solver.solve(&x[1][1][1], &RHS[1][1][1]);
         //gmres_solver.solve(&x[1][1][1], &RHS[1][1][1]);
+    }
+
+    void poisson_stream() {
+        for (int i = 1; i <= nz; i++) {
+            for (int k = 1; k <= ny; k++) {
+                RHS_x[i][k] = (wx[i][k]-wx[i][k-1]) / dy - (vx[i][k] - vx[i-1][k]) / dz;
+            }
+        }
+
+        solver_stream_x.solve(&psi_x[1][1], &RHS_x[1][1]);
+
+        for (int i = 1; i <= nz; i++) {
+            for (int j = 1; j <= nx; j++) {
+                RHS_y[i][j] = (wy[i][j]-wy[i][j-1]) / dx - (uy[i][j] - uy[i-1][j]) / dz;
+            }
+        }
+
+        solver_stream_y.solve(&psi_y[1][1], &RHS_y[1][1]);
+
+        for (int k = 1; k <= ny; k++) {
+            for (int j = 1; j <= nx; j++) {
+                RHS_z[k][j] = (vz[k][j]-vz[k][j-1]) / dx - (uz[k][j] - uz[k-1][j]) / dy;
+            }
+        }
+
+        solver_stream_z.solve(&psi_z[1][1], &RHS_z[1][1]);
+    }
+
+    void update_stream() {
+        poisson_stream();
     }
 
     void update_uvwp() {
@@ -475,15 +618,15 @@ private:
             }
         }
 
-        for (int i = 1; i <= nz; i++) {
-            for (int j = 1; j <= nx; j++) {
+        for (int i = 0; i <= nz; i++) {
+            for (int j = 0; j <= nx; j++) {
                 uy[i][j] = 0.5*(u[i][ny/2][j-1] + u[i][ny/2][j]);
                 wy[i][j] = 0.5*(w[i-1][ny/2][j] + w[i][ny/2][j]);
             }
         }
 
-        for (int i = 1; i <= nz; i++) {
-            for (int k = 1; k <= ny; k++) {
+        for (int i = 0; i <= nz; i++) {
+            for (int k = 0; k <= ny; k++) {
                 vx[i][k] = 0.5*(v[i][k-1][nx/2] + v[i][k][nx/2]);
                 wx[i][k] = 0.5*(w[i-1][k][nx/2] + w[i][k][nx/2]);
             }
