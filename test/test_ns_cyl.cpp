@@ -7,6 +7,7 @@
 #include "matrix_plot.h"
 #include "config.h"
 #include "sparse.h"
+#include "umfpack_solver.h"
 #include "asp_misc.h"
 
 using namespace std;

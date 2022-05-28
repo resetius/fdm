@@ -9,6 +9,7 @@
 #include "matrix_plot.h"
 #include "config.h"
 #include "sparse.h"
+#include "umfpack_solver.h"
 #include "asp_misc.h"
 
 using namespace std;
@@ -167,7 +168,7 @@ public:
         fprintf(f, "ASPECT_RATIO 1 1 1\n");
         fprintf(f, "ORIGIN %f %f %f\n", x1+dx/2, y1+dy/2, z1+dz/2);
         fprintf(f, "SPACING %f %f %f\n", dx, dy, dz);
-        fprintf(f, "POINT_DATA %d", nx*ny*nz);
+        fprintf(f, "POINT_DATA %d\n", nx*ny*nz);
         fprintf(f, "VECTORS u double\n");
         for (int i = 1; i <= nz; i++) {
             for (int k = 1; k <= ny; k++) {
