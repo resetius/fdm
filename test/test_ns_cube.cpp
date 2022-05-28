@@ -10,6 +10,7 @@
 #include "config.h"
 #include "sparse.h"
 #include "umfpack_solver.h"
+#include "gmres_solver.h"
 #include "asp_misc.h"
 
 using namespace std;
@@ -49,6 +50,8 @@ public:
 
     umfpack_solver<T> solver;
     umfpack_solver<T> solver_stream; // для функции тока по срезу
+
+    gmres_solver<T> gmres_solver;
 
     int time_index = 0;
     int plot_time_index = -1;
@@ -91,6 +94,7 @@ public:
 
         , vx({1, nz, 1, ny})
         , wx({1, nz, 1, ny})
+        , gmres_solver(1000, 100, 1e-4)
     {
         init_P();
     }
@@ -371,6 +375,7 @@ private:
         // P.sort_rows();
 
         solver = std::move(P);
+        //gmres_solver = std::move(P);
 
         P_initialized = true;
     }
@@ -408,6 +413,7 @@ private:
         }
 
         solver.solve(&x[1][1][1], &RHS[1][1][1]);
+        //gmres_solver.solve(&x[1][1][1], &RHS[1][1][1]);
     }
 
     void update_uvwp() {
