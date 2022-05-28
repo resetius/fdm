@@ -136,45 +136,56 @@ public:
         fprintf(f, "# vtk DataFile Version 3.0\n");
         fprintf(f, "step %d\n", time_index);
         fprintf(f, "ASCII\n");
-        fprintf(f, "DATASET POLYDATA\n");
+        fprintf(f, "DATASET UNSTRUCTURED_GRID\n");
         //fprintf(f, "DIMENSIONS %d %d %d\n", nr, nz, nphi);
-        fprintf(f, "POINTS %d double\n", nr*nz*nphi);
+        fprintf(f, "POINTS %d double\n", (nr+1)*(nz+1)*nphi);
         for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k <= nz; k++) {
-                for (int j = 1; j <= nr; j++) {
-                    double r = r0+dr*j+dr/2;
-                    double z = h1+dz*k+dz/2;
-                    double phi = dphi*i+dphi/2;
+            for (int k = 0; k < nz+1; k++) {
+                for (int j = 0; j < nr+1; j++) {
+                    double r = r0+dr*j;
+                    double z = h1+dz*k;
+                    double phi = dphi*i;
 
                     double x = r*cos(phi);
                     double y = r*sin(phi);
 
-                    fprintf(f, "%f %f %f\n",
-                            x, y, z
-                        );
+                    fprintf(f, "%f %f %f\n", x, y, z);
                 }
             }
         }
-        int l = nphi*nz*nr+nphi*(nz-1)*nr+nphi*nz*(nr-1);
-        fprintf(f, "LINES %d %d\n", l, 3*l);
+        int l = nphi*nz*nr;
+        fprintf(f, "CELLS %d %d\n", l, 9*l);
         for (int i = 0; i < nphi; i++) {
             for (int k = 0; k < nz; k++) {
                 for (int j = 0; j < nr; j++) {
-                    //{i,k,j} - {i+1,k,j}
-                    //{i,k,j} - {i,k+1,j}
-                    //{i,k,j} - {i,k,j+1}
-                    fprintf(f, "2 %d %d\n", i*nr*nz+k*nr+j, ((i+1)%nphi)*nr*nz+k*nr+j);
-                    if (k != nz-1) {
-                        fprintf(f, "2 %d %d\n", i*nr*nz+k*nr+j, i*nr*nz+(k+1)*nr+j);
-                    }
-                    if (j != nr-1) {
-                        fprintf(f, "2 %d %d\n", i*nr*nz+k*nr+j, i*nr*nz+k*nr+j+1);
-                    }
+                    //{i,k,j}     - {i+1,k,j}
+                    //{i+1,k,j}   - {i+1,k,j+1}
+                    //{i+1,k,j+1} - {i,k,j+1}
+
+                    // up   {i,k,j}   - {i+1,k,j}   - {i+1,k,j+1}   - {i,k,j+1}
+                    // down {i,k+1,j} - {i+1,k+1,j} - {i+1,k+1,j+1} - {i,k+1,j+1}
+
+#define Id(i,k,j) ((i)%nphi)*(nr+1)*(nz+1)+(k)*(nr+1)+(j)
+                    fprintf(f, "8 %d %d %d %d %d %d %d %d\n",
+                            Id(i,k,j),   Id(i+1,k,j),   Id(i+1,k,j+1),   Id(i,k,j+1),
+                            Id(i,k+1,j), Id(i+1,k+1,j), Id(i+1,k+1,j+1), Id(i,k+1,j+1)
+                        );
+#undef Id
                 }
             }
         }
 
-        fprintf(f, "POINT_DATA %d\n", nr*nz*nphi);
+        fprintf(f, "CELL_TYPES %d\n", l);
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 0; k < nz; k++) {
+                for (int j = 0; j < nr; j++) {
+                    // VTK_HEXAHEDRON
+                    fprintf(f, "12\n");
+                }
+            }
+        }
+
+        fprintf(f, "CELL_DATA %d\n", nr*nz*nphi);
         fprintf(f, "VECTORS u double\n");
 
         for (int i = 0; i < nphi; i++) {
