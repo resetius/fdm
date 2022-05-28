@@ -82,6 +82,9 @@ private:
         return std::sqrt(vec_scalar2(v, v, n));
     }
 
+    /**
+     * Demmel Algorithm  6.9 p 303
+     */
     T algorithm6_9(T * x, const T* b, T eps)
     {
         r.resize(n); /* b - Ax */
