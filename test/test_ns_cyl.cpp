@@ -47,6 +47,7 @@ public:
     umfpack_solver<T> solver_stream; // для функции тока по срезу
 
     int time_index = 0;
+    int plot_time_index = -1;
 
     NSCyl(const Config& c)
         : R(c.get("ns", "R", M_PI))
@@ -126,6 +127,80 @@ public:
                      .labels("Z", "R", "")
                      .tlabel(format("UV (%.1e)", dt*time_index))
                      .bounds(r0+dr/2, h1+dz/2, R-dr/2, h2-dz/2));
+    }
+
+    void vtk_out() {
+        update_uvi();
+
+        FILE* f = fopen(format("step_%07d.vtk", time_index).c_str(), "wb");
+        fprintf(f, "# vtk DataFile Version 3.0\n");
+        fprintf(f, "step %d\n", time_index);
+        fprintf(f, "ASCII\n");
+        fprintf(f, "DATASET POLYDATA\n");
+        //fprintf(f, "DIMENSIONS %d %d %d\n", nr, nz, nphi);
+        fprintf(f, "POINTS %d double\n", nr*nz*nphi);
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                for (int j = 1; j <= nr; j++) {
+                    double r = r0+dr*j+dr/2;
+                    double z = h1+dz*k+dz/2;
+                    double phi = dphi*i+dphi/2;
+
+                    double x = r*cos(phi);
+                    double y = r*sin(phi);
+
+                    fprintf(f, "%f %f %f\n",
+                            x, y, z
+                        );
+                }
+            }
+        }
+        int l = nphi*nz*nr+nphi*(nz-1)*nr+nphi*nz*(nr-1);
+        fprintf(f, "LINES %d %d\n", l, 3*l);
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 0; k < nz; k++) {
+                for (int j = 0; j < nr; j++) {
+                    //{i,k,j} - {i+1,k,j}
+                    //{i,k,j} - {i,k+1,j}
+                    //{i,k,j} - {i,k,j+1}
+                    fprintf(f, "2 %d %d\n", i*nr*nz+k*nr+j, ((i+1)%nphi)*nr*nz+k*nr+j);
+                    if (k != nz-1) {
+                        fprintf(f, "2 %d %d\n", i*nr*nz+k*nr+j, i*nr*nz+(k+1)*nr+j);
+                    }
+                    if (j != nr-1) {
+                        fprintf(f, "2 %d %d\n", i*nr*nz+k*nr+j, i*nr*nz+k*nr+j+1);
+                    }
+                }
+            }
+        }
+
+        fprintf(f, "POINT_DATA %d\n", nr*nz*nphi);
+        fprintf(f, "VECTORS u double\n");
+
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                for (int j = 1; j <= nr; j++) {
+                    double phi = dphi*i+dphi/2;
+                    double r = r0+dr*j+dr/2;
+
+                    double u0 = 0.5*(u[i][k][j]+u[i][k][j-1]);
+                    double v0 = 0.5*(v[i][k][j]+v[i][k-1][j]);
+                    double w0 = 0.5*(w[i][k][j]+w[i-1][k][j]);
+
+                    double l = sqrt(u0*u0+v0*v0+r*r*w0*w0);
+                    u0 /= l; v0 /= l; w0 /= l;
+
+                    double x = u0 * cos(phi) - w0 * sin(phi);
+                    double y = u0 * sin(phi) + w0 * cos(phi);
+                    double z = v0;
+                    x *= l; y *=l; z *= l;
+
+                    fprintf(f, "%f %f %f\n", x, y, z);
+                }
+            }
+        }
+
+        fclose(f);
     }
 
 private:
@@ -362,6 +437,10 @@ private:
     }
 
     void update_uvwp() {
+        if (time_index == plot_time_index) {
+            return;
+        }
+
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j < nr; j++) {
@@ -389,7 +468,6 @@ private:
             }
         }
 
-        // TODO: check
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k < nz; k++) {
                 for (int j = 1; j < nr; j++) {
@@ -398,12 +476,7 @@ private:
             }
         }
 
-
-        //for (int j = 1; j <= nr; j++) {
-            //printf("%.1e ", w[nphi/2][nz/2][j]);
-            //printf("%.1e ", w[1][nz/2][j]);
-            //}
-            //printf("\n");
+        plot_time_index = time_index;
     }
 
     void update_uvi() {
@@ -431,14 +504,26 @@ void calc(const Config& c) {
 
     const int steps = c.get("ns", "steps", 1);
     const int plot_interval = c.get("plot", "interval", 100);
+    const int png = c.get("plot", "png", 1);
+    const int vtk = c.get("plot", "vtk", 0);
     int i;
 
-    ns.plot();
+    if (png) {
+        ns.plot();
+    }
+    if (vtk) {
+        ns.vtk_out();
+    }
     for (i = 0; i < steps; i++) {
         ns.step();
 
         if ((i+1) % plot_interval == 0) {
-            ns.plot();
+            if (png) {
+                ns.plot();
+            }
+            if (vtk) {
+                ns.vtk_out();
+            }
         }
     }
 }
