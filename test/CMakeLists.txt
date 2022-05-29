@@ -24,3 +24,6 @@ target_link_libraries(fdm_ns_cube fdm umfpack)
 
 add_executable(test_tensor test_tensor.cpp)
 target_link_libraries(test_tensor fdm)
+
+add_executable(test_solver_bench test_solver_bench.cpp config.cpp)
+target_link_libraries(test_solver_bench fdm umfpack)
