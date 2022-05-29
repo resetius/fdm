@@ -48,6 +48,10 @@ if (EXISTS ${CMAKE_SOURCE_DIR}/deps/umfpack/UFconfig/UFconfig.h)
 set(UMFPACK_SHARED TRUE)
 add_subdirectory(deps/umfpack)
 endif()
+if (EXISTS ${CMAKE_SOURCE_DIR}/deps/superlu/SRC/superluConfig.cmake.in)
+add_subdirectory(deps/superlu_build)
+endif ()
 
 add_subdirectory(test)
 add_subdirectory(utils)
+
