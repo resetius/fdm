@@ -677,7 +677,7 @@ void calc(const Config& c) {
 
 // Флетчер, том 2, страница 398
 int main(int argc, char** argv) {
-    string config_fn = "ns_rect.ini";
+    string config_fn = "ns_cube.ini";
 
     Config c;
 
