@@ -27,6 +27,7 @@ set(SRC
     src/asp_lapl.cpp
     src/matrix_plot.cpp
     src/asp_fft.cpp
+    src/config.cpp
     )
 add_library(fdm SHARED ${SRC})
 
@@ -54,4 +55,3 @@ endif ()
 
 add_subdirectory(test)
 add_subdirectory(utils)
-
