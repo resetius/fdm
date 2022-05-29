@@ -1,3 +1,6 @@
 [submodule "deps/umfpack"]
 	path = deps/umfpack
 	url = git@github.com:resetius/umfpack.git
+[submodule "deps/superlu"]
+	path = deps/superlu
+	url = https://github.com/xiaoyeli/superlu.git
