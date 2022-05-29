@@ -131,7 +131,7 @@ void calc(const Config& c, const char* name) {
 }
 
 int main(int argc, char** argv) {
-    string config_fn = "benchamrk.ini";
+    //string config_fn = "benchamrk.ini";
 
     Config c;
     calc<double, umfpack_solver<double>>(c, "umfpack");

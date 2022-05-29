@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sparse.h"
+#include "blas.h"
 
 namespace fdm {
 
@@ -32,7 +33,7 @@ public:
     void solve(T* x, T* b)
     {
         T e = 1.0;
-        T bn  = vec_norm2(b, n);
+        T bn  = blas::nrm2(n, b, 1);
         memcpy(x, b, n*sizeof(T));
         for (int i = 0; i < maxit; i++) {
             e = algorithm6_9(x, &b[0], tol * bn);
@@ -44,46 +45,13 @@ public:
     }
 
 private:
-    static void vec_diff(T* r, const T* a, const T* b, int n)
-    {
-        for (int i = 0; i < n; ++i) {
-            r[i] = a[i] - b[i];
-        }
-    }
-
-    static void vec_mult_scalar(T* a, const T* b, T k, int n)
-    {
-        for (int i = 0; i < n; ++i) {
-            a[i] = b[i] * k;
-        }
-    }
-
-    static void vec_sum2(T* r, const T* a, const T* b, T k2, int n)
-    {
-        for (int i = 0; i < n; ++i) {
-            r[i] = a[i] + b[i] * k2;
-        }
-    }
-
-    static T vec_scalar2(const T* a, const T* b, int n)
-    {
-        T s = 0;
-        for (int i = 0; i < n; ++i) {
-            s += a[i] * b[i];
-        }
-        return s;
-    }
-
-    static T vec_norm2(const T* v, int n)
-    {
-        return std::sqrt(vec_scalar2(v, v, n));
-    }
-
     /**
      * Demmel Algorithm  6.9 p 303
      */
     T algorithm6_9(T * x, const T* b, T eps)
     {
+        using namespace fdm::blas;
+
         r.resize(n); /* b - Ax */
         ax.resize(n);
 
@@ -99,9 +67,10 @@ private:
         /* r0 = b - Ax0 */
 
         mat.mul(&ax[0], x);
-        vec_diff(&r[0], b, &ax[0], n);
+        memcpy(&r[0], b, n*sizeof(T));
+        axpy(n, -1, &r[0], 1, &ax[0], 1);
 
-        gamma_0 = vec_norm2(&r[0], n);
+        gamma_0 = nrm2(n, &r[0], 1);
 
         if (gamma_0 <= eps) {
             ret = gamma_0;
@@ -109,8 +78,8 @@ private:
         }
 
         h.resize(hz * hz); memset(&h[0], 0, h.size()*sizeof(T));
-        q.resize(hz * n);
-        vec_mult_scalar(&q[0], &r[0], 1.0 / gamma_0, n);
+        q.resize(hz * n); memcpy(&q[0], &r[0], n*sizeof(T));
+        scal(n, 1.0 / gamma_0, &q[0], 1);
         gamma.resize(hz);
         s.resize(hz); memset(&s[0], 0, hz*sizeof(T));
         c.resize(hz); memset(&c[0], 0, hz*sizeof(T));
@@ -121,16 +90,16 @@ private:
             double nr1, nr2;
 
             mat.mul(&ax[0], &q[j * n]);
-            nr1 = vec_norm2(&ax[0], n);
+            nr1 = nrm2(n, &ax[0], 1);
 
             for (i = 0; i <= j; ++i) {
-                h[i * hz + j] = vec_scalar2(&q[i * n], &ax[0], n); //-> j x j
+                h[i * hz + j] = dot(n, &q[i * n], 1, &ax[0], 1); //-> j x j
                 //ax = ax - h[i * hz + j] * q[i * n];
-                vec_sum2(&ax[0], &ax[0], &q[i * n], -h[i * hz + j], n);
+                axpy(n, -h[i * hz + j], &q[i * n], 1, &ax[0], 1);
             }
 
             // h -> (j + 1) x j
-            h[(j + 1) * hz + j] = vec_norm2(&ax[0], n);
+            h[(j + 1) * hz + j] = nrm2(n, &ax[0], 1);
 
             // loss of orthogonality detected
             // C. T. Kelley: Iterative Methods for Linear and Nonlinear Equations, SIAM, ISBN 0-89871-352-8
@@ -138,11 +107,11 @@ private:
             if (fabs(nr2  - nr1) < eps) {
                 /*fprintf(stderr, "reortho!\n");*/
                 for (i = 0; i <= j; ++i) {
-                    T hr = vec_scalar2(&q[i * n], &ax[0], n);
+                    T hr = dot(n, &q[i * n], 1, &ax[0], 1);
                     h[i * hz + j] += hr;
-                    vec_sum2(&ax[0], &ax[0], &q[i * n], -hr, n);
+                    axpy(n, -hr, &q[i * n], 1, &ax[0], 1);
                 }
-                h[(j + 1) * hz + j] = vec_norm2(&ax[0], n);
+                h[(j + 1) * hz + j] = nrm2(n, &ax[0], 1);
             }
 
             // rotate
@@ -163,7 +132,8 @@ private:
             gamma[j]     = c[j + 1] * gamma[j];
 
             if (gamma[j + 1]  > eps) {
-                vec_mult_scalar(&q[(j + 1) * n], &ax[0], 1.0 / h[(j + 1) * hz + j], n);
+                memset(&q[(j + 1) * n], 0, n*sizeof(T));
+                axpy(n, 1.0 / h[(j + 1) * hz + j], &ax[0], 1, &q[(j + 1) * n], 1);
             } else {
                 goto done;
             }
@@ -185,7 +155,7 @@ private:
             }
 
             for (i = 0; i <= j; ++i) {
-                vec_sum2(x, x, &q[i * n], y[i], n);
+                axpy(n, y[i], &q[i * n], 1, x, 1);
             }
         }
 

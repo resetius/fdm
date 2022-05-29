@@ -86,13 +86,13 @@ public:
 
     void mul(T* r, const T* x) {
         int n = static_cast<int>(Ap.size())-1;
+#pragma omp parallel for
         for (int j = 0; j < n; ++j)
         {
             const T *p = &Ax[Ap[j]];
             T rj = (T) 0.0;
-            int i0;
 
-            for (i0 = Ap[j]; i0 < Ap[j + 1]; ++i0, ++p)
+            for (int i0 = Ap[j]; i0 < Ap[j + 1]; ++i0, ++p)
             {
                 int i = Ai[i0];
                 rj += *p * x[i];
