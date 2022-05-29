@@ -15,7 +15,7 @@ class gmres_solver {
     std::vector<T> r,ax,h,q,gamma,s,c,y;
 
 public:
-    gmres_solver(int kdim, int maxit, double tol)
+    gmres_solver(int kdim=1000, int maxit=100, double tol=1e-6)
         : k(kdim)
         , maxit(maxit)
         , tol(tol)
@@ -31,10 +31,11 @@ public:
 
     void solve(T* x, T* b)
     {
+        T e = 1.0;
         T bn  = vec_norm2(b, n);
         memcpy(x, b, n*sizeof(T));
         for (int i = 0; i < maxit; i++) {
-            T e = algorithm6_9(x, &b[0], tol * bn);
+            e = algorithm6_9(x, &b[0], tol * bn);
             e /= bn;
             if (e < tol) {
                 break;
@@ -45,33 +46,29 @@ public:
 private:
     static void vec_diff(T* r, const T* a, const T* b, int n)
     {
-        int i;
-        for (i = 0; i < n; ++i) {
+        for (int i = 0; i < n; ++i) {
             r[i] = a[i] - b[i];
         }
     }
 
     static void vec_mult_scalar(T* a, const T* b, T k, int n)
     {
-        int i;
-        for (i = 0; i < n; ++i) {
+        for (int i = 0; i < n; ++i) {
             a[i] = b[i] * k;
         }
     }
 
     static void vec_sum2(T* r, const T* a, const T* b, T k2, int n)
     {
-        int i;
-        for (i = 0; i < n; ++i) {
+        for (int i = 0; i < n; ++i) {
             r[i] = a[i] + b[i] * k2;
         }
     }
 
     static T vec_scalar2(const T* a, const T* b, int n)
     {
-        int i;
         T s = 0;
-        for (i = 0; i < n; ++i) {
+        for (int i = 0; i < n; ++i) {
             s += a[i] * b[i];
         }
         return s;
@@ -115,8 +112,8 @@ private:
         q.resize(hz * n);
         vec_mult_scalar(&q[0], &r[0], 1.0 / gamma_0, n);
         gamma.resize(hz);
-        s.resize(hz);
-        c.resize(hz);
+        s.resize(hz); memset(&s[0], 0, hz*sizeof(T));
+        c.resize(hz); memset(&c[0], 0, hz*sizeof(T));
 
         gamma[0] = gamma_0;
 
