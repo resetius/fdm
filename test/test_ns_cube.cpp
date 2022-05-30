@@ -11,6 +11,7 @@
 #include "sparse.h"
 #include "umfpack_solver.h"
 #include "gmres_solver.h"
+#include "superlu_solver.h"
 #include "asp_misc.h"
 
 using namespace std;
@@ -19,7 +20,7 @@ using namespace fdm;
 using asp::format;
 using asp::sq;
 
-template<typename T, bool check>
+template<typename T, template <typename> class Solver, bool check>
 class NSCube {
 public:
     using tensor = fdm::tensor<T,3,check>;
@@ -53,12 +54,10 @@ public:
     csr_matrix<T> P_y; // для функции тока
     csr_matrix<T> P_z; // для функции тока
 
-    umfpack_solver<T> solver;
-    umfpack_solver<T> solver_stream_x; // для функции тока по срезу
-    umfpack_solver<T> solver_stream_y; // для функции тока по срезу
-    umfpack_solver<T> solver_stream_z; // для функции тока по срезу
-
-    //gmres_solver<T> gmres_solver;
+    Solver<T> solver;
+    Solver<T> solver_stream_x; // для функции тока по срезу
+    Solver<T> solver_stream_y; // для функции тока по срезу
+    Solver<T> solver_stream_z; // для функции тока по срезу
 
     int time_index = 0;
     int plot_time_index = -1;
@@ -108,7 +107,6 @@ public:
 
         , vx({0, nz, 0, ny})
         , wx({0, nz, 0, ny})
-          //, gmres_solver(1000, 100, 1e-4)
     {
         init_P();
         init_P_slices();
@@ -409,7 +407,6 @@ private:
         // P.sort_rows();
 
         solver = std::move(P);
-        //gmres_solver = std::move(P);
     }
 
     void init_P_slices() {
@@ -636,11 +633,11 @@ private:
     }
 };
 
-template<typename T, bool check>
+template<typename T, template<typename> class Solver, bool check>
 void calc(const Config& c) {
     using namespace std::chrono;
 
-    NSCube<T, true> ns(c);
+    NSCube<T, Solver, true> ns(c);
 
     const int steps = c.get("ns", "steps", 1);
     const int plot_interval = c.get("plot", "interval", 100);
@@ -675,6 +672,16 @@ void calc(const Config& c) {
     printf("It took me '%f' seconds\n", interval.count());
 }
 
+template<typename T, template<typename> class Solver>
+void calc1(const Config& c) {
+    bool check = c.get("other", "check", 0) == 1;
+    if (check) {
+        calc<T, Solver, true>(c);
+    } else {
+        calc<T, Solver, false>(c);
+    }
+}
+
 // Флетчер, том 2, страница 398
 int main(int argc, char** argv) {
     string config_fn = "ns_cube.ini";
@@ -684,12 +691,15 @@ int main(int argc, char** argv) {
     c.open(config_fn);
     c.rewrite(argc, argv);
 
-    bool check = c.get("other", "check", 0) == 1;
-    if (check) {
-        calc<double,true>(c);
+    string solver = c.get("solver", "name", "umfpack");
+    if (solver == "gmres") {
+        calc1<double, gmres_solver>(c);
+    } else if (solver == "superlu") {
+        calc1<double, superlu_solver>(c);
     } else {
-        calc<double,false>(c);
+        calc1<double, umfpack_solver>(c);
     }
 
     return 0;
 }
+
