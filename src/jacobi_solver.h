@@ -36,18 +36,17 @@ public:
 
         for (it = 0; it < maxit; it++) {
             mat.mul(x1, x0);
+            nr = 0;
 
-#pragma omp parallel for
+#pragma omp parallel for reduction(+ : nr)
             for (int i = 0; i < n; i++) {
                 x1[i] = (b[i] - x1[i] + diag[i] * x0[i]) / diag[i];
-                r[i] = x1[i] - x0[i];
+                nr += (x1[i] - x0[i])*(x1[i] - x0[i]);
             }
 
             std::swap(x1, x0);
 
-            nr = nrm2(n, &r[0], 1);
-
-            if (nr < tolrel) {
+            if (std::sqrt(nr) < tolrel) {
                 break;
             }
         }
