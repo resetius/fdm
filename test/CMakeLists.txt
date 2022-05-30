@@ -20,7 +20,7 @@ add_executable(fdm_ns_cyl test_ns_cyl.cpp)
 target_link_libraries(fdm_ns_cyl fdm umfpack)
 
 add_executable(fdm_ns_cube test_ns_cube.cpp)
-target_link_libraries(fdm_ns_cube fdm umfpack)
+target_link_libraries(fdm_ns_cube fdm umfpack superlu)
 
 add_executable(test_tensor test_tensor.cpp)
 target_link_libraries(test_tensor fdm)
