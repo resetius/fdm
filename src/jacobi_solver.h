@@ -31,23 +31,28 @@ public:
         int it = 0;
         T tolrel = tol*nrm2(n, b, 1);
 
+        T* x0 = x;
+        T* x1 = &xn[0];
+
         for (it = 0; it < maxit; it++) {
-            mat.mul(&xn[0], x);
+            mat.mul(x1, x0);
 
 #pragma omp parallel for
             for (int i = 0; i < n; i++) {
-                xn[i] = (b[i] - xn[i] + diag[i] * x[i]) / diag[i];
-                r[i] = xn[i] - x[i];
+                x1[i] = (b[i] - x1[i] + diag[i] * x0[i]) / diag[i];
+                r[i] = x1[i] - x0[i];
             }
 
-            nr = nrm2(n, &r[0], 1);
+            std::swap(x1, x0);
 
-            memcpy(x, &xn[0], n*sizeof(T));
+            nr = nrm2(n, &r[0], 1);
 
             if (nr < tolrel) {
                 break;
             }
         }
+
+        memcpy(x, x0, n*sizeof(T));
 
         // printf("%d %e\n", it, nr);
     }
