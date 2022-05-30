@@ -1,6 +1,6 @@
 project(superlu)
 
-set(DIR ${CMAKE_SOURCE_DIR}/../superlu/SRC)
+set(DIR ${CMAKE_CURRENT_SOURCE_DIR}/../superlu/SRC)
 
 set(ALLAUX
     ${DIR}/superlu_timer.c
