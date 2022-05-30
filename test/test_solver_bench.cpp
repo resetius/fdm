@@ -12,6 +12,7 @@
 #include "umfpack_solver.h"
 #include "gmres_solver.h"
 #include "superlu_solver.h"
+#include "jacobi_solver.h"
 #include "asp_misc.h"
 
 using namespace std;
@@ -138,6 +139,7 @@ int main(int argc, char** argv) {
     calc<double, umfpack_solver<double>>(c, "umfpack");
     calc<double, gmres_solver<double>>(c, "gmres");
     calc<double, superlu_solver<double>>(c, "superlu");
+    calc<double, jacobi_solver<double>>(c, "jacobi");
 
     return 0;
 }

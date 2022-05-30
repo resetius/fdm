@@ -12,6 +12,7 @@
 #include "umfpack_solver.h"
 #include "gmres_solver.h"
 #include "superlu_solver.h"
+#include "jacobi_solver.h"
 #include "asp_misc.h"
 
 using namespace std;
@@ -696,10 +697,11 @@ int main(int argc, char** argv) {
         calc1<double, gmres_solver>(c);
     } else if (solver == "superlu") {
         calc1<double, superlu_solver>(c);
-    } else {
+    } else if (solver == "jacobi") {
+        calc1<double, jacobi_solver>(c);
+    }  else {
         calc1<double, umfpack_solver>(c);
     }
 
     return 0;
 }
-
