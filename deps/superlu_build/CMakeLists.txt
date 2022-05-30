@@ -69,6 +69,7 @@ set(DLUSRC
 
 add_library(superlu SHARED ${ALLAUX} ${DLUSRC})
 
+target_include_directories(superlu PUBLIC ${DIR})
 target_compile_options(superlu PRIVATE -DVENDOR_BLAS)
 
 if (BLAS_FOUND)

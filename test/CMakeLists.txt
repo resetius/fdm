@@ -26,4 +26,4 @@ add_executable(test_tensor test_tensor.cpp)
 target_link_libraries(test_tensor fdm)
 
 add_executable(test_solver_bench test_solver_bench.cpp)
-target_link_libraries(test_solver_bench fdm umfpack)
+target_link_libraries(test_solver_bench fdm umfpack superlu)
