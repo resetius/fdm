@@ -68,7 +68,7 @@ private:
 
         mat.mul(&ax[0], x);
         memcpy(&r[0], b, n*sizeof(T));
-        axpy(n, -1, &r[0], 1, &ax[0], 1);
+        axpy(n, -1, &ax[0], 1, &r[0], 1);
 
         gamma_0 = nrm2(n, &r[0], 1);
 
