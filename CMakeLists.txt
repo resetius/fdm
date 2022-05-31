@@ -17,6 +17,17 @@ set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if (EXISTS ${CMAKE_SOURCE_DIR}/deps/umfpack/UFconfig/UFconfig.h)
+set(UMFPACK_SHARED TRUE)
+add_subdirectory(deps/umfpack)
+endif()
+if (EXISTS ${CMAKE_SOURCE_DIR}/deps/superlu/SRC/superluConfig.cmake.in)
+add_subdirectory(deps/superlu_build)
+endif ()
+if (EXISTS ${CMAKE_SOURCE_DIR}/deps/arpack/CMakeLists.txt)
+add_subdirectory(deps/arpack)
+endif ()
+
 set(SRC
     src/sds_bar.cpp
     src/asp_sphere_lapl.cpp
@@ -41,23 +52,12 @@ else ()
 endif()
 target_include_directories(fdm PUBLIC ${PLPLOT_INCLUDE_DIRS} ${BLAS_INCLUDE_DIRS})
 target_link_directories(fdm PUBLIC ${PLPLOT_STATIC_LIBRARY_DIRS} ${BLAS_LIBRARY_DIRS})
-target_link_libraries(fdm PUBLIC ${PLPLOT_STATIC_LIBRARIES} ${BLAS_LIBRARIES})
+target_link_libraries(fdm PUBLIC ${PLPLOT_STATIC_LIBRARIES} ${BLAS_LIBRARIES} arpack)
 if (OpenMP_CXX_FOUND)
     target_link_libraries(fdm PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
 set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}/bin")
-
-if (EXISTS ${CMAKE_SOURCE_DIR}/deps/umfpack/UFconfig/UFconfig.h)
-set(UMFPACK_SHARED TRUE)
-add_subdirectory(deps/umfpack)
-endif()
-if (EXISTS ${CMAKE_SOURCE_DIR}/deps/superlu/SRC/superluConfig.cmake.in)
-add_subdirectory(deps/superlu_build)
-endif ()
-if (EXISTS ${CMAKE_SOURCE_DIR}/deps/arpack/CMakeLists.txt)
-add_subdirectory(deps/arpack)
-endif ()
 
 add_subdirectory(test)
 add_subdirectory(utils)
