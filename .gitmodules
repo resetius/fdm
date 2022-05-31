@@ -4,3 +4,6 @@
 [submodule "deps/superlu"]
 	path = deps/superlu
 	url = https://github.com/xiaoyeli/superlu.git
+[submodule "deps/arpack"]
+	path = deps/arpack
+	url = git@github.com:resetius/arpack_c.git
