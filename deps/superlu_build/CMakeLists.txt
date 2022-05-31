@@ -114,7 +114,6 @@ add_library(superlu SHARED ${ALLAUX} ${SLUSRC} ${DLUSRC})
 target_include_directories(superlu PUBLIC ${DIR})
 target_compile_options(superlu PRIVATE -DVENDOR_BLAS)
 
-if (BLAS_FOUND)
-target_link_directories(superlu PUBLIC ${BLAS_STATIC_LIBRARY_DIRS})
-target_link_libraries(superlu PUBLIC ${BLAS_STATIC_LIBRARIES})
-endif ()
+target_link_directories(superlu PUBLIC ${BLAS_LIBRARY_DIRS})
+target_link_libraries(superlu PUBLIC ${BLAS_LIBRARIES})
+
