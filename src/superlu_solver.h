@@ -95,7 +95,7 @@ private:
     }
 
     void init_vec(SuperMatrix* B, float* x) {
-        sCreate_Dense_Matrix (B, n, 1, x, n, SLU_DN, SLU_D, SLU_GE);
+        sCreate_Dense_Matrix (B, n, 1, x, n, SLU_DN, SLU_S, SLU_GE);
     }
 
     void init(csr_matrix<double>& m) {

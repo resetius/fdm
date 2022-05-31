@@ -28,6 +28,8 @@ set(SRC
     src/matrix_plot.cpp
     src/asp_fft.cpp
     src/config.cpp
+    src/jacobi_solver.cpp
+    src/sparse.cpp
     )
 add_library(fdm SHARED ${SRC})
 
@@ -36,9 +38,9 @@ if (MSVC)
 else ()
     target_compile_options(fdm PUBLIC ${PLPLOT_CFLAGS_OTHER} "-Wall")
 endif()
-target_include_directories(fdm PUBLIC ${PLPLOT_INCLUDE_DIRS})
-target_link_directories(fdm PUBLIC ${PLPLOT_STATIC_LIBRARY_DIRS})
-target_link_libraries(fdm PUBLIC ${PLPLOT_STATIC_LIBRARIES})
+target_include_directories(fdm PUBLIC ${PLPLOT_INCLUDE_DIRS} ${BLAS_INCLUDE_DIRS})
+target_link_directories(fdm PUBLIC ${PLPLOT_STATIC_LIBRARY_DIRS} ${BLAS_LIBRARY_DIRS})
+target_link_libraries(fdm PUBLIC ${PLPLOT_STATIC_LIBRARIES} ${BLAS_LIBRARIES})
 if (OpenMP_CXX_FOUND)
     target_link_libraries(fdm PUBLIC OpenMP::OpenMP_CXX)
 endif()
