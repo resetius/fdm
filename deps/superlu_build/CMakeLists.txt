@@ -24,6 +24,48 @@ set(ALLAUX
     ${DIR}/smach.c
     )
 
+set(SLUSRC
+	${DIR}/sgssv.c
+    ${DIR}/sgssvx.c
+	${DIR}/ssp_blas2.c
+    ${DIR}/ssp_blas3.c
+    ${DIR}/sgscon.c
+	${DIR}/slangs.c
+    ${DIR}/sgsequ.c
+    ${DIR}/slaqgs.c
+    ${DIR}/spivotgrowth.c
+	${DIR}/sgsrfs.c
+    ${DIR}/sgstrf.c
+    ${DIR}/sgstrs.c
+    ${DIR}/scopy_to_ucol.c
+	${DIR}/ssnode_dfs.c
+    ${DIR}/ssnode_bmod.c
+	${DIR}/spanel_dfs.c
+    ${DIR}/spanel_bmod.c
+	${DIR}/sreadhb.c
+    ${DIR}/sreadrb.c
+    ${DIR}/sreadtriple.c
+    ${DIR}/sreadMM.c
+	${DIR}/scolumn_dfs.c
+    ${DIR}/scolumn_bmod.c
+    ${DIR}/spivotL.c
+    ${DIR}/spruneL.c
+	${DIR}/smemory.c
+    ${DIR}/sutil.c
+    ${DIR}/smyblas2.c
+    ${DIR}/sgsisx.c
+    ${DIR}/sgsitrf.c
+    ${DIR}/sldperm.c
+	${DIR}/ilu_sdrop_row.c
+    ${DIR}/ilu_ssnode_dfs.c
+	${DIR}/ilu_scolumn_dfs.c
+    ${DIR}/ilu_spanel_dfs.c
+    ${DIR}/ilu_scopy_to_ucol.c
+	${DIR}/ilu_spivotL.c
+    ${DIR}/sdiagonal.c
+    ${DIR}/slacon2.c
+)
+
 set(DLUSRC
     ${DIR}/dgssv.c
     ${DIR}/dgssvx.c
@@ -67,7 +109,7 @@ set(DLUSRC
     ${DIR}/dGetDiagU.c)
 
 
-add_library(superlu SHARED ${ALLAUX} ${DLUSRC})
+add_library(superlu SHARED ${ALLAUX} ${SLUSRC} ${DLUSRC})
 
 target_include_directories(superlu PUBLIC ${DIR})
 target_compile_options(superlu PRIVATE -DVENDOR_BLAS)
