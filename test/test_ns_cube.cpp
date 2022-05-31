@@ -693,14 +693,30 @@ int main(int argc, char** argv) {
     c.rewrite(argc, argv);
 
     string solver = c.get("solver", "name", "umfpack");
-    if (solver == "gmres") {
-        calc1<double, gmres_solver>(c);
-    } else if (solver == "superlu") {
-        calc1<double, superlu_solver>(c);
-    } else if (solver == "jacobi") {
-        calc1<double, jacobi_solver>(c);
-    }  else {
-        calc1<double, umfpack_solver>(c);
+    string datatype = c.get("solver", "datatype", "double");
+
+    if (datatype == "float") {
+        using T = float;
+        if (solver == "gmres") {
+            calc1<T, gmres_solver>(c);
+        } else if (solver == "superlu") {
+            calc1<T, superlu_solver>(c);
+        } else if (solver == "jacobi") {
+            calc1<T, jacobi_solver>(c);
+        } else {
+            calc1<T, superlu_solver>(c);
+        }
+    } else {
+        using T = double;
+        if (solver == "gmres") {
+            calc1<T, gmres_solver>(c);
+        } else if (solver == "superlu") {
+            calc1<T, superlu_solver>(c);
+        } else if (solver == "jacobi") {
+            calc1<T, jacobi_solver>(c);
+        } else {
+            calc1<T, umfpack_solver>(c);
+        }
     }
 
     return 0;
