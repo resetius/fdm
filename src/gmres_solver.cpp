@@ -1,9 +1,11 @@
+#include <cstring>
+#include <cmath>
 #include "gmres_solver.h"
 #include "blas.h"
 
 namespace fdm {
 
-using namespace fdm;
+using namespace blas;
 
 template<typename T>
 void gmres_solver<T>::solve(T* x, T* b)
