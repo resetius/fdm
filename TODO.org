@@ -1,1 +1,10 @@
-1. remove asp_misc and use linal!
+
+* lib
+** link libfdm with all deps (umfpack, superlu, arpack ...)
+
+* ns_cube
+** spectral
+
+* ns_cyl
+** plot slices (like in ns_cube)
+** spectral
