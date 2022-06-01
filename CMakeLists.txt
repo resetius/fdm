@@ -55,6 +55,7 @@ set(SRC
     src/config.cpp
     src/jacobi_solver.cpp
     src/gmres_solver.cpp
+    src/arpack_solver.cpp
     src/sparse.cpp
     )
 add_library(fdm SHARED ${SRC})
