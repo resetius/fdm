@@ -30,8 +30,8 @@ class matrix_plotter {
             }
         }
 
-        template<typename T>
-        data(const tensor<T,2>& matrix) {
+        template<typename T, bool B, typename C>
+        data(const tensor<T,2,B,C>& matrix) {
             rs = matrix.sizes[0];
             rows = matrix.vec.size() / rs;
             verify(matrix.vec.size() % rs == 0);
@@ -81,8 +81,8 @@ public:
             return *this;
         }
 
-        template<typename T>
-        page& scalar(const tensor<T,2>& matrix) {
+        template<typename T, bool B, typename C>
+        page& scalar(const tensor<T,2,B,C>& matrix) {
             u = data(matrix);
             x1 = 0; x2 = u.rows-1;
             y1 = 0; y2 = u.rs-1;

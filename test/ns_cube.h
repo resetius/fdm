@@ -606,8 +606,8 @@ private:
             return;
         }
 
-        for (int k = 1; k <= ny; k++) {
-            for (int j = 1; j <= nx; j++) {
+        for (int k = 0; k <= ny; k++) {
+            for (int j = 0; j <= nx; j++) {
                 uz[k][j] = 0.5*(u[nz/2][k][j-1] + u[nz/2][k][j]);
                 vz[k][j] = 0.5*(v[nz/2][k-1][j] + v[nz/2][k][j]);
             }

@@ -22,6 +22,7 @@ public:
     using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
     using tensor = fdm::tensor<T,3,check,tensor_flags>;
     using matrix = fdm::tensor<T,2,check>;
+    using matrix_p = fdm::tensor<T,2,check,tensor_flags>;
 
     const double R, r0;
     const double h1, h2;
@@ -37,15 +38,24 @@ public:
     tensor u /*r*/,v/*z*/,w/*phi*/;
     tensor p,x;
     tensor F,G,H,RHS;
-    matrix psi; // срез по плоскости Oyz
-    matrix ui, vi; // срез по плоскости Oyz
-    matrix wi; // срез по плоскости Oxy
+
+    matrix RHS_r,RHS_z,RHS_phi;
+
+    matrix_p psi_r, psi_z;
+    matrix psi_phi; // срезы
+
+    matrix uphi, vphi;
+    matrix_p uz, wz;
+    matrix_p vr, wr;
 
     csr_matrix<T> P;
+    csr_matrix<T> P_r, P_z, P_phi;
     bool P_initialized = false;
 
     umfpack_solver<T> solver;
-    umfpack_solver<T> solver_stream; // для функции тока по срезу
+    umfpack_solver<T> solver_stream_r; // для функции тока по срезу
+    umfpack_solver<T> solver_stream_z; // для функции тока по срезу
+    umfpack_solver<T> solver_stream_phi; // для функции тока по срезу
 
     int time_index = 0;
     int plot_time_index = -1;
@@ -76,10 +86,23 @@ public:
         , G({0, nphi-1, 0, nz, 1, nr}) // check bounds
         , H({0, nphi-1, 1, nz, 1, nr}) // check bounds
         , RHS({0, nphi-1, 1, nz, 1, nr})
-        , psi({1, nz, 1, nr})
-        , ui({1, nz, 1, nr}) // inner u
-        , vi({1, nz, 1, nr}) // inner v
-        , wi({0, nphi-1, 0, nr+1})
+
+        , RHS_r({0, nphi-1, 1, nz})
+        , RHS_z({0, nphi-1, 1, nr})
+        , RHS_phi({1, nz, 1, nr})
+
+        , psi_r({0, nphi-1, 1, nz})
+        , psi_z({0, nphi-1, 1, nr})
+        , psi_phi({1, nz, 1, nr})
+
+        , uphi({0, nz, 0, nr})
+        , vphi({0, nz, 0, nr})
+
+        , uz({0, nphi-1, 0, nr})
+        , wz({0, nphi-1, 0, nr})
+
+        , vr({0, nphi-1, 0, nz})
+        , wr({0, nphi-1, 0, nz})
     {
         init_P();
     }
@@ -104,30 +127,43 @@ public:
                                .fname(format("step_%07d.png", time_index)));
 
         plotter.plot(matrix_plotter::page()
-                     .scalar(ui)
+                     .scalar(uphi)
                      .levels(10)
                      .labels("Z", "R", "")
-                     .tlabel(format("U (t=%.1e, |max|=%.1e)", dt*time_index, ui.maxabs()))
+                     .tlabel(format("U (t=%.1e, |max|=%.1e)", dt*time_index, uphi.maxabs()))
                      .bounds(r0+dr/2, h1+dz/2, R-dr/2, h2-dz/2));
         plotter.plot(matrix_plotter::page()
-                     .scalar(vi)
+                     .scalar(vphi)
                      .levels(10)
                      .labels("Z", "R", "")
-                     .tlabel(format("V (t=%.1e, |max|=%.1e)", dt*time_index, vi.maxabs()))
+                     .tlabel(format("V (t=%.1e, |max|=%.1e)", dt*time_index, vphi.maxabs()))
                      .bounds(r0+dr/2, h1+dz/2, R-dr/2, h2-dz/2));
         plotter.plot(matrix_plotter::page()
-                     .scalar(wi)
+                     .scalar(wz)
                      .levels(10)
                      .labels("PHI", "R", "")
-                     .tlabel(format("W (t=%.1e, |max|=%.1e)", dt*time_index, wi.maxabs()))
+                     .tlabel(format("W (t=%.1e, |max|=%.1e)", dt*time_index, wz.maxabs()))
                      .bounds(r0+dr/2, 0, R-dr/2, 2*M_PI));
 
         plotter.plot(matrix_plotter::page()
-                     .vector(ui, vi)
+                     .scalar(psi_phi)
                      .levels(10)
                      .labels("Z", "R", "")
-                     .tlabel(format("UV (%.1e)", dt*time_index))
+                     .tlabel(format("UV (phi=const) (%.1e)", dt*time_index))
                      .bounds(r0+dr/2, h1+dz/2, R-dr/2, h2-dz/2));
+        plotter.plot(matrix_plotter::page()
+                     .scalar(psi_z)
+                     .levels(10)
+                     .labels("Phi", "R", "")
+                     .tlabel(format("UW (z=const) (%.1e)", dt*time_index))
+                     .bounds(r0+dr/2, 0, R-dr/2, 2*M_PI));
+        plotter.plot(matrix_plotter::page()
+                     .scalar(psi_r)
+                     .levels(10)
+                     .labels("Phi", "Z", "")
+                     .tlabel(format("VW (r=const) (%.1e)", dt*time_index))
+                     .bounds(h1+dz/2, 0, h2-dz/2, 2*M_PI));
+
     }
 
     void vtk_out() {
@@ -417,6 +453,93 @@ private:
         P_initialized = true;
     }
 
+    void init_P_slices() {
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                int id = RHS_r.index({i,k});
+                double r = r0-dr/2;
+                double r2 = r*r;
+
+                P_r.add(id, RHS_r.index({i-1,k}), 1/dphi2/r2);
+
+                if (k > 1) {
+                    P_r.add(id, RHS_r.index({i,k-1}), 1/dz2);
+                }
+
+                P_r.add(id, RHS_r.index({i,k}), -2/dz2-2/dphi2/r2);
+
+                if (k < nz) {
+                    P_r.add(id, RHS_r.index({i,k+1}), 1/dz2);
+                }
+
+                P_r.add(id, RHS_r.index({i+1,k}), 1/dphi2/r2);
+            }
+        }
+        P_r.close();
+        P_r.sort_rows();
+
+        solver_stream_r = std::move(P_r);
+
+        for (int i = 0; i < nphi; i++) {
+            for (int j = 1; j <= nr; j++) {
+                int id = RHS_z.index({i,j});
+                double r = r0+j*dr-dr/2;
+                double r2 = r*r;
+                double rm = 2;
+
+                P_z.add(id, RHS_z.index({i-1,j}), 1/dphi2/r2);
+
+                if (j > 1) {
+                    P_z.add(id, RHS_z.index({i,j-1}), (r-0.5*dr)/dr2/r);
+                }
+
+                P_z.add(id, RHS_z.index({i,j}), -rm/dr2-2/dphi2/r2);
+
+                if (j < nr) {
+                    P_z.add(id, RHS_z.index({i,j+1}), (r+0.5*dr)/dr2/r);
+                }
+
+                P_z.add(id, RHS_z.index({i+1,j}), 1/dphi2/r2);
+            }
+        }
+        P_z.close();
+        P_z.sort_rows();
+
+        solver_stream_z = std::move(P_z);
+
+        for (int k = 1; k <= nz; k++) {
+            for (int j = 1; j <= nr; j++) {
+                int id = RHS_phi.index({k,j});
+                double r = r0+j*dr-dr/2;
+                double r2 = r*r;
+                double rm = 2;
+                double zm = 2;
+
+                if (k > 1) {
+                    P_phi.add(id, RHS.index({k-1,j}), 1/dz2);
+                }
+
+                if (j > 1) {
+                    P_phi.add(id, RHS.index({k,j-1}), (r-0.5*dr)/dr2/r);
+                }
+
+                P_phi.add(id, RHS.index({k,j}), -rm/dr2-zm/dz2);
+
+                if (j < nr) {
+                    P_phi.add(id, RHS.index({k,j+1}), (r+0.5*dr)/dr2/r);
+                }
+
+                if (k < nz) {
+                    P_phi.add(id, RHS.index({k+1,j}), 1/dz2);
+                }
+            }
+        }
+        P_phi.close();
+        P_phi.sort_rows();
+
+        solver_stream_phi = std::move(P_phi);
+    }
+
     void poisson() {
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
@@ -448,11 +571,33 @@ private:
         solver.solve(&x[0][1][1], &RHS[0][1][1]);
     }
 
-    void update_uvwp() {
-        if (time_index == plot_time_index) {
-            return;
+    void poisson_stream() {
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                RHS_r[i][k] = (wr[i][k]-wr[i][k-1]) / dz - (vr[i][k] - vr[i-1][k]) / dphi;
+            }
         }
 
+        solver_stream_r.solve(&psi_r[1][1], &RHS_r[1][1]);
+
+        for (int i = 0; i < nphi; i++) {
+            for (int j = 1; j <= nr; j++) {
+                RHS_z[i][j] = (wz[i][j]-wz[i][j-1]) / dr - (uz[i][j] - uz[i-1][j]) / dphi;
+            }
+        }
+
+        solver_stream_z.solve(&psi_z[1][1], &RHS_z[1][1]);
+
+        for (int k = 1; k <= nz; k++) {
+            for (int j = 1; j <= nr; j++) {
+                RHS_phi[k][j] = (vphi[k][j]-vphi[k][j-1]) / dr - (uphi[k][j] - uphi[k-1][j]) / dz;
+            }
+        }
+
+        solver_stream_phi.solve(&psi_phi[1][1], &RHS_phi[1][1]);
+    }
+
+    void update_uvwp() {
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j < nr; j++) {
@@ -487,26 +632,35 @@ private:
                 }
             }
         }
-
-        plot_time_index = time_index;
     }
 
     void update_uvi() {
-        for (int k = 1; k <= nz; k++) {
-            for (int j = 1; j <= nr; j++) {
-                ui[k][j] = 0.5*(u[0][k][j-1] + u[0][k][j]);
-                vi[k][j] = 0.5*(v[0][k-1][j] + v[0][k][j]);
+        if (time_index == plot_time_index) {
+            return;
+        }
+
+        for (int k = 0; k <= nz; k++) {
+            for (int j = 0; j <= nr; j++) {
+                uphi[k][j] = 0.5*(u[nphi/2][k][j-1] + u[nphi/2][k][j]);
+                vphi[k][j] = 0.5*(v[nphi/2][k-1][j] + v[nphi/2][k][j]);
             }
         }
 
         for (int i = 0; i < nphi; i++) {
             for (int j = 0; j <= nr; j++) {
-                wi[i][j] = w[i][nz/2][j];
-                //printf("%.1e ", wi[i][j]);
+                uz[i][j] = 0.5*(u[i][nz/2][j-1] + u[i][nz/2][j]);
+                wz[i][j] = 0.5*(w[i-1][nz/2][j] + w[i][nz/2][j]);
             }
-            //printf("\n");
         }
-        //printf("\n");
+
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 0; k <= nz; k++) {
+                vr[i][k] = 0.5*(v[i][k-1][nr/2] + v[i][k][nr/2]);
+                wr[i][k] = 0.5*(w[i-1][k][nr/2] + w[i][k][nr/2]);
+            }
+        }
+
+        plot_time_index = time_index;
     }
 };
 
