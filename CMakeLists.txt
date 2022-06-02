@@ -72,7 +72,5 @@ if (OpenMP_CXX_FOUND)
     target_link_libraries(fdm PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
-set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}/bin")
-
 add_subdirectory(test)
 add_subdirectory(utils)
