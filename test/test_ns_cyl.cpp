@@ -39,7 +39,8 @@ public:
     tensor p,x;
     tensor F,G,H,RHS;
 
-    matrix RHS_r,RHS_z,RHS_phi;
+    matrix_p RHS_r,RHS_z;
+    matrix RHS_phi;
 
     matrix_p psi_r, psi_z;
     matrix psi_phi; // срезы
@@ -105,6 +106,7 @@ public:
         , wr({0, nphi-1, 0, nz})
     {
         init_P();
+        init_P_slices();
     }
 
     void step() {
@@ -121,8 +123,9 @@ public:
 
     void plot() {
         update_uvi();
+        poisson_stream();
         matrix_plotter plotter(matrix_plotter::settings()
-                               .sub(2, 2)
+                               .sub(2, 3)
                                .devname("pngcairo")
                                .fname(format("step_%07d.png", time_index)));
 
@@ -511,26 +514,25 @@ private:
             for (int j = 1; j <= nr; j++) {
                 int id = RHS_phi.index({k,j});
                 double r = r0+j*dr-dr/2;
-                double r2 = r*r;
                 double rm = 2;
                 double zm = 2;
 
                 if (k > 1) {
-                    P_phi.add(id, RHS.index({k-1,j}), 1/dz2);
+                    P_phi.add(id, RHS_phi.index({k-1,j}), 1/dz2);
                 }
 
                 if (j > 1) {
-                    P_phi.add(id, RHS.index({k,j-1}), (r-0.5*dr)/dr2/r);
+                    P_phi.add(id, RHS_phi.index({k,j-1}), (r-0.5*dr)/dr2/r);
                 }
 
-                P_phi.add(id, RHS.index({k,j}), -rm/dr2-zm/dz2);
+                P_phi.add(id, RHS_phi.index({k,j}), -rm/dr2-zm/dz2);
 
                 if (j < nr) {
-                    P_phi.add(id, RHS.index({k,j+1}), (r+0.5*dr)/dr2/r);
+                    P_phi.add(id, RHS_phi.index({k,j+1}), (r+0.5*dr)/dr2/r);
                 }
 
                 if (k < nz) {
-                    P_phi.add(id, RHS.index({k+1,j}), 1/dz2);
+                    P_phi.add(id, RHS_phi.index({k+1,j}), 1/dz2);
                 }
             }
         }
@@ -578,7 +580,7 @@ private:
             }
         }
 
-        solver_stream_r.solve(&psi_r[1][1], &RHS_r[1][1]);
+        solver_stream_r.solve(&psi_r[0][1], &RHS_r[0][1]);
 
         for (int i = 0; i < nphi; i++) {
             for (int j = 1; j <= nr; j++) {
@@ -586,7 +588,7 @@ private:
             }
         }
 
-        solver_stream_z.solve(&psi_z[1][1], &RHS_z[1][1]);
+        solver_stream_z.solve(&psi_z[0][1], &RHS_z[0][1]);
 
         for (int k = 1; k <= nz; k++) {
             for (int j = 1; j <= nr; j++) {
