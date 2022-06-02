@@ -55,14 +55,16 @@ void calc(Config c) {
     }
 
     auto t1 = steady_clock::now();
+    int it = 0;
 
     solver.solve([&](T* y, const T* x) {
         mat.mul(y, x);
+        it ++;
     }, eigenvalues, eigenvectors, nev);
 
     auto t2 = steady_clock::now();
     auto interval = duration_cast<duration<double>>(t2 - t1);
-    printf("It took me '%f' seconds\n", interval.count());
+    printf("It took me '%f' seconds, '%d' iterations\n", interval.count(), it);
 
     int nconv = static_cast<int>(eigenvalues.size());
     vector<int> indices(nconv);
