@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <numeric>
+#include <chrono>
+
 
 #include "arpack_solver.h"
 #include "sparse.h"
@@ -8,6 +10,7 @@
 
 using namespace fdm;
 using namespace std;
+using namespace std::chrono;
 using namespace asp;
 
 template<typename T>
@@ -51,9 +54,15 @@ void calc(Config c) {
         solver.set_resid_random(from, to);
     }
 
+    auto t1 = steady_clock::now();
+
     solver.solve([&](T* y, const T* x) {
         mat.mul(y, x);
     }, eigenvalues, eigenvectors, nev);
+
+    auto t2 = steady_clock::now();
+    auto interval = duration_cast<duration<double>>(t2 - t1);
+    printf("It took me '%f' seconds\n", interval.count());
 
     int nconv = static_cast<int>(eigenvalues.size());
     vector<int> indices(nconv);
