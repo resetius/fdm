@@ -42,7 +42,7 @@ void calc(Config c) {
         n, maxit,
         arpack_solver<T>::standard,
         arpack_solver<T>::largest_magnitude,
-        rndresid ? arpack_solver<T>::random : arpack_solver<T>::fixed,
+        rndresid == 1 ? arpack_solver<T>::random : arpack_solver<T>::fixed,
         tol);
 
     if (rndresid == 0) {
