@@ -1,8 +1,10 @@
 #include "arpack_solver.h"
 #include "sparse.h"
+#include "asp_misc.h"
 
 using namespace fdm;
 using namespace std;
+using namespace asp;
 
 template<typename T>
 void calc(int n) {
@@ -35,12 +37,14 @@ void calc(int n) {
     }, eigenvalues, eigenvectors, nev);
 
     for (int i = 0; i < static_cast<int>(eigenvalues.size()); i++) {
-        printf(" -> %e %e\n", eigenvalues[i].real(), eigenvalues[i].imag());
+        printf(" -> %e %e | %e\n",
+               eigenvalues[i].real(), eigenvalues[i].imag(),
+               4*sq(sin(M_PI*(n-i-1)/(n+1)/2.)));
     }
 }
 
 int main() {
-    int n = 2000;
+    int n = 100;
     calc<double>(n);
     //calc<float>(n);
     return 0;
