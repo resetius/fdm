@@ -2,12 +2,16 @@
 #include <vector>
 #include <climits>
 #include <cmath>
+#include <chrono>
 
 #include "tensor.h"
 #include "matrix_plot.h"
 #include "config.h"
 #include "sparse.h"
 #include "umfpack_solver.h"
+#include "gmres_solver.h"
+#include "superlu_solver.h"
+#include "jacobi_solver.h"
 #include "asp_misc.h"
 
 using namespace std;
@@ -16,7 +20,7 @@ using namespace fdm;
 using asp::format;
 using asp::sq;
 
-template<typename T, bool check>
+template<typename T, template <typename> class Solver, bool check>
 class NSCyl {
 public:
     using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
@@ -53,10 +57,10 @@ public:
     csr_matrix<T> P_r, P_z, P_phi;
     bool P_initialized = false;
 
-    umfpack_solver<T> solver;
-    umfpack_solver<T> solver_stream_r; // для функции тока по срезу
-    umfpack_solver<T> solver_stream_z; // для функции тока по срезу
-    umfpack_solver<T> solver_stream_phi; // для функции тока по срезу
+    Solver<T> solver;
+    Solver<T> solver_stream_r; // для функции тока по срезу
+    Solver<T> solver_stream_z; // для функции тока по срезу
+    Solver<T> solver_stream_phi; // для функции тока по срезу
 
     int time_index = 0;
     int plot_time_index = -1;
@@ -307,7 +311,14 @@ private:
     }
 
     void FGH() {
+#pragma omp parallel
+        { // omp parallel
+
+#pragma omp single
+        { // omp single
+
         // F (r)
+#pragma omp task
         for (int i = 1; i <= nphi; i++) {
             for (int k = 1; k <= nz; k++) { // 3/2 ..
                 for (int j = 0; j <= nr; j++) { // 1/2 ..
@@ -340,6 +351,7 @@ private:
             }
         }
         // G (z)
+#pragma omp task
         for (int i = 1; i <= nphi; i++) {
             for (int k = 0; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
@@ -368,6 +380,7 @@ private:
             }
         }
         // H (phi)
+#pragma omp task
         for (int i = 0; i < nphi; i++) { // 1/2 ...
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
@@ -400,6 +413,11 @@ private:
                 }
             }
         }
+
+#pragma omp taskwait
+
+        } // end of omp single
+        } // end of omp parallel
     }
 
     void init_P() {
@@ -600,6 +618,13 @@ private:
     }
 
     void update_uvwp() {
+#pragma omp parallel
+        { // omp parallel
+
+#pragma omp single
+        { // omp single
+
+#pragma omp task
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j < nr; j++) {
@@ -609,6 +634,7 @@ private:
             }
         }
 
+#pragma omp task
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k < nz; k++) {
                 for (int j = 1; j <= nr; j++) {
@@ -618,6 +644,7 @@ private:
             }
         }
 
+#pragma omp task
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
@@ -627,6 +654,7 @@ private:
             }
         }
 
+#pragma omp task
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k < nz; k++) {
                 for (int j = 1; j < nr; j++) {
@@ -634,6 +662,10 @@ private:
                 }
             }
         }
+
+#pragma omp taskwait
+        } // end of omp single
+        } // end of omp parallel
     }
 
     void update_uvi() {
@@ -666,9 +698,11 @@ private:
     }
 };
 
-template<typename T, bool check>
+template<typename T, template<typename> class Solver, bool check>
 void calc(const Config& c) {
-    NSCyl<T, true> ns(c);
+    using namespace std::chrono;
+
+    NSCyl<T, Solver, true> ns(c);
 
     const int steps = c.get("ns", "steps", 1);
     const int plot_interval = c.get("plot", "interval", 100);
@@ -682,6 +716,8 @@ void calc(const Config& c) {
     if (vtk) {
         ns.vtk_out();
     }
+
+    auto t1 = steady_clock::now();
     for (i = 0; i < steps; i++) {
         ns.step();
 
@@ -694,6 +730,20 @@ void calc(const Config& c) {
             }
         }
     }
+
+    auto t2 = steady_clock::now();
+    auto interval = duration_cast<duration<double>>(t2 - t1);
+    printf("It took me '%f' seconds\n", interval.count());
+}
+
+template<typename T, template<typename> class Solver>
+void calc1(const Config& c) {
+    bool check = c.get("other", "check", 0) == 1;
+    if (check) {
+        calc<T, Solver, true>(c);
+    } else {
+        calc<T, Solver, false>(c);
+    }
 }
 
 // Флетчер, том 2, страница 398
@@ -705,11 +755,31 @@ int main(int argc, char** argv) {
     c.open(config_fn);
     c.rewrite(argc, argv);
 
-    bool check = c.get("other", "check", 0) == 1;
-    if (check) {
-        calc<double,true>(c);
+    string solver = c.get("solver", "name", "umfpack");
+    string datatype = c.get("solver", "datatype", "double");
+
+    if (datatype == "float") {
+        using T = float;
+        if (solver == "gmres") {
+            calc1<T, gmres_solver>(c);
+        } else if (solver == "superlu") {
+            calc1<T, superlu_solver>(c);
+        } else if (solver == "jacobi") {
+            calc1<T, jacobi_solver>(c);
+        } else {
+            calc1<T, superlu_solver>(c);
+        }
     } else {
-        calc<double,false>(c);
+        using T = double;
+        if (solver == "gmres") {
+            calc1<T, gmres_solver>(c);
+        } else if (solver == "superlu") {
+            calc1<T, superlu_solver>(c);
+        } else if (solver == "jacobi") {
+            calc1<T, jacobi_solver>(c);
+        } else {
+            calc1<T, umfpack_solver>(c);
+        }
     }
 
     return 0;
