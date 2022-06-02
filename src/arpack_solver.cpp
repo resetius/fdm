@@ -1,6 +1,7 @@
 #include <cstring>
 #include <vector>
 #include <complex>
+#include <random>
 
 #include "verify.h"
 #include "arpack_solver.h"
@@ -164,12 +165,15 @@ void arpack_solver<T>::solve(
     case both_ends:
         strcpy(which, "BE");
         break;
+    default:
+        verify(false);
+        break;
     }
 
 /*          If INFO .EQ. 0, a random initial residual vector is used. */
 /*          If INFO .NE. 0, RESID contains the initial residual vector, */
 /*                          possibly from a previous run. */
-    vector<T> resid(n, (T)1);
+    int info = static_cast<int>(initial_resid_mode);
 
 /*  NCV     Integer.  (INPUT) */
 /*          Number of columns of the matrix V. NCV must satisfy the two */
@@ -212,7 +216,6 @@ void arpack_solver<T>::solve(
     vector<T> workd(3*n, 0);
     int lworkl = 3*ncv*(ncv+6);
     vector<T> workl(lworkl, 0);
-    int info = 1;
 
     while (ido != 99) {
         if constexpr (is_same<T,double>::value) {
@@ -395,6 +398,15 @@ void arpack_solver<T>::solve(
     eigenvalues.resize(nconv);
     for (int i = 0; i < nconv; i++) {
         eigenvalues[i] = complex<T>(eigenvalues_real[i], eigenvalues_im[i]);
+    }
+}
+
+template<typename T>
+void arpack_solver<T>::set_resid_random(T a, T b) {
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(a, b);
+    for (int i = 0; i < n; i++) {
+        resid[i] = distribution(generator);
     }
 }
 

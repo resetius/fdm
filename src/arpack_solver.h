@@ -11,6 +11,7 @@ template<typename T>
 class arpack_solver {
     int n;
     int maxit;
+    std::vector<T> resid;
 
 public:
 /*  Mode 1:  A*x = lambda*x. */
@@ -56,6 +57,13 @@ public:
 
     const WhichEigenvalues eigenvalue_of_interest;
 
+    enum InitialResidMode {
+        random = 0,
+        fixed = 1
+    };
+
+    const InitialResidMode initial_resid_mode;
+
     const T tol;
 
     arpack_solver(
@@ -63,13 +71,28 @@ public:
         int maxit,
         Mode mode,
         WhichEigenvalues eigenvalue_of_interest,
+        InitialResidMode initial_resid_mode,
         T tol)
         : n(n)
         , maxit(maxit)
+        , resid(n, 1)
         , mode(mode)
         , eigenvalue_of_interest(eigenvalue_of_interest)
+        , initial_resid_mode(initial_resid_mode)
         , tol(tol)
     { }
+
+    void set_resid(const T* v) {
+        memcpy(&resid[0], v, n*sizeof(T));
+    }
+
+    void set_resid(T v) {
+        for (int i = 0; i < n; i++) {
+            resid[i] = v;
+        }
+    }
+
+    void set_resid_random(T a, T b);
 
     void solve(
         const std::function<void(T*, const T*)>& OP,

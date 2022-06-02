@@ -16,6 +16,10 @@ void calc(Config c) {
     int nev = c.get("test", "nev", 4);
     T tol = c.get("test", "tol", 1e-7);
     int maxit = c.get("test", "maxit", 10000);
+    int rndresid = c.get("resid", "rnd", 1);
+    T fixedresid = c.get("resid", "fixed", 1);
+    T from = c.get("resid", "a", -1.0);
+    T to = c.get("resid", "b", 1.0);
 
     csr_matrix<T> mat;
 
@@ -38,7 +42,14 @@ void calc(Config c) {
         n, maxit,
         arpack_solver<T>::standard,
         arpack_solver<T>::largest_magnitude,
+        rndresid ? arpack_solver<T>::random : arpack_solver<T>::fixed,
         tol);
+
+    if (rndresid == 0) {
+        solver.set_resid(fixedresid);
+    } else if (rndresid == 2) {
+        solver.set_resid_random(from, to);
+    }
 
     solver.solve([&](T* y, const T* x) {
         mat.mul(y, x);
