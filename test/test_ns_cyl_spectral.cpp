@@ -53,14 +53,15 @@ void calc(const Config& c) {
     vector<complex<T>> eigenvalues;
     vector<vector<T>> eigenvectors;
 
+    printf("%d\n", n);
     solver.solve([&](T* y, const T* x) {
         // copy to inner domain
         memcpy(y, x, n*sizeof(T));
         int off = 0;
-        u.vec = y + off; off += u.size;
-        v.vec = y + off; off += v.size;
-        w.vec = y + off; off += w.size;
-        p.vec = y + off; off += p.size;
+        u.use(y + off); off += u.size;
+        v.use(y + off); off += v.size;
+        w.use(y + off); off += w.size;
+        p.use(y + off); off += p.size;
         ns.u = u; ns.v = v; ns.w = w; ns.p = p;
         for (i = 0; i < steps; i++) {
             ns.step();
@@ -81,11 +82,18 @@ void calc(const Config& c) {
         return abs(eigenvalues[a]) > abs(eigenvalues[b]);
     });
 
+    int count = 0;
     for (int  i = 0; i < nconv; i++) {
         int j = indices[i];
-        printf(" -> %e %e \n",
-               eigenvalues[j].real(), eigenvalues[j].imag());
+        printf(" -> %e: %e %e \n",
+               abs(eigenvalues[j]),
+               eigenvalues[j].real(),
+               eigenvalues[j].imag());
+        if (abs(eigenvalues[j]) > 1) {
+            count ++;
+        }
     }
+    printf("above 1: %d\n", count);
 }
 
 template<typename T, template<typename> class Solver>
