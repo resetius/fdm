@@ -30,6 +30,49 @@ void run() {
     }
 }
 
+void assignment() {
+    tensor<double, 2> t({0,10,0,10});
+    tensor<double, 2> t2({2,8,1,7});
+
+    for (int y = 0; y <= 10; y++) {
+        for (int x = 0; x <= 10; x++) {
+            t[y][x] = 1;
+        }
+    }
+
+    for (int y = 2; y <= 8; y++) {
+        for (int x = 1; x <= 7; x++) {
+            t2[y][x] = 2;
+        }
+    }
+
+    for (int y = 0; y <= 10; y++) {
+        for (int x = 0; x <= 10; x++) {
+            printf("%f ", t[y][x]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+
+    for (int y = 2; y <= 8; y++) {
+        for (int x = 1; x <= 7; x++) {
+            printf("%f ", t2[y][x]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+
+    t = t2;
+
+    for (int y = 0; y <= 10; y++) {
+        for (int x = 0; x <= 10; x++) {
+            printf("%f ", t[y][x]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
 int main() {
     run<false>();
     run<true>();
@@ -44,5 +87,6 @@ int main() {
     t2[-1][2] = 20;
     verify(t2[5][2] == t2[-1][2]);
 
+    assignment();
     return 0;
 }

@@ -38,10 +38,11 @@ template<typename T, int rank, bool check, typename F>
 class tensor_accessor {
     T* vec;
     const std::vector<int>& sizes;
-    const std::vector<int>& offsets;
-    int index;
 
 public:
+    const std::vector<int>& offsets;
+    const int index;
+
     tensor_accessor(T* v,
                     const std::vector<int>& sizes,
                     const std::vector<int>& offsets,
@@ -72,6 +73,16 @@ public:
         return (*this)[indices[i]].off(indices, i+1);
     }
 
+    template<typename T2>
+    void assign(const tensor_accessor<T2,rank,check,F>& other) {
+        auto from = std::max(offsets[2*index], other.offsets[2*index]);
+        auto to = std::min(offsets[2*index+1], other.offsets[2*index+1]);
+
+        for (int i = from; i <= to; i++) {
+            (*this)[i].assign(other[i]);
+        }
+    }
+
 private:
     int adjust_and_check(int y) const {
         if constexpr(has_tensor_flag(F::head, tensor_flag::periodic)) {
@@ -87,40 +98,15 @@ private:
 };
 
 // vector
-template<typename T, typename F>
-class tensor_accessor<T, 1, false, F>
+template<typename T, bool check, typename F>
+class tensor_accessor<T, 1, check, F>
 {
     T* vec;
 
 public:
-    tensor_accessor(T* v,
-                    const std::vector<int>& sizes,
-                    const std::vector<int>& offsets,
-                    int index)
-        : vec(v-offsets[2*index])
-    { }
-
-    T& operator[](int x) {
-        return vec[x];
-    }
-
-    T operator[](int x) const {
-        return vec[x];
-    }
-
-    T* off(const int* indices, int i) {
-        return &(*this)[indices[i]];
-    }
-};
-
-template<typename T, typename F>
-class tensor_accessor<T, 1, true, F>
-{
-    T* vec;
     const std::vector<int>& offsets;
-    int index;
+    const int index;
 
-public:
     tensor_accessor(T* v,
                     const std::vector<int>& sizes,
                     const std::vector<int>& offsets,
@@ -131,17 +117,30 @@ public:
     { }
 
     T& operator[](int x) {
-        verify(offsets[2*index] <= x && x <= offsets[2*index+1]);
+        if constexpr(check == true) {
+            verify(offsets[2*index] <= x && x <= offsets[2*index+1]);
+        }
         return vec[x];
     }
 
     T operator[](int x) const {
-        verify(offsets[2*index] <= x && x <= offsets[2*index+1]);
+        if constexpr(check == true) {
+            verify(offsets[2*index] <= x && x <= offsets[2*index+1]);
+        }
         return vec[x];
     }
 
     T* off(const int* indices, int i) {
         return &(*this)[indices[i]];
+    }
+
+    template<typename T2>
+    void assign(const tensor_accessor<T2,1,check,F>& other) {
+        auto from = std::max(offsets[2*index], other.offsets[2*index]);
+        auto to = std::min(offsets[2*index+1], other.offsets[2*index+1]);
+        for (int i = from; i <= to; i++) {
+            (*this)[i] = other[i];
+        }
     }
 };
 
@@ -184,6 +183,11 @@ public:
             a = std::abs(a); b = std::abs(b);
             return a<b?b:a;
         });
+    }
+
+    tensor<T,rank,check,F>& operator=(const tensor<T,rank,check,F>& other) {
+        acc.assign(other.acc);
+        return *this;
     }
 
 private:
