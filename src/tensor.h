@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <numeric>
+#include "blas.h"
 #include "verify.h"
 
 namespace fdm {
@@ -83,6 +84,10 @@ public:
         }
     }
 
+    void use(T* vec) {
+        this->vec = vec;
+    }
+
 private:
     int adjust_and_check(int y) const {
         if constexpr(has_tensor_flag(F::head, tensor_flag::periodic)) {
@@ -142,6 +147,10 @@ public:
             (*this)[i] = other[i];
         }
     }
+
+    void use(T* vec) {
+        this->vec = vec;
+    }
 };
 
 template<typename T, int rank, bool check=true, typename F = tensor_flags<>>
@@ -185,9 +194,18 @@ public:
         });
     }
 
+    T norm2() const {
+        return blas::nrm2(size, vec, 1);
+    }
+
     tensor<T,rank,check,F>& operator=(const tensor<T,rank,check,F>& other) {
         acc.assign(other.acc);
         return *this;
+    }
+
+    void use(T* vec) {
+        this->vec = vec;
+        acc.use(vec);
     }
 
 private:
