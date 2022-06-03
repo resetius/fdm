@@ -71,6 +71,30 @@ void assignment() {
         printf("\n");
     }
     printf("\n");
+
+    for (int y = 2; y <= 8; y++) {
+        for (int x = 1; x <= 7; x++) {
+            t2[y][x] = 0;
+        }
+    }
+
+    for (int y = 2; y <= 8; y++) {
+        for (int x = 1; x <= 7; x++) {
+            printf("%f ", t2[y][x]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+
+    t2 = t;
+
+    for (int y = 2; y <= 8; y++) {
+        for (int x = 1; x <= 7; x++) {
+            printf("%f ", t2[y][x]);
+        }
+        printf("\n");
+    }
+    printf("\n");
 }
 
 int main() {
