@@ -11,6 +11,7 @@ target_link_directories(ut_tensor PRIVATE ${CMOCKA_LIBRARY_DIRS})
 target_link_libraries(ut_tensor fdm ${CMOCKA_LIBRARIES})
 
 add_test(NAME tensor COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_tensor)
+set_tests_properties(tensor PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=tensor.xml")
 
 endif()
 
