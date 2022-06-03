@@ -2,6 +2,7 @@ project(fdm)
 cmake_minimum_required(VERSION 3.20)
 find_package(PkgConfig REQUIRED)
 find_package(OpenMP)
+enable_testing()
 
 pkg_check_modules(PLPLOT REQUIRED plplot)
 if (NOT BLAS_FOUND)
@@ -74,3 +75,4 @@ endif()
 
 add_subdirectory(test)
 add_subdirectory(utils)
+add_subdirectory(ut)
