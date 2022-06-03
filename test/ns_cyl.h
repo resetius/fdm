@@ -1,3 +1,5 @@
+#pragma once
+
 #include <string>
 #include <vector>
 #include <climits>
@@ -107,6 +109,10 @@ public:
     {
         init_P();
         init_P_slices();
+    }
+
+    int size() const {
+        return u.size+v.size+w.size+p.size;
     }
 
     void step() {
