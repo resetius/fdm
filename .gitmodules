@@ -1,9 +1,9 @@
 [submodule "deps/umfpack"]
 	path = deps/umfpack
-	url = git@github.com:resetius/umfpack.git
+	url = ../umfpack.git
 [submodule "deps/superlu"]
 	path = deps/superlu
 	url = https://github.com/xiaoyeli/superlu.git
 [submodule "deps/arpack"]
 	path = deps/arpack
-	url = git@github.com:resetius/arpack_c.git
+	url = ../arpack_c.git
