@@ -33,8 +33,8 @@ class matrix_plotter {
         template<typename T, bool B, typename C>
         data(const tensor<T,2,B,C>& matrix) {
             rs = matrix.sizes[0];
-            rows = matrix.vec.size() / rs;
-            verify(matrix.vec.size() % rs == 0);
+            rows = matrix.size / rs;
+            verify(matrix.size % rs == 0);
             d = (double**)malloc(rows*rs*sizeof(double*));
             for (int i = 0; i < rows; i++) {
                 d[i] = (double*)malloc(rs*sizeof(double));

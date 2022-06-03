@@ -150,17 +150,21 @@ class tensor {
 public:
     std::vector<int> offsets;
     std::vector<int> sizes;
-    std::vector<T> vec;
+    int size;
+    std::vector<T> storage;
+    T* vec;
 
 private:
     tensor_accessor<T, rank, check, F> acc;
 
 public:
     // z1,z2 y1,y2 x1,x2
-    tensor(const std::vector<int>& offsets_)
+    tensor(const std::vector<int>& offsets_, T* data = nullptr)
         : offsets(offsets_)
         , sizes(calc_sizes(offsets))
-        , vec((offsets[1]-offsets[0]+1)*sizes[0])
+        , size((offsets[1]-offsets[0]+1)*sizes[0])
+        , storage(data ? 0 : size)
+        , vec(data ? data : &storage[0])
         , acc(&vec[0], sizes, offsets, 0)
     {
         verify(offsets.size() == rank*2);
@@ -176,7 +180,7 @@ public:
     }
 
     T maxabs() const {
-        return std::accumulate(vec.begin(), vec.end(), 0.0, [](T a, T b) {
+        return std::accumulate(vec, vec+size, 0.0, [](T a, T b) {
             a = std::abs(a); b = std::abs(b);
             return a<b?b:a;
         });
