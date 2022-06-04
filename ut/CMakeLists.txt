@@ -20,6 +20,6 @@ target_link_directories(ut_arpack_solver PRIVATE ${CMOCKA_LIBRARY_DIRS})
 target_link_libraries(ut_arpack_solver fdm ${CMOCKA_LIBRARIES})
 
 add_test(NAME arpack_solver COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_arpack_solver)
-set_tests_properties(arpack_solver PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=tensor.xml")
+set_tests_properties(arpack_solver PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=arpack_solver.xml")
 
 endif()
