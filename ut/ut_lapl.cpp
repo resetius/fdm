@@ -5,14 +5,21 @@
 
 #include <type_traits>
 
+#include "umfpack_solver.h"
 #include "lapl.h"
 
 extern "C" {
 #include <cmocka.h>
 }
 
-void test_lapl_cyl(void** ) {
+using namespace fdm;
+using namespace std;
 
+void test_lapl_cyl(void** ) {
+    LaplCyl3<double, umfpack_solver, true> lapl(
+        M_PI, M_PI/2, 0, 10,
+        32, 32, 32
+        );
 }
 
 int main() {
