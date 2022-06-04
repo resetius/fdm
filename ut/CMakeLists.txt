@@ -30,4 +30,12 @@ target_link_libraries(ut_fft fdm ${CMOCKA_LIBRARIES})
 add_test(NAME fft COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_fft)
 set_tests_properties(fft PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=fft.xml")
 
+add_executable(ut_lapl ut_lapl.cpp)
+target_include_directories(ut_lapl PRIVATE ${CMOCKA_INCLUDE_DIRS})
+target_link_directories(ut_lapl PRIVATE ${CMOCKA_LIBRARY_DIRS})
+target_link_libraries(ut_lapl fdm ${CMOCKA_LIBRARIES})
+
+add_test(NAME lapl COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_lapl)
+set_tests_properties(lapl PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=lapl.xml")
+
 endif()
