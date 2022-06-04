@@ -33,6 +33,11 @@ void calc(const Config& c) {
     tensor w{{0, nphi-1, 1, nz,   1, nr}};
     tensor p({0, nphi-1, 1, nz,   1, nr});
 
+    tensor u0{{0, nphi-1, 1, nz,   1, nr-1}};
+    tensor v0{{0, nphi-1, 1, nz-1, 1, nr}};
+    tensor w0{{0, nphi-1, 1, nz,   1, nr}};
+    tensor p0({0, nphi-1, 1, nz,   1, nr});
+
     int n = u.size+v.size+w.size+p.size;
     arpack_solver<T> solver(
         n, maxit,
@@ -53,11 +58,23 @@ void calc(const Config& c) {
     vector<complex<T>> eigenvalues;
     vector<vector<T>> eigenvectors;
 
+    vector<T> zero(n, 0.0);
+    int off = 0;
+    u0.use(&zero[0] + off); off += u0.size;
+    v0.use(&zero[0] + off); off += v0.size;
+    w0.use(&zero[0] + off); off += w0.size;
+    p0.use(&zero[0] + off); off += p0.size;
+
+    for (i = 0; i < steps; i++) {
+        ns.step();
+    }
+    u0 = ns.u; v0 = ns.v; w0 = ns.w; p0 = ns.p;
+
     printf("%d\n", n);
     solver.solve([&](T* y, const T* x) {
         // copy to inner domain
         memcpy(y, x, n*sizeof(T));
-        int off = 0;
+        off = 0;
         u.use(y + off); off += u.size;
         v.use(y + off); off += v.size;
         w.use(y + off); off += w.size;
@@ -68,6 +85,8 @@ void calc(const Config& c) {
         }
         // copy out
         u = ns.u; v = ns.v; w = ns.w; p = ns.p;
+        blas::axpy(n, -1.0, &zero[0], 1, y, 1);
+
         it++;
     }, eigenvalues, eigenvectors, nev);
 
@@ -85,7 +104,7 @@ void calc(const Config& c) {
     int count = 0;
     for (int  i = 0; i < nconv; i++) {
         int j = indices[i];
-        printf(" -> %e: %e %e \n",
+        printf(" -> %.16e: %.16e %.16e \n",
                abs(eigenvalues[j]),
                eigenvalues[j].real(),
                eigenvalues[j].imag());
