@@ -1,6 +1,7 @@
 #pragma once
 
 #include <umfpack.h>
+#include "sparse.h"
 #include "verify.h"
 
 namespace fdm {
