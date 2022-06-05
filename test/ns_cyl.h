@@ -11,6 +11,7 @@
 #include "config.h"
 #include "sparse.h"
 #include "asp_misc.h"
+#include "lapl.h"
 
 using namespace std;
 using namespace fdm;
@@ -59,6 +60,7 @@ public:
     Solver<T> solver_stream_r; // для функции тока по срезу
     Solver<T> solver_stream_z; // для функции тока по срезу
     Solver<T> solver_stream_phi; // для функции тока по срезу
+    LaplCyl3<T,Solver,check> lapl3_solver;
 
     int time_index = 0;
     int plot_time_index = -1;
@@ -106,6 +108,8 @@ public:
 
         , vr({0, nphi-1, 0, nz})
         , wr({0, nphi-1, 0, nz})
+
+        , lapl3_solver(R, r0, h1, h2, nr, nz, nphi)
     {
         init_P();
         init_P_slices();
@@ -563,6 +567,7 @@ private:
     }
 
     void poisson() {
+#pragma omp parallel for
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
                 for (int j = 1; j <= nr; j++) {
@@ -590,7 +595,8 @@ private:
             }
         }
 
-        solver.solve(&x[0][1][1], &RHS[0][1][1]);
+        //solver.solve(&x[0][1][1], &RHS[0][1][1]);
+        lapl3_solver.solve(&x[0][1][1], &RHS[0][1][1]);
     }
 
     void poisson_stream() {
