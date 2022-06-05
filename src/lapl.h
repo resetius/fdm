@@ -55,7 +55,7 @@ public:
                     s[i] = RHS[i][k][j];
                 }
 
-                pFFT_2_1(&S[0], &s[0], dphi*SQRT_M_1_PI /* check */, ft);
+                pFFT_2_1(&S[0], &s[0], dphi*SQRT_M_1_PI, ft);
 
                 for (int i = 0; i < nphi; i++) {
                     RHSm[i][k][j] = S[i];
@@ -76,7 +76,7 @@ public:
                     s[i] = RHSm[i][k][j];
                 }
 
-                pFFT_2(&S[0], &s[0], SQRT_M_1_PI /* check*/, ft);
+                pFFT_2(&S[0], &s[0], SQRT_M_1_PI, ft);
 
                 for (int i = 0; i < nphi; i++) {
                     ANS[i][k][j] = S[i];

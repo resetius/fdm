@@ -4,6 +4,7 @@
 #include <math.h>
 
 #include <type_traits>
+#include <chrono>
 
 #include "umfpack_solver.h"
 #include "lapl.h"
@@ -15,6 +16,7 @@ extern "C" {
 
 using namespace fdm;
 using namespace std;
+using namespace std::chrono;
 using namespace asp;
 
 //(z-h0)*(z-h1)*(r-r0)*(r-R)*(sin(φ) + cos(φ))
@@ -87,7 +89,9 @@ void test_lapl_cyl_simple(void** data) {
         }
     }
 
+    auto t1 = steady_clock::now();
     lapl.solve(&ANS[0][1][1], &RHS[0][1][1]);
+    auto t2 = steady_clock::now();
 
     double nrm = 0.0;
     double nrm1 = 0.0;
@@ -95,7 +99,7 @@ void test_lapl_cyl_simple(void** data) {
         for (int k = 1; k <= nz; k++) {
             for (int j = 1; j <= nr; j++) {
                 double f = ans(i,k,j, dr, dz, dphi,r0,R,h0,h1);
-                if (verbose) {
+                if (verbose > 1) {
                     printf("%e %e %e %e\n",
                            ANS[i][k][j], f,
                            ANS[i][k][j]/f,
@@ -108,8 +112,10 @@ void test_lapl_cyl_simple(void** data) {
         }
     }
     nrm /= nrm1;
+    auto interval = duration_cast<duration<double>>(t2 - t1);
+
     if (verbose) {
-        printf("%e\n", nrm);
+        printf("It took me '%f' seconds, err = '%e'\n", interval.count(), nrm);
     }
 
     assert_true(nrm < 5e-2);
@@ -161,7 +167,9 @@ void test_lapl_cyl(void** data) {
         }
     }
 
+    auto t1 = steady_clock::now();
     lapl.solve(&ANS[0][1][1], &RHS[0][1][1]);
+    auto t2 = steady_clock::now();
 
     double nrm = 0.0;
     double nrm1 = 0.0;
@@ -169,7 +177,7 @@ void test_lapl_cyl(void** data) {
         for (int k = 1; k <= nz; k++) {
             for (int j = 1; j <= nr; j++) {
                 double f = ans(i,k,j, dr, dz, dphi,r0,R,h0,h1);
-                if (verbose) {
+                if (verbose > 1) {
                     printf("%e %e %e %e\n",
                            ANS[i][k][j], f,
                            ANS[i][k][j]/f,
@@ -181,9 +189,13 @@ void test_lapl_cyl(void** data) {
         }
     }
     nrm /= nrm1;
+    auto interval = duration_cast<duration<double>>(t2 - t1);
+
     if (verbose) {
-        printf("%e\n", nrm);
+        printf("It took me '%f' seconds, err = '%e'\n", interval.count(), nrm);
     }
+
+    assert_true(nrm < 5e-2);
 }
 
 int main(int argc, char** argv) {

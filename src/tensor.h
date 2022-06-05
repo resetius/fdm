@@ -76,8 +76,8 @@ public:
 
     template<typename T2>
     void assign(const tensor_accessor<T2,rank,check,F>& other) {
-        auto from = std::max(offsets[2*index], other.offsets[2*index]);
-        auto to = std::min(offsets[2*index+1], other.offsets[2*index+1]);
+        auto from = std::max(offsets[2*index], other.offsets[2*other.index]);
+        auto to = std::min(offsets[2*index+1], other.offsets[2*other.index+1]);
 
         for (int i = from; i <= to; i++) {
             (*this)[i].assign(other[i]);
@@ -141,8 +141,8 @@ public:
 
     template<typename T2>
     void assign(const tensor_accessor<T2,1,check,F>& other) {
-        auto from = std::max(offsets[2*index], other.offsets[2*index]);
-        auto to = std::min(offsets[2*index+1], other.offsets[2*index+1]);
+        auto from = std::max(offsets[2*index], other.offsets[2*other.index]);
+        auto to = std::min(offsets[2*index+1], other.offsets[2*other.index+1]);
         for (int i = from; i <= to; i++) {
             (*this)[i] = other[i];
         }
