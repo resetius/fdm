@@ -22,11 +22,13 @@ public:
     const double dr2, dz2, dphi2;
 
     std::vector<int> indices;
+    tensor RHS, ANS, RHSm, RHSx;
+    std::vector<T> s, S;
 
     // strange
     std::vector<Solver<T>> solver;
     FFTTable<T> ft_table;
-    FFT<T> ft;
+    std::vector<FFT<T>> ft;
 
     LaplCyl3(double R, double r0, double h1, double h2,
              int nr, int nz, int nphi)
@@ -36,9 +38,10 @@ public:
         , dr((R-r0)/nr), dz((h2-h1)/nz), dphi(2*M_PI/nphi)
         , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
         , indices({0, nphi-1, 1, nz, 1, nr})
+        , RHS(indices), ANS(indices), RHSm(indices), RHSx(indices)
+        , s((nz+1)*nphi), S((nz+1)*nphi)
         , solver(nphi)
         , ft_table(nphi)
-        , ft(ft_table, nphi)
     {
         init_solver();
     }
@@ -48,23 +51,19 @@ public:
     }
 
     void solve(T* ans, T* rhs) {
-        tensor RHS(indices, rhs);
-        tensor ANS(indices, ans);
-        tensor RHSm(indices);
-        tensor RHSx(indices);
+        RHS.use(rhs); ANS.use(ans);
 
-        std::vector<T> s(nphi), S(nphi);
-
+#pragma omp parallel for
         for (int k = 1; k <= nz; k++) {
             for (int j = 1; j <= nr; j++) {
                 for (int i = 0; i < nphi; i++) {
-                    s[i] = RHS[i][k][j];
+                    s[k*nphi+i] = RHS[i][k][j];
                 }
 
-                ft.pFFT_1(&S[0], &s[0], dphi*SQRT_M_1_PI);
+                ft[k].pFFT_1(&S[k*nphi], &s[k*nphi], dphi*SQRT_M_1_PI);
 
                 for (int i = 0; i < nphi; i++) {
-                    RHSm[i][k][j] = S[i];
+                    RHSm[i][k][j] = S[k*nphi+i];
                 }
             }
         }
@@ -74,16 +73,17 @@ public:
             solver[i].solve(&RHSx[i][1][1], &RHSm[i][1][1]);
         }
 
+#pragma omp parallel for
         for (int k = 1; k <= nz; k++) {
             for (int j = 1; j <= nr; j++) {
                 for (int i = 0; i < nphi; i++) {
-                    s[i] = RHSx[i][k][j];
+                    s[k*nphi+i] = RHSx[i][k][j];
                 }
 
-                ft.pFFT(&S[0], &s[0], SQRT_M_1_PI);
+                ft[k].pFFT(&S[k*nphi], &s[k*nphi], SQRT_M_1_PI);
 
                 for (int i = 0; i < nphi; i++) {
-                    ANS[i][k][j] = S[i];
+                    ANS[i][k][j] = S[k*nphi+i];
                 }
             }
         }
@@ -91,8 +91,12 @@ public:
 
 private:
     void init_solver() {
+        ft.reserve(nz+1);
         for (int i = 0; i < nphi; i++) {
             init_solver(i);
+        }
+        for (int k = 0; k <= nz; k++) {
+            ft.emplace_back(ft_table, nphi);
         }
     }
 
