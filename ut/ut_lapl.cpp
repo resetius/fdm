@@ -22,8 +22,8 @@ using namespace asp;
 double ans(int i, int k, int j, double dr, double dz, double dphi, double r0, double R, double h0, double h1) {
     double r = r0+dr*j-dr/2;
     double z = h0+dz*k-dz/2;
-    double φ = dphi*(i+1)-dphi/2;
-    double f = (z-h0)*(z-h1)*(r-r0)*(r-R)*(sin(φ) + cos(φ));
+    double phi = dphi*(i+1)-dphi/2;
+    double f = (z-h0)*(z-h1)*(r-r0)*(r-R)*(sin(phi) + cos(phi));
     return f;
 }
 
@@ -32,12 +32,12 @@ double ans(int i, int k, int j, double dr, double dz, double dphi, double r0, do
 double rp(int i, int k, int j, double dr, double dz, double dphi, double r0, double R, double h0, double h1) {
     double r = r0+dr*j-dr/2;
     double z = h0+dz*k-dz/2;
-    double φ = dphi*(i+1)-dphi/2;
-    double f = ((r-r0)*(z-h0)*(z-h1)*(sin(φ)+cos(φ))
-                +(r-R)*(z-h0)*(z-h1)*(sin(φ)+cos(φ))
-                +2*r*(z-h0)*(z-h1)*(sin(φ)+cos(φ)))/r
-        +2*(r-R)*(r-r0)*(sin(φ)+cos(φ))
-        +((r-R)*(r-r0)*(z-h0)*(z-h1)*(-sin(φ)-cos(φ)))/r/r;
+    double phi = dphi*(i+1)-dphi/2;
+    double f = ((r-r0)*(z-h0)*(z-h1)*(sin(phi)+cos(phi))
+                +(r-R)*(z-h0)*(z-h1)*(sin(phi)+cos(phi))
+                +2*r*(z-h0)*(z-h1)*(sin(phi)+cos(phi)))/r
+        +2*(r-R)*(r-r0)*(sin(phi)+cos(phi))
+        +((r-R)*(r-r0)*(z-h0)*(z-h1)*(-sin(phi)-cos(phi)))/r/r;
     return f;
 }
 
