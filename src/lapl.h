@@ -1,7 +1,7 @@
 #pragma once
 
 #include "tensor.h"
-#include "asp_fft.h"
+#include "fft.h"
 #include "asp_misc.h"
 #include "verify.h"
 
@@ -25,7 +25,8 @@ public:
 
     // strange
     std::vector<Solver<T>> solver;
-    fft* ft;
+    FFTTable<T> ft_table;
+    FFT<T> ft;
 
     LaplCyl3(double R, double r0, double h1, double h2,
              int nr, int nz, int nphi)
@@ -36,14 +37,14 @@ public:
         , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
         , indices({0, nphi-1, 1, nz, 1, nr})
         , solver(nphi)
-        , ft(FFT_init(FFT_PERIODIC, nphi))
+        , ft_table(nphi)
+        , ft(ft_table, nphi)
     {
         init_solver();
-        verify(ft);
     }
 
-    ~LaplCyl3() {
-        FFT_free(ft);
+    ~LaplCyl3()
+    {
     }
 
     void solve(T* ans, T* rhs) {
@@ -60,7 +61,7 @@ public:
                     s[i] = RHS[i][k][j];
                 }
 
-                pFFT_2_1(&S[0], &s[0], dphi*SQRT_M_1_PI, ft);
+                ft.pFFT_1(&S[0], &s[0], dphi*SQRT_M_1_PI);
 
                 for (int i = 0; i < nphi; i++) {
                     RHSm[i][k][j] = S[i];
@@ -79,7 +80,7 @@ public:
                     s[i] = RHSx[i][k][j];
                 }
 
-                pFFT_2(&S[0], &s[0], SQRT_M_1_PI, ft);
+                ft.pFFT(&S[0], &s[0], SQRT_M_1_PI);
 
                 for (int i = 0; i < nphi; i++) {
                     ANS[i][k][j] = S[i];
