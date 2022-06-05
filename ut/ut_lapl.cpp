@@ -7,6 +7,7 @@
 #include <chrono>
 
 #include "umfpack_solver.h"
+#include "superlu_solver.h"
 #include "lapl.h"
 #include "config.h"
 
@@ -43,9 +44,9 @@ double rp(int i, int k, int j, double dr, double dz, double dphi, double r0, dou
     return f;
 }
 
+template<typename T,template<typename> class Solver>
 void test_lapl_cyl_simple(void** data) {
     constexpr bool check = true;
-    using T = double;
     using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
 
     Config* c = static_cast<Config*>(*data);
@@ -55,7 +56,7 @@ void test_lapl_cyl_simple(void** data) {
     int verbose = c->get("test", "verbose", 0);
     double r0 = M_PI/2, R = M_PI;
     double h0 = 0, h1 = 10;
-    LaplCyl3Simple<double, umfpack_solver, true> lapl(
+    LaplCyl3Simple<T, Solver, true> lapl(
         R, r0, h0, h1,
         nr, nz, nphi
         );
@@ -121,10 +122,18 @@ void test_lapl_cyl_simple(void** data) {
     assert_true(nrm < 5e-2);
 }
 
+void test_lapl_cyl_simple_double(void** data) {
+    test_lapl_cyl_simple<double,umfpack_solver>(data);
+}
+
+void test_lapl_cyl_simple_float(void** data) {
+    test_lapl_cyl_simple<float,superlu_solver>(data);
+}
+
+template<typename T,template<typename> class Solver>
 void test_lapl_cyl(void** data) {
     Config* c = static_cast<Config*>(*data);
     constexpr bool check = true;
-    using T = double;
     using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
 
     int nr = c->get("test", "nr", 32);
@@ -133,7 +142,7 @@ void test_lapl_cyl(void** data) {
     int verbose = c->get("test", "verbose", 0);
     double r0 = M_PI/2, R = M_PI;
     double h0 = 0, h1 = 10;
-    LaplCyl3<double, umfpack_solver, true> lapl(
+    LaplCyl3<T, Solver, true> lapl(
         R, r0, h0, h1,
         nr, nz, nphi
         );
@@ -196,6 +205,14 @@ void test_lapl_cyl(void** data) {
     }
 
     assert_true(nrm < 5e-2);
+}
+
+void test_lapl_cyl_double(void** data) {
+    test_lapl_cyl<double,umfpack_solver>(data);
+}
+
+void test_lapl_cyl_float(void** data) {
+    test_lapl_cyl<float,superlu_solver>(data);
 }
 
 int main(int argc, char** argv) {
@@ -205,8 +222,10 @@ int main(int argc, char** argv) {
     c.rewrite(argc, argv);
 
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test_prestate(test_lapl_cyl_simple, &c),
-        cmocka_unit_test_prestate(test_lapl_cyl, &c)
+        cmocka_unit_test_prestate(test_lapl_cyl_simple_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_simple_float, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_float, &c)
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
