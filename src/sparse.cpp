@@ -41,7 +41,7 @@ template<typename T>
 void csr_matrix<T>::sort_rows() {
     verify(is_closed());
     std::vector<int> indices(Ax.size());
-    std::vector<double> ax(Ax.size());
+    std::vector<T> ax(Ax.size());
     std::vector<int> ai(Ai.size());
     for (int i = 0; i < static_cast<int>(Ap.size())-1; i++) {
         int sz = Ap[i+1]-Ap[i];
@@ -62,7 +62,7 @@ void csr_matrix<T>::sort_rows() {
             k++;
         }
         memcpy(&Ai[Ap[i]], &ai[0], sz*sizeof(int));
-        memcpy(&Ax[Ap[i]], &ax[0], sz*sizeof(double));
+        memcpy(&Ax[Ap[i]], &ax[0], sz*sizeof(T));
     }
 }
 

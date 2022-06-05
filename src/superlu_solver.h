@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sparse.h"
+#include "asp_misc.h"
 
 #include <slu_ddefs.h>
 #include <slu_sdefs.h>
@@ -41,7 +42,7 @@ public:
 
         int panel_size;
 		int relax;
-        int info;
+        int info = 0;
 
         superlu_options_t options;
 		set_default_options (&options);
@@ -58,7 +59,7 @@ public:
 
         decompose(mat, &options, relax, panel_size, &info);
 
-        verify(info == 0);
+        verify(info == 0, asp::format("info: %d", info).c_str());
         return *this;
     }
 
@@ -109,7 +110,7 @@ private:
         sCreate_CompCol_Matrix (&A,
                                 n, n, nz,
                                 &mat.Ax[0], &mat.Ai[0], &mat.Ap[0],
-                                SLU_NC, SLU_D, SLU_GE);
+                                SLU_NC, SLU_S, SLU_GE);
     }
 
     void clear() {
