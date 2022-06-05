@@ -58,6 +58,7 @@ set(SRC
     src/gmres_solver.cpp
     src/arpack_solver.cpp
     src/sparse.cpp
+    src/fft.cpp
     )
 add_library(fdm SHARED ${SRC})
 
