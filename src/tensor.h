@@ -161,8 +161,6 @@ public:
     int size;
     std::vector<T> storage;
     T* vec;
-
-private:
     tensor_accessor<T, rank, check, F> acc;
 
 public:
