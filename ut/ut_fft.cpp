@@ -41,15 +41,19 @@ void test_periodic(void**) {
     FFT_free(ft);
 }
 
+template<typename T>
 void test_periodic_new(void**) {
-    using T = double;
     int N = 1024;
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-5;
+    }
     std::default_random_engine generator;
     std::uniform_real_distribution<T> distribution(-1, 1);
 
-    vector<double> S(N);
-    vector<double> s(N);
-    vector<double> s1(N);
+    vector<T> S(N);
+    vector<T> s(N);
+    vector<T> s1(N);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
 
@@ -60,8 +64,16 @@ void test_periodic_new(void**) {
     ft.pFFT(&S[0], &s[0], 1.0);
     ft.pFFT_1(&s1[0], &S[0], 2.0/N);
     for (int i = 0; i < N; i++) {
-        assert_float_equal(s1[i], s[i], 1e-15);
+        assert_float_equal(s1[i], s[i], tol);
     }
+}
+
+void test_periodic_new_double(void**) {
+    test_periodic_new<double>(nullptr);
+}
+
+void test_periodic_new_float(void**) {
+    test_periodic_new<float>(nullptr);
 }
 
 void test_periodic_new_old_cmp(void**) {
@@ -93,7 +105,8 @@ void test_periodic_new_old_cmp(void**) {
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_periodic),
-        cmocka_unit_test(test_periodic_new),
+        cmocka_unit_test(test_periodic_new_double),
+        cmocka_unit_test(test_periodic_new_float),
         cmocka_unit_test(test_periodic_new_old_cmp),
     };
 
