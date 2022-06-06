@@ -11,7 +11,7 @@
 #include "config.h"
 #include "sparse.h"
 #include "asp_misc.h"
-#include "lapl.h"
+#include "lapl_cyl.h"
 
 using namespace std;
 using namespace fdm;

@@ -8,7 +8,7 @@
 
 #include "umfpack_solver.h"
 #include "superlu_solver.h"
-#include "lapl.h"
+#include "lapl_cyl.h"
 #include "config.h"
 
 extern "C" {
