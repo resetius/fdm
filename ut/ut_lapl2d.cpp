@@ -41,8 +41,8 @@ void test_lapl2d(void** data) {
     double y1 = c->get("test", "y1", 0.0);
     double x2 = c->get("test", "x2", 1.0);
     double y2 = c->get("test", "y2", 1.0);
-    int nx = c->get("test", "nx", 4);
-    int ny = c->get("test", "ny", 3);
+    int nx = c->get("test", "nx", 32);
+    int ny = c->get("test", "ny", 31);
     int verbose = c->get("test", "verbose", 0);
 
     Lapl2d<T,check> lapl(x1, y1, x2, y2, nx, ny);
@@ -56,6 +56,19 @@ void test_lapl2d(void** data) {
     for (int k = 1; k <= ny; k++) {
         for (int j = 1; j <= nx; j++) {
             RHS[k][j] = rp(k, j, dy, dx, x1, y1, x2, y2);
+
+            if (k <= 1) {
+                RHS[k][j] -= ans(k-1, j, dy, dx, x1, y1, x2, y2)/dy/dy;
+            }
+            if (j <= 1) {
+                RHS[k][j] -= ans(k, j-1, dy, dx, x1, y1, x2, y2)/dx/dx;
+            }
+            if (j >= nx) {
+                RHS[k][j] -= ans(k, j+1, dy, dx, x1, y1, x2, y2)/dx/dx;
+            }
+            if (k >= ny) {
+                RHS[k][j] -= ans(k+1, j, dy, dx, x1, y1, x2, y2)/dy/dy;
+            }
         }
     }
 
