@@ -85,12 +85,9 @@ void FFT<T>::pFFT_1(T *S, const T *s1, T dx) {
     for (k = 0; k <= N_2; k++) {
         S[k]     = y[k] * dx;
     }
-    S[0] *= M_SQRT1_2;
-
     for (k = 1; k <= N_2 - 1; k++) {
         S[N - k] = _y[k] * dx;
     }
-    S[N_2] *= M_SQRT1_2;
 }
 
 template<typename T>
@@ -98,10 +95,8 @@ void FFT<T>::pFFT(T *S, const T* s, T dx) {
     int N_2 = N/2;
     int k;
 
-    ss[0]=s[0]*M_SQRT1_2;
-    memcpy(&ss[1], &s[1], (N_2-1) * sizeof(T));
-
-    ss[N_2]=s[N_2]*M_SQRT1_2;
+    ss[0]=s[0];
+    memcpy(&ss[0], &s[0], (N_2+1) * sizeof(T));
 
     cFFT(&y1[0], &ss[0], dx, N_2,n-1,2);
 
@@ -128,7 +123,7 @@ void FFT<T>::sFFT(T *S,T *s,T dx,int N,int n,int nr) {
     const T* ffSIN = &t.ffSIN[0];
     int sz = static_cast<int>(t.ffSIN.size());
 
-    memcpy(&a[1], &ss[1], (N - 1) * sizeof(T));
+    memcpy(&a[1], &s[1], (N - 1) * sizeof(T));
 
     for (int p = 1; p <= n - 1; p++) {
         int idx = 1 << (n - p);
@@ -143,7 +138,7 @@ void FFT<T>::sFFT(T *S,T *s,T dx,int N,int n,int nr) {
         int idx = 1 << (n - s);
         int vm  = 1 << (s - 1);
         for (int k = 1; k <= idx; k++) {
-            double y = 0.0;
+            T y = 0;
             for (int j = 1; j <= idx; j++) {
                 y += a[s * N + idx * 2 - j] *
                     ffSIN[((2 * k - 1) * vm * nr * j) % sz];
@@ -166,7 +161,9 @@ void FFT<T>::cFFT(T *S,T *s,T dx,int N,int n,int nr) {
     const T* ffCOS = &t.ffCOS[0];
     int sz = static_cast<int>(t.ffSIN.size());
     int M = N + 1;
-    memcpy(&a[0], &ss[0], M * sizeof(T));
+    memcpy(&a[0], &s[0], M * sizeof(T));
+    a[0] *= 0.5; a[N] *= 0.5; // samarskii, (15)-(16) p 66
+
     for (int p = 1; p <= n; p++) {
         int idx = 1 << (n - p);
         for (int j = 0; j <= idx - 1; j ++) {
@@ -180,7 +177,7 @@ void FFT<T>::cFFT(T *S,T *s,T dx,int N,int n,int nr) {
         int idx = 1 << (n - s);
         int vm  = 1 << (s - 1);
         for (int k = 1; k <= idx; k++) {
-            double y = 0.0;
+            T y = 0;
             for (int j = 0; j <= idx - 1; j++) {
                 y += a[s * M + idx * 2 - j] *
                     ffCOS[((2 * k - 1) * vm * nr * j) % sz];

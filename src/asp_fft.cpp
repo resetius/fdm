@@ -161,12 +161,9 @@ void FFT_free(fft * s)
 		for (k = 0; k <= N_2; k++) {
 			S[k] = y[k] * dx;
 		}
-		S[0] *= M_SQRT1_2;
-
 		for (k = 1; k <= N_2 - 1; k++) {
 			S[N - k] = _y[k] * dx;
 		}
-		S[N_2] *= M_SQRT1_2;
 
 		free(a); free(_y); free(y);
 	}
@@ -230,12 +227,9 @@ void FFT_free(fft * s)
 		for (k = 0; k <= N_2; k++) {
 			S[k]     = y[k] * dx;
 		}
-		S[0] *= M_SQRT1_2;
-
 		for (k = 1; k <= N_2 - 1; k++) {
 			S[N - k] = _y[k] * dx;
 		}
-		S[N_2] *= M_SQRT1_2;
 
 		free(a); free(_y); free(y);
 	}
@@ -257,10 +251,7 @@ void FFT_free(fft * s)
 		double *y2 = (double*)malloc((N_2 + 1) * sizeof(double));
 		double *ss = (double*)malloc((N_2 + 1) * sizeof(double));
 
-		ss[0]=s[0]*M_SQRT1_2;
-		memcpy(&ss[1], &s[1], (N_2-1) * sizeof(double));
-
-		ss[N_2]=s[N_2]*M_SQRT1_2;
+		memcpy(&ss[0], &s[0], (N_2+1) * sizeof(double));
 
 		cFFT(y1, ss, dx, N/2, n - 1);
 
@@ -288,11 +279,7 @@ void FFT_free(fft * s)
 		double *ss = (double*)malloc((N_2 + 1) * sizeof(double));
 
 		fft ft2 = *ft;
-
-		ss[0]=s[0]*M_SQRT1_2;
-		memcpy(&ss[1], &s[1], (N_2-1) * sizeof(double));
-
-		ss[N_2]=s[N_2]*M_SQRT1_2;
+		memcpy(&ss[0], &s[0], (N_2+1) * sizeof(double));
 
 		//ft->N = N_2; --ft->n; ft->k = 2;
 		ft2.N = N_2;
@@ -323,7 +310,7 @@ void FFT_free(fft * s)
 		int j, k;
 		for (k = 1; k <= N - 1; ++k) {
 			double sum = 0.0;
-			for (j = 0; j <= N; ++j) {
+			for (j = 1; j <= N-1; ++j) {
 				sum += s[j] * sin(k * M_PI * j / ((double)N));
 			}
 			S[k] = dx * sum;
@@ -417,12 +404,15 @@ void FFT_free(fft * s)
 	void cFT(double *S, double *s, double dx, int N)
 	{
 		int j, k;
+        int _cos = 1;
 		for (k = 0; k <= N; ++k) {
 			double sum = 0.0;
-			for (j = 0; j <= N; ++j) {
+            sum += 0.5*s[0] * 1; /*cos(k * M_PI * 0 / ((double)N))*/;
+			for (j = 1; j < N; ++j) {
 				sum += s[j] * cos(k * M_PI * j / ((double)N));
 			}
-			S[k] = dx * sum;
+            sum += 0.5*s[N] * _cos; /*cos(k * M_PI * N / ((double)N))*/;
+			S[k] = dx * sum; _cos *= -1;
 		}
 	}
 
@@ -435,6 +425,7 @@ void FFT_free(fft * s)
 		double *a = (double*)malloc((n + 1) * M * sizeof(double));
 
 		memcpy(&a[0], &ss[0], M * sizeof(double));
+        a[0] *= 0.5; a[N] *= 0.5; // samarskii, (15)-(16) p 66
 
 		for (p = 1; p <= n; p++) {
 			//int idx  = _ipow(2, n - p);
@@ -476,6 +467,7 @@ void FFT_free(fft * s)
 		double *a = (double*)malloc((n + 1) * M * sizeof(double));
 
 		memcpy(&a[0], &ss[0], M * sizeof(double));
+        a[0] *= 0.5; a[N] *= 0.5; // samarskii, (15)-(16) p 66
 
 		for (p = 1; p <= n; p++) {
 			//int idx  = _ipow(2, n - p);
