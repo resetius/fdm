@@ -61,7 +61,7 @@ public:
             // solver
             init_Mat(k);
             int info;
-            lapack::gtsv(nx+1, 1, &L[0], &D[0], &U[0], &RHSm[k][1], nx+1, &info);
+            lapack::gtsv(nx, 1, &L[0], &D[0], &U[0], &RHSm[k][1], nx, &info);
             verify(info == 0);
         }
 
