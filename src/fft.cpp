@@ -95,7 +95,6 @@ void FFT<T>::pFFT(T *S, const T* s, T dx) {
     int N_2 = N/2;
     int k;
 
-    ss[0]=s[0];
     memcpy(&ss[0], &s[0], (N_2+1) * sizeof(T));
 
     cFFT(&y1[0], &ss[0], dx, N_2,n-1,2);
