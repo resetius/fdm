@@ -9,6 +9,9 @@ extern "C" float cblas_snrm2(int n, const float* x, int incx);
 extern "C" double cblas_dscal(int n, double alpha, const double* x, int incx);
 extern "C" float cblas_sscal(int n, float alpha, const float* x, int incx);
 
+extern "C" void sgtsv_(int* n, int* nrhs, float* low, float* diag, float* up, float* b, int* ldb, int*info);
+extern "C" void dgtsv_(int* n, int* nrhs, double* low, double* diag, double* up, double* b, int* ldb, int*info);
+
 namespace fdm {
 namespace blas {
 
@@ -49,4 +52,19 @@ inline float scal(int n, float alpha, const float* x, int incx) {
 }
 
 } // namespace blas
+
+namespace lapack {
+
+inline void gtsv(int n, int nrhs, float* low, float* diag, float* up, float* b, int ldb, int*info)
+{
+    sgtsv_(&n, &nrhs, low, diag, up, b, &ldb, info);
+}
+
+inline void gtsv(int n, int nrhs, double* low, double* diag, double* up, double* b, int ldb, int*info)
+{
+    dgtsv_(&n, &nrhs, low, diag, up, b, &ldb, info);
+}
+
+} // namespace lapack
+
 } // namespace fdm
