@@ -50,9 +50,9 @@ void test_lapl_cyl_simple(void** data) {
     using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
 
     Config* c = static_cast<Config*>(*data);
-    int nr = c->get("test", "nr", 32);
-    int nz = c->get("test", "nz", 32);
-    int nphi = c->get("test", "nphi", 32);
+    int nr = c->get("test", "nr", 16);
+    int nz = c->get("test", "nz", 16);
+    int nphi = c->get("test", "nphi", 16);
     int verbose = c->get("test", "verbose", 0);
     double r0 = M_PI/2, R = M_PI;
     double h0 = 0, h1 = 10;
@@ -78,10 +78,10 @@ void test_lapl_cyl_simple(void** data) {
                     RHS[i][k][j] -= ans(i,k-1,j,dr,dz,dphi, r0, R, h0, h1)/dz/dz;
                 }
                 if (j <= 1) {
-                    RHS[i][k][j] -= (r-dr/2)/2*ans(i,k,j-1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
+                    RHS[i][k][j] -= (r-dr/2)/r*ans(i,k,j-1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
                 }
                 if (j >= nr) {
-                    RHS[i][k][j] -= (r+dr/2)/2*ans(i,k,j+1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
+                    RHS[i][k][j] -= (r+dr/2)/r*ans(i,k,j+1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
                 }
                 if (k >= nz) {
                     RHS[i][k][j] -= ans(i,k+1,j,dr,dz,dphi,r0,R,h0,h1)/dz/dz;
@@ -119,7 +119,7 @@ void test_lapl_cyl_simple(void** data) {
         printf("It took me '%f' seconds, err = '%e'\n", interval.count(), nrm);
     }
 
-    assert_true(nrm < 5e-2);
+    assert_true(nrm < 1e-3);
 }
 
 void test_lapl_cyl_simple_double(void** data) {
@@ -164,10 +164,10 @@ void test_lapl_cyl(void** data) {
                     RHS[i][k][j] -= ans(i,k-1,j,dr,dz,dphi, r0, R, h0, h1)/dz/dz;
                 }
                 if (j <= 1) {
-                    RHS[i][k][j] -= (r-dr/2)/2*ans(i,k,j-1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
+                    RHS[i][k][j] -= (r-dr/2)/r*ans(i,k,j-1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
                 }
                 if (j >= nr) {
-                    RHS[i][k][j] -= (r+dr/2)/2*ans(i,k,j+1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
+                    RHS[i][k][j] -= (r+dr/2)/r*ans(i,k,j+1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
                 }
                 if (k >= nz) {
                     RHS[i][k][j] -= ans(i,k+1,j,dr,dz,dphi,r0,R,h0,h1)/dz/dz;
@@ -204,7 +204,7 @@ void test_lapl_cyl(void** data) {
         printf("It took me '%f' seconds, err = '%e'\n", interval.count(), nrm);
     }
 
-    assert_true(nrm < 5e-2);
+    assert_true(nrm < 1e-3);
 }
 
 void test_lapl_cyl_double(void** data) {
