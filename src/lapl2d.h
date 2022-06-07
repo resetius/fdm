@@ -13,32 +13,38 @@ template<typename T, bool check>
 class Lapl2d {
 public:
     using matrix = tensor<T,2,check>;
-    const double x1, y1;
-    const double x2, y2;
-
-    const int nx, ny;
     const double dx, dy;
     const double dx2, dy2;
+
+    const double lx, ly;
+
+    const int nx, ny;
 
     std::vector<T> L,D,U;
 
     FFTTable<T> ft_table;
     FFT<T> ft;
 
-    Lapl2d(double x1, double y1,
-           double x2, double y2,
+    /**
+       \param dx, dy - расстояние между точками
+       \param lx, ly - расстояние между первой и последне краевой точкой по осям x,y
+       \param nx, ny - 0 первая точка, nx+1 последняя (края)
+     */
+    Lapl2d(double dx, double dy,
+           double lx, double ly,
            int nx, int ny)
-        : x1(x1), y1(y1)
-        , x2(x2), y2(y2)
-        , nx(nx), ny(ny)
-        , dx((x2-x1)/nx)
-        , dy((y2-y1)/ny)
+        : dx(dx), dy(dy)
         , dx2(dx*dx), dy2(dy*dy)
+        , lx(lx), ly(ly)
+        , nx(nx), ny(ny)
         , L(nx-1), D(nx), U(nx-1)
         , ft_table(ny+1)
         , ft(ft_table, ny+1)
     { }
 
+    /**
+       \param rhs, ans - массивы размера (ny-1)*(nx-1) - только внутренние точки
+     */
     void solve(T* ans, T* rhs) {
         matrix ANS({1,ny,1,nx}, ans);
         matrix RHS({1,ny,1,nx}, rhs);
@@ -50,7 +56,7 @@ public:
                 s[k] = RHS[k][j];
             }
 
-            ft.sFFT(&S[0], &s[0], dy*sqrt(2./(x2-x1)) /*check*/ );
+            ft.sFFT(&S[0], &s[0], dy*sqrt(2./lx));
 
             for (int k = 1; k <= ny; k++) {
                 RHSm[k][j] = S[k];
@@ -69,7 +75,7 @@ public:
             for (int k = 1; k <= ny; k++) {
                 s[k] = RHSm[k][j];
 
-                ft.sFFT(&S[0], &s[0], sqrt(2./(x2-x1)) /* check */);
+                ft.sFFT(&S[0], &s[0], sqrt(2./lx));
             }
 
             for (int k = 1; k <= ny; k++) {
