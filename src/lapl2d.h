@@ -56,7 +56,7 @@ public:
                 s[k] = RHS[k][j];
             }
 
-            ft.sFFT(&S[0], &s[0], dy*sqrt(2./lx));
+            ft.sFFT(&S[0], &s[0], dy*sqrt(2./ly));
 
             for (int k = 1; k <= ny; k++) {
                 RHSm[k][j] = S[k];
@@ -75,7 +75,7 @@ public:
             for (int k = 1; k <= ny; k++) {
                 s[k] = RHSm[k][j];
 
-                ft.sFFT(&S[0], &s[0], sqrt(2./lx));
+                ft.sFFT(&S[0], &s[0], sqrt(2./ly));
             }
 
             for (int k = 1; k <= ny; k++) {
