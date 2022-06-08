@@ -43,7 +43,7 @@ target_include_directories(ut_lapl_rect PRIVATE ${CMOCKA_INCLUDE_DIRS})
 target_link_directories(ut_lapl_rect PRIVATE ${CMOCKA_LIBRARY_DIRS})
 target_link_libraries(ut_lapl_rect fdm ${CMOCKA_LIBRARIES})
 
-add_test(NAME lapl_rect COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_lapl2d)
+add_test(NAME lapl_rect COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_lapl_rect)
 set_tests_properties(lapl_rect PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=lapl_rect.xml")
 
 endif()
