@@ -10,7 +10,7 @@
 namespace fdm {
 
 template<typename T, bool check, bool fft2=false>
-class Lapl2d {
+class LaplRect {
 public:
     using matrix = tensor<T,2,check>;
     const double dx, dy;
@@ -38,9 +38,9 @@ public:
        \param lx, ly - расстояние между первой и последне краевой точкой по осям x,y
        \param nx, ny - 0 первая точка, nx+1 последняя (края)
      */
-    Lapl2d(double dx, double dy,
-           double lx, double ly,
-           int nx, int ny)
+    LaplRect(double dx, double dy,
+             double lx, double ly,
+             int nx, int ny)
         : dx(dx), dy(dy)
         , dx2(dx*dx), dy2(dy*dy)
         , lx(lx), ly(ly)

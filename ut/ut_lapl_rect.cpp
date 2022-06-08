@@ -61,7 +61,7 @@ void test_lapl_rect(void** data) {
 
     double dx = (x2-x1)/nx, dy = (y2-y1)/ny;
 
-    Lapl2d<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
+    LaplRect<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
 
     vector<int> indices = {1,ny,1,nx};
     matrix RHS(indices);
@@ -138,7 +138,7 @@ T solve_lapl(Config* c, int nx, int ny) {
 
     double dx = (x2-x1)/nx, dy = (y2-y1)/ny;
 
-    Lapl2d<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
+    LaplRect<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
 
     vector<int> indices = {1,ny,1,nx};
     matrix RHS(indices);
@@ -230,7 +230,7 @@ void test_lapl_rect_ex(void** data) {
 
     double dx = (x2-x1)/nx, dy = (y2-y1)/ny;
 
-    Lapl2d<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
+    LaplRect<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
 
     vector<int> indices = {1,ny,1,nx};
     matrix RHS(indices);
@@ -316,7 +316,7 @@ void test_lapl_rect_fft1_fft2_cmp(void** data) {
 
     double dx = (x2-x1)/nx, dy = (y2-y1)/ny;
 
-    Lapl2d<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
+    LaplRect<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
 
     vector<int> indices = {1,ny,1,nx};
     matrix RHS(indices);
