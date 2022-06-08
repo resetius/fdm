@@ -6,7 +6,7 @@
 #include <type_traits>
 #include <chrono>
 
-#include "lapl2d.h"
+#include "lapl_rect.h"
 #include "config.h"
 
 extern "C" {
@@ -46,7 +46,7 @@ double rp0(int k, int j, double dy, double dx, double x1, double y1, double x2, 
 }
 
 template<typename T>
-void test_lapl2d(void** data) {
+void test_lapl_rect(void** data) {
     Config* c = static_cast<Config*>(*data);
     constexpr bool check = true;
     using matrix = tensor<T,2,check>;
@@ -117,12 +117,12 @@ void test_lapl2d(void** data) {
     assert_true(nrm < 3e-3);
 }
 
-void test_lapl2d_double(void** data) {
-    test_lapl2d<double>(data);
+void test_lapl_rect_double(void** data) {
+    test_lapl_rect<double>(data);
 }
 
-void test_lapl2d_float(void** data) {
-    test_lapl2d<float>(data);
+void test_lapl_rect_float(void** data) {
+    test_lapl_rect<float>(data);
 }
 
 template<typename T>
@@ -191,7 +191,7 @@ T solve_lapl(Config* c, int nx, int ny) {
 }
 
 template<typename T>
-void test_lapl2d_norm_decr(void** data) {
+void test_lapl_rect_norm_decr(void** data) {
     Config* c = static_cast<Config*>(*data);
 
     int nx = c->get("test", "nx", 15);
@@ -206,16 +206,16 @@ void test_lapl2d_norm_decr(void** data) {
     assert_true(nrm1/nrm2 > 3.7);
 }
 
-void test_lapl2d_norm_decr_double(void** data) {
-    test_lapl2d_norm_decr<double>(data);
+void test_lapl_rect_norm_decr_double(void** data) {
+    test_lapl_rect_norm_decr<double>(data);
 }
 
-void test_lapl2d_norm_decr_float(void** data) {
-    test_lapl2d_norm_decr<float>(data);
+void test_lapl_rect_norm_decr_float(void** data) {
+    test_lapl_rect_norm_decr<float>(data);
 }
 
 template<typename T>
-void test_lapl2d_ex(void** data) {
+void test_lapl_rect_ex(void** data) {
     Config* c = static_cast<Config*>(*data);
     constexpr bool check = true;
     using matrix = tensor<T,2,check>;
@@ -290,15 +290,15 @@ void test_lapl2d_ex(void** data) {
     }
 }
 
-void test_lapl2d_ex_double(void** data) {
-    test_lapl2d_ex<double>(data);
+void test_lapl_rect_ex_double(void** data) {
+    test_lapl_rect_ex<double>(data);
 }
 
-void test_lapl2d_ex_float(void** data) {
-    test_lapl2d_ex<float>(data);
+void test_lapl_rect_ex_float(void** data) {
+    test_lapl_rect_ex<float>(data);
 }
 
-void test_lapl2d_fft1_fft2_cmp(void** data) {
+void test_lapl_rect_fft1_fft2_cmp(void** data) {
     using T = double;
     Config* c = static_cast<Config*>(*data);
 
@@ -372,19 +372,19 @@ void test_lapl2d_fft1_fft2_cmp(void** data) {
 }
 
 int main(int argc, char** argv) {
-    string config_fn = "ut_lapl2d.ini";
+    string config_fn = "ut_lapl_rect.ini";
     Config c;
     c.open(config_fn);
     c.rewrite(argc, argv);
 
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test_prestate(test_lapl2d_double, &c),
-        cmocka_unit_test_prestate(test_lapl2d_float, &c),
-        cmocka_unit_test_prestate(test_lapl2d_norm_decr_double, &c),
-        cmocka_unit_test_prestate(test_lapl2d_norm_decr_float, &c),
-        cmocka_unit_test_prestate(test_lapl2d_ex_double, &c),
-        cmocka_unit_test_prestate(test_lapl2d_ex_float, &c),
-        cmocka_unit_test_prestate(test_lapl2d_fft1_fft2_cmp, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_double, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_float, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_norm_decr_double, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_norm_decr_float, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_ex_double, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_ex_float, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_fft1_fft2_cmp, &c),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
