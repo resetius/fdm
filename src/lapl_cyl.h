@@ -7,19 +7,30 @@
 
 namespace fdm {
 
+struct LaplCyl3Data {
+    const double dr, dz, dphi;
+    const double dr2, dz2, dphi2;
+
+    const double r0, lr, lz;
+
+    const int nr, nz, nphi;
+
+    LaplCyl3Data(double dr, double dz,
+                 double r0, double lr, double lz,
+                 int nr, int nz, int nphi)
+        : dr(dr), dz(dz), dphi(2*M_PI/nphi)
+        , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
+        , r0(r0), lr(lr), lz(lz)
+        , nr(nr), nz(nz), nphi(nphi)
+    { }
+};
+
 template<typename T, template<typename> class Solver, bool check>
-class LaplCyl3 {
+class LaplCyl3FFT1: public LaplCyl3Data {
 public:
     constexpr static T SQRT_M_1_PI = 0.56418958354775629;
     using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
     using tensor = fdm::tensor<T,3,check,tensor_flags>;
-
-    const double R, r0;
-    const double h1, h2;
-
-    const int nr, nz, nphi;
-    const double dr, dz, dphi;
-    const double dr2, dz2, dphi2;
 
     std::vector<int> indices;
     tensor RHS, ANS, RHSm, RHSx;
@@ -30,13 +41,10 @@ public:
     FFTTable<T> ft_table;
     std::vector<FFT<T>> ft;
 
-    LaplCyl3(double R, double r0, double h1, double h2,
+    LaplCyl3FFT1(double dr, double dz,
+             double r0, double lr, double lz,
              int nr, int nz, int nphi)
-        : R(R), r0(r0)
-        , h1(h1), h2(h2)
-        , nr(nr), nz(nz), nphi(nphi)
-        , dr((R-r0)/nr), dz((h2-h1)/nz), dphi(2*M_PI/nphi)
-        , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
+        : LaplCyl3Data(dr, dz, r0, lr, lz, nr, nz, nphi)
         , indices({0, nphi-1, 1, nz, 1, nr})
         , RHS(indices), ANS(indices), RHSm(indices), RHSx(indices)
         , s((nz+1)*nphi), S((nz+1)*nphi)
@@ -46,7 +54,7 @@ public:
         init_solver();
     }
 
-    ~LaplCyl3()
+    ~LaplCyl3FFT1()
     {
     }
 
@@ -109,7 +117,7 @@ private:
         for (int k = 1; k <= nz; k++) {
             for (int j = 1; j <= nr; j++) {
                 int id = RHS_phi.index({k,j});
-                double r = r0+j*dr-dr/2;
+                double r = r0+j*dr;
 
                 if (k > 1) {
                     P_phi.add(id, RHS_phi.index({k-1,j}), 1/dz2);
@@ -137,6 +145,162 @@ private:
     }
 };
 
+template<typename T, bool check>
+class LaplCyl3FFT2: public LaplCyl3Data {
+public:
+    constexpr static T SQRT_M_1_PI = 0.56418958354775629;
+    using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
+    using tensor = fdm::tensor<T,3,check,tensor_flags>;
+
+    std::vector<int> indices;
+    tensor RHS, ANS, RHSm;
+
+    int lds;
+    std::vector<T> s, S;
+
+    FFTTable<T> ft_phi_table;
+    FFTTable<T> ft_z_table_;
+    FFTTable<T>* ft_z_table;
+    std::vector<FFT<T>> ft_phi;
+    std::vector<FFT<T>> ft_z_;
+    std::vector<FFT<T>>& ft_z;
+    std::vector<T> lm_phi, lm_z;
+
+    LaplCyl3FFT2(double dr, double dz,
+                 double r0, double lr, double lz,
+                 int nr, int nz, int nphi)
+        : LaplCyl3Data(dr, dz, r0, lr, lz, nr, nz, nphi)
+        , indices({0, nphi-1, 1, nz, 1, nr})
+        , RHS(indices), ANS(indices), RHSm(indices)
+        , s((nz+1)*nphi), S((nz+1)*nphi)
+
+        , ft_phi_table(nphi)
+        , ft_z_table_(nphi == nz+1 ? 1 : nz+1)
+        , ft_z_table(nphi == nz+1 ? &ft_phi_table : &ft_z_table_)
+
+        , ft_z(nphi == nz+1 ? ft_phi : ft_z_)
+
+        , lm_phi(nphi), lm_z(nz+1)
+    {
+        init_solver();
+    }
+
+    ~LaplCyl3FFT2()
+    {
+    }
+
+    void solve(T* ans, T* rhs) {
+        RHS.use(rhs); ANS.use(ans);
+
+#pragma omp parallel for
+        for (int k = 1; k <= nz; k++) {
+            for (int j = 1; j <= nr; j++) {
+                for (int i = 0; i < nphi; i++) {
+                    s[k*nphi+i] = RHS[i][k][j];
+                }
+
+                ft_phi[k].pFFT_1(&S[k*nphi], &s[k*nphi], dphi*SQRT_M_1_PI);
+
+                for (int i = 0; i < nphi; i++) {
+                    RHSm[i][k][j] = S[k*nphi+i];
+                }
+            }
+        }
+
+#pragma omp parallel for
+        for (int i = 0; i < nphi; i++) {
+            for (int j = 1; j <= nr; j++) {
+                for (int k = 1; k <= nz; k++) {
+                    s[i*(nz+1)+k] = RHSm[i][k][j];
+                }
+
+                ft_z[i].sFFT(&S[i*(nz+1)], &s[i*(nz+1)], dz*sqrt(2./lz));
+
+                for (int k = 1; k <= nz; k++) {
+                    RHSm[i][k][j] = S[i*(nz+1)+k];
+                }
+            }
+        }
+
+        // solve
+#pragma omp parallel for
+        for (int i = 0; i < nphi; i++) {
+            std::vector<T> L(nr-1), D(nr), U(nr-1);
+
+            for (int k = 1; k <= nz; k++) {
+                int li, di, ui; li = di = ui = 0;
+                for (int j = 1; j <= nr; j++) {
+                    double r = r0+j*dr;
+                    D[di++] = -2/dr2-lm_phi[i]/r/r-lm_z[k];
+                    if (j > 1) {
+                        L[li++] = (r-0.5*dr)/dr2/r;
+                    }
+                    if (j < nr) {
+                        U[ui++] = (r+0.5*dr)/dr2/r;
+                    }
+                }
+
+                int info;
+                lapack::gtsv(nr, 1, &L[0], &D[0], &U[0], &RHSm[i][k][1], nr, &info);
+                verify(info == 0);
+            }
+        }
+
+#pragma omp parallel for
+        for (int i = 0; i < nphi; i++) {
+            for (int j = 1; j <= nr; j++) {
+                for (int k = 1; k <= nz; k++) {
+                    s[i*(nz+1)+k] = RHSm[i][k][j];
+                }
+
+                ft_z[i].sFFT(&S[i*(nz+1)], &s[i*(nz+1)], sqrt(2./lz));
+
+                for (int k = 1; k <= nz; k++) {
+                    ANS[i][k][j] = S[i*(nz+1)+k];
+                }
+            }
+        }
+
+#pragma omp parallel for
+        for (int k = 1; k <= nz; k++) {
+            for (int j = 1; j <= nr; j++) {
+                for (int i = 0; i < nphi; i++) {
+                    s[k*nphi+i] = ANS[i][k][j];
+                }
+
+                ft_phi[k].pFFT(&S[k*nphi], &s[k*nphi], SQRT_M_1_PI);
+
+                for (int i = 0; i < nphi; i++) {
+                    ANS[i][k][j] = S[k*nphi+i];
+                }
+            }
+        }
+    }
+
+private:
+    void init_solver() {
+        for (int i = 0; i < nphi; i++) {
+            lm_phi[i] = 4.0/dphi2*asp::sq(sin(i*dphi*0.5));
+        }
+        for (int k = 0; k <= nz; k++) {
+            lm_z[k] = 4./dz2*asp::sq(sin(k*M_PI*0.5/(nz+1)));
+        }
+
+        ft_phi.reserve(nz+1);
+        for (int k = 0; k <= nz; k++) {
+            ft_phi.emplace_back(ft_phi_table, nphi);
+        }
+
+        if (nphi == nz+1) {
+            return;
+        }
+
+        ft_z.reserve(nphi);
+        for (int k = 0; k < nphi; k++) {
+            ft_z.emplace_back(*ft_z_table, nz+1);
+        }
+    }
+};
 
 template<typename T, template<typename> class Solver, bool check>
 class LaplCyl3Simple {

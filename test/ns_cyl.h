@@ -52,15 +52,13 @@ public:
     matrix_p uz, wz;
     matrix_p vr, wr;
 
-    csr_matrix<T> P;
     csr_matrix<T> P_r, P_z, P_phi;
-    bool P_initialized = false;
 
-    Solver<T> solver;
     Solver<T> solver_stream_r; // для функции тока по срезу
     Solver<T> solver_stream_z; // для функции тока по срезу
     Solver<T> solver_stream_phi; // для функции тока по срезу
-    LaplCyl3<T,Solver,check> lapl3_solver;
+    LaplCyl3FFT2<T,check> lapl3_solver;
+    //LaplCyl3FFT1<T,Solver,check> lapl3_solver;
 
     int time_index = 0;
     int plot_time_index = -1;
@@ -109,9 +107,8 @@ public:
         , vr({0, nphi-1, 0, nz})
         , wr({0, nphi-1, 0, nz})
 
-        , lapl3_solver(R, r0, h1, h2, nr, nz, nphi)
+        , lapl3_solver(dr, dz, r0-dr/2, R-r0+dr, h2-h1+dz, nr, nz, nphi)
     {
-        init_P();
         init_P_slices();
     }
 
@@ -424,60 +421,6 @@ private:
 
         } // end of omp single
         } // end of omp parallel
-    }
-
-    void init_P() {
-        if (P_initialized) {
-            return;
-        }
-
-        for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k <= nz; k++) {
-                for (int j = 1; j <= nr; j++) {
-                    int id = RHS.index({i,k,j});
-                    double r = r0+j*dr-dr/2;
-                    double r2 = r*r;
-                    //double rm1 = (r-0.5*dr)/r;
-                    //double rm2 = (r+0.5*dr)/r;
-                    double rm = 0;
-                    double zm = 0;
-
-                    /*if (j > 1)  { rm += rm1; }
-                    if (j < nr) { rm += rm2; }
-                    if (k > 1)  { zm += 1; }
-                    if (k < nz) { zm += 1; }*/
-                    zm = 2; rm = 2;
-
-                    P.add(id, RHS.index({i-1,k,j}), 1/dphi2/r2);
-
-                    if (k > 1) {
-                        P.add(id, RHS.index({i,k-1,j}), 1/dz2);
-                    }
-
-                    if (j > 1) {
-                        P.add(id, RHS.index({i,k,j-1}), (r-0.5*dr)/dr2/r);
-                    }
-
-                    P.add(id, RHS.index({i,k,j}), -rm/dr2-zm/dz2-2/dphi2/r2);
-
-                    if (j < nr) {
-                        P.add(id, RHS.index({i,k,j+1}), (r+0.5*dr)/dr2/r);
-                    }
-
-                    if (k < nz) {
-                        P.add(id, RHS.index({i,k+1,j}), 1/dz2);
-                    }
-
-                    P.add(id, RHS.index({i+1,k,j}), 1/dphi2/r2);
-                }
-            }
-        }
-        P.close();
-        P.sort_rows();
-
-        solver = std::move(P);
-
-        P_initialized = true;
     }
 
     void init_P_slices() {
