@@ -73,7 +73,7 @@ public:
         , dt(c.get("ns", "dt", 0.001))
 
         , nr(c.get("ns", "nr", 32))
-        , nz(c.get("ns", "nz", 32))
+        , nz(c.get("ns", "nz", 31))
         , nphi(c.get("ns", "nphi", 32))
         , dr((R-r0)/nr), dz((h2-h1)/nz), dphi(2*M_PI/nphi)
         , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
@@ -98,14 +98,14 @@ public:
         , psi_z({0, nphi-1, 1, nr})
         , psi_phi({1, nz, 1, nr})
 
-        , uphi({0, nz, 0, nr})
-        , vphi({0, nz, 0, nr})
+        , uphi({0, nz+1, 0, nr+1})
+        , vphi({0, nz+1, 0, nr+1})
 
-        , uz({0, nphi-1, 0, nr})
-        , wz({0, nphi-1, 0, nr})
+        , uz({0, nphi-1, 0, nr+1})
+        , wz({0, nphi-1, 0, nr+1})
 
-        , vr({0, nphi-1, 0, nz})
-        , wr({0, nphi-1, 0, nz})
+        , vr({0, nphi-1, 0, nz+1})
+        , wr({0, nphi-1, 0, nz+1})
 
         , lapl3_solver(dr, dz, r0-dr/2, R-r0+dr, h2-h1+dz, nr, nz, nphi)
     {
@@ -567,7 +567,7 @@ private:
     void poisson_stream() {
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
-                RHS_r[i][k] = (wr[i][k]-wr[i][k-1]) / dz - (vr[i][k] - vr[i-1][k]) / dphi;
+                RHS_r[i][k] = (wr[i][k+1]-wr[i][k-1]) /2/ dz - (vr[i+1][k] - vr[i-1][k]) /2/ dphi;
             }
         }
 
@@ -575,7 +575,7 @@ private:
 
         for (int i = 0; i < nphi; i++) {
             for (int j = 1; j <= nr; j++) {
-                RHS_z[i][j] = (wz[i][j]-wz[i][j-1]) / dr - (uz[i][j] - uz[i-1][j]) / dphi;
+                RHS_z[i][j] = (wz[i][j+1]-wz[i][j-1]) /2/ dr - (uz[i+1][j] - uz[i-1][j])/2 / dphi;
             }
         }
 
@@ -583,7 +583,7 @@ private:
 
         for (int k = 1; k <= nz; k++) {
             for (int j = 1; j <= nr; j++) {
-                RHS_phi[k][j] = (vphi[k][j]-vphi[k][j-1]) / dr - (uphi[k][j] - uphi[k-1][j]) / dz;
+                RHS_phi[k][j] = (vphi[k][j+1]-vphi[k][j-1])/2 / dr - (uphi[k+1][j] - uphi[k-1][j])/2 / dz;
             }
         }
 
@@ -646,22 +646,22 @@ private:
             return;
         }
 
-        for (int k = 0; k <= nz; k++) {
-            for (int j = 0; j <= nr; j++) {
+        for (int k = 0; k <= nz+1; k++) {
+            for (int j = 0; j <= nr+1; j++) {
                 uphi[k][j] = 0.5*(u[nphi/2][k][j-1] + u[nphi/2][k][j]);
                 vphi[k][j] = 0.5*(v[nphi/2][k-1][j] + v[nphi/2][k][j]);
             }
         }
 
         for (int i = 0; i < nphi; i++) {
-            for (int j = 0; j <= nr; j++) {
+            for (int j = 0; j <= nr+1; j++) {
                 uz[i][j] = 0.5*(u[i][nz/2][j-1] + u[i][nz/2][j]);
                 wz[i][j] = 0.5*(w[i-1][nz/2][j] + w[i][nz/2][j]);
             }
         }
 
         for (int i = 0; i < nphi; i++) {
-            for (int k = 0; k <= nz; k++) {
+            for (int k = 0; k <= nz+1; k++) {
                 vr[i][k] = 0.5*(v[i][k-1][nr/2] + v[i][k][nr/2]);
                 wr[i][k] = 0.5*(w[i-1][k][nr/2] + w[i][k][nr/2]);
             }
