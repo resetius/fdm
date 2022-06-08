@@ -294,20 +294,42 @@ private:
             }
         }
 
+        // check me
+        for (int i = 0; i < nphi; i++) {
+            for (int j = -1; j <= nr+1; j++) {
+                u[i][0][j]    = -u[i][1][j];
+                u[i][nz+1][j] = -u[i][nz][j];
+            }
+        }
+
+        for (int i = 0; i < nphi; i++) {
+            for (int j = 0; j <= nr+1; j++) {
+                w[i][0][j]    = -w[i][1][j];
+                w[i][nz+1][j] = -w[i][nz][j];
+            }
+        }
+
         // давление
+        // check me
         for (int i = 0; i < nphi; i++) {
             for (int k = 1; k <= nz; k++) {
-                p[i][k][0]  = p[i][k][1] -
-                    (u[i][k][1]-2*u[i][k][0]+u[i][k][-1])/Re/dr;
-                p[i][k][nr+1] = p[i][k][nr]-
-                    (u[i][k][nr+1]-2*u[i][k][nr]+u[i][k][nr-1])/Re/dr;
+                int j = 0;
+                double r = r0+j*dr-dr/2;
+                p[i][k][0]  = (r+0.5*dr)/(r-0.5*dr) * p[i][k][1] -
+                    ((r+0.5*dr)*u[i][k][1]/r-2*u[i][k][0]+(r-0.5*dr)*u[i][k][-1]/r)/Re/dr*r;
+
+                j = nr;
+                r = r0+j*dr-dr/2;
+
+                p[i][k][nr+1] = (r-0.5*dr)/(r+0.5*dr) * p[i][k][nr]+
+                    ((r+0.5*dr)*u[i][k][nr+1]/r-2*u[i][k][nr]+(r-0.5*dr)*u[i][k][nr-1]/r)/Re/dr*r;
             }
         }
         for (int i = 0; i < nphi; i++) {
             for (int j = 1; j <= nr; j++) {
                 p[i][0][j]    = p[i][1][j] -
                     (v[i][1][j]-2*v[i][0][j]+v[i][-1][j])/Re/dz;
-                p[i][nz+1][j] = p[i][nz][j]-
+                p[i][nz+1][j] = p[i][nz][j]+
                     (v[i][nz+1][j]-2*v[i][nz][j]+v[i][nz-1][j])/Re/dz;
             }
         }

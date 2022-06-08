@@ -9,8 +9,17 @@ extern "C" float cblas_snrm2(int n, const float* x, int incx);
 extern "C" double cblas_dscal(int n, double alpha, const double* x, int incx);
 extern "C" float cblas_sscal(int n, float alpha, const float* x, int incx);
 
+// all in one driver for tri-diagonal matrices
 extern "C" void sgtsv_(int* n, int* nrhs, float* low, float* diag, float* up, float* b, int* ldb, int*info);
 extern "C" void dgtsv_(int* n, int* nrhs, double* low, double* diag, double* up, double* b, int* ldb, int*info);
+
+// tri-diagonal factorisation
+extern "C" void sgttrf_(int* n, float* low, float* diag, float* up, float* up2, int* ipiv, int*info);
+extern "C" void dgttrf_(int* n, double* low, double* diag, double* up, double* up2, int* ipiv, int*info);
+
+// tri-diagonal solver
+extern "C" void sgttrs_(const char* trans, int* n, int* nrhs, float* low, float* diag, float* up, float* up2, int* ipiv, float* b, int* ldb, int*info);
+extern "C" void dgttrs_(const char* trans, int* n, int* nrhs, double* low, double* diag, double* up, double* up2, int* ipiv, double* b, int* ldb, int*info);
 
 namespace fdm {
 namespace blas {
@@ -63,6 +72,22 @@ inline void gtsv(int n, int nrhs, float* low, float* diag, float* up, float* b, 
 inline void gtsv(int n, int nrhs, double* low, double* diag, double* up, double* b, int ldb, int*info)
 {
     dgtsv_(&n, &nrhs, low, diag, up, b, &ldb, info);
+}
+
+inline void gttrf(int n, float* low, float* diag, float* up, float* up2, int* ipiv, int* info) {
+    sgttrf_(&n, low, diag, up, up2, ipiv, info);
+}
+
+inline void gttrf(int n, double* low, double* diag, double* up, double* up2, int* ipiv, int* info) {
+    dgttrf_(&n, low, diag, up, up2, ipiv, info);
+}
+
+inline void gttrs(const char* trans, int n, int nrhs, float* low, float* diag, float* up, float* up2, int* ipiv, float* b, int ldb, int*info) {
+    sgttrs_(trans, &n, &nrhs, low, diag, up, up2, ipiv, b, &ldb, info);
+}
+
+inline void gttrs(const char* trans, int n, int nrhs, double* low, double* diag, double* up, double* up2, int* ipiv, double* b, int ldb, int* info) {
+    dgttrs_(trans, &n, &nrhs, low, diag, up, up2, ipiv, b, &ldb, info);
 }
 
 } // namespace lapack

@@ -12,6 +12,7 @@ struct LaplCyl3Data {
     const double dr2, dz2, dphi2;
 
     const double r0, lr, lz;
+    const double slz;
 
     const int nr, nz, nphi;
 
@@ -20,7 +21,7 @@ struct LaplCyl3Data {
                  int nr, int nz, int nphi)
         : dr(dr), dz(dz), dphi(2*M_PI/nphi)
         , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
-        , r0(r0), lr(lr), lz(lz)
+        , r0(r0), lr(lr), lz(lz), slz(sqrt(2./lz))
         , nr(nr), nz(nz), nphi(nphi)
     { }
 };
@@ -166,6 +167,9 @@ public:
     std::vector<FFT<T>>& ft_z;
     std::vector<T> lm_phi, lm_z;
 
+    fdm::tensor<T,3,check> matrices;
+    fdm::tensor<int,3,check> ipivs;
+
     LaplCyl3FFT2(double dr, double dz,
                  double r0, double lr, double lz,
                  int nr, int nz, int nphi)
@@ -181,6 +185,8 @@ public:
         , ft_z(nphi == nz+1 ? ft_phi : ft_z_)
 
         , lm_phi(nphi), lm_z(nz+1)
+        , matrices({0,nphi-1,1,nz,0,4*nr-1})
+        , ipivs({0,nphi-1,1,nz,0,nr-1})
     {
         init_solver();
     }
@@ -214,7 +220,7 @@ public:
                     s[i*(nz+1)+k] = RHSm[i][k][j];
                 }
 
-                ft_z[i].sFFT(&S[i*(nz+1)], &s[i*(nz+1)], dz*sqrt(2./lz));
+                ft_z[i].sFFT(&S[i*(nz+1)], &s[i*(nz+1)], dz*slz);
 
                 for (int k = 1; k <= nz; k++) {
                     RHSm[i][k][j] = S[i*(nz+1)+k];
@@ -225,23 +231,15 @@ public:
         // solve
 #pragma omp parallel for
         for (int i = 0; i < nphi; i++) {
-            std::vector<T> L(nr-1), D(nr), U(nr-1);
-
             for (int k = 1; k <= nz; k++) {
-                int li, di, ui; li = di = ui = 0;
-                for (int j = 1; j <= nr; j++) {
-                    double r = r0+j*dr;
-                    D[di++] = -2/dr2-lm_phi[i]/r/r-lm_z[k];
-                    if (j > 1) {
-                        L[li++] = (r-0.5*dr)/dr2/r;
-                    }
-                    if (j < nr) {
-                        U[ui++] = (r+0.5*dr)/dr2/r;
-                    }
-                }
+                T* L = &matrices[i][k][0*nr];
+                T* D = &matrices[i][k][1*nr];
+                T* U = &matrices[i][k][2*nr];
+                T* U2 = &matrices[i][k][3*nr];
+                int* ipiv = &ipivs[i][k][0];
 
                 int info;
-                lapack::gtsv(nr, 1, &L[0], &D[0], &U[0], &RHSm[i][k][1], nr, &info);
+                lapack::gttrs("N", nr, 1, L, D, U, U2, ipiv, &RHSm[i][k][1], nr, &info);
                 verify(info == 0);
             }
         }
@@ -253,7 +251,7 @@ public:
                     s[i*(nz+1)+k] = RHSm[i][k][j];
                 }
 
-                ft_z[i].sFFT(&S[i*(nz+1)], &s[i*(nz+1)], sqrt(2./lz));
+                ft_z[i].sFFT(&S[i*(nz+1)], &s[i*(nz+1)], slz);
 
                 for (int k = 1; k <= nz; k++) {
                     ANS[i][k][j] = S[i*(nz+1)+k];
@@ -284,6 +282,34 @@ private:
         }
         for (int k = 0; k <= nz; k++) {
             lm_z[k] = 4./dz2*asp::sq(sin(k*M_PI*0.5/(nz+1)));
+        }
+
+        for (int i = 0; i < nphi; i++) {
+            for (int k = 1; k <= nz; k++) {
+                int li, di, ui; li = di = ui = 0;
+                T* L = &matrices[i][k][0*nr];
+                T* D = &matrices[i][k][1*nr];
+                T* U = &matrices[i][k][2*nr];
+                T* U2 = &matrices[i][k][3*nr];
+                int* ipiv = &ipivs[i][k][0];
+                for (int j = 1; j <= nr; j++) {
+                    double r = r0+j*dr;
+                    D[di++] = -2/dr2-lm_phi[i]/r/r-lm_z[k];
+                    if (j > 1) {
+                        L[li++] = (r-0.5*dr)/dr2/r;
+                    }
+                    if (j < nr) {
+                        U[ui++] = (r+0.5*dr)/dr2/r;
+                    }
+                }
+                verify(di == nr);
+                verify(ui == nr-1);
+                verify(li == nr-1);
+
+                int info = 0;
+                lapack::gttrf(nr, L, D, U, U2, ipiv, &info);
+                verify(info == 0);
+            }
         }
 
         ft_phi.reserve(nz+1);
