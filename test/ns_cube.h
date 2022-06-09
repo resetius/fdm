@@ -11,6 +11,7 @@
 #include "matrix_plot.h"
 #include "config.h"
 #include "sparse.h"
+#include "lapl_cube.h"
 
 using namespace std;
 using namespace fdm;
@@ -47,15 +48,16 @@ public:
     matrix uy, wy; // срез по плоскости Oxz
     matrix vx, wx; // срез по плоскости Oyz
 
-    csr_matrix<T> P;
+    //csr_matrix<T> P;
     csr_matrix<T> P_x; // для функции тока
     csr_matrix<T> P_y; // для функции тока
     csr_matrix<T> P_z; // для функции тока
 
-    Solver<T> solver;
+    //Solver<T> solver;
     Solver<T> solver_stream_x; // для функции тока по срезу
     Solver<T> solver_stream_y; // для функции тока по срезу
     Solver<T> solver_stream_z; // для функции тока по срезу
+    LaplCube<T,check> lapl_solver;
 
     int time_index = 0;
     int plot_time_index = -1;
@@ -105,8 +107,10 @@ public:
 
         , vx({0, nz+1, 0, ny+1})
         , wx({0, nz+1, 0, ny+1})
+
+        , lapl_solver(dx, dy, dz, x2-x1+dx, y2-y1+dy, z2-z1+dz, nx, ny, nz)
     {
-        init_P();
+        //init_P();
         init_P_slices();
     }
 
@@ -368,35 +372,36 @@ private:
         } // end of omp parallel
     }
 
+    /*
     void init_P() {
         for (int i = 1; i <= nz; i++) {
             for (int k = 1; k <= ny; k++) {
                 for (int j = 1; j <= nx; j++) {
                     int id = RHS.index({i,k,j});
                     if (i > 1) {
-                        P.add(id, RHS.index({i-1,k,j}), (-dz2)*1/dz2);
+                        P.add(id, RHS.index({i-1,k,j}), 1/dz2);
                     }
 
                     if (k > 1) {
-                        P.add(id, RHS.index({i,k-1,j}), (-dz2)*1/dy2);
+                        P.add(id, RHS.index({i,k-1,j}), 1/dy2);
                     }
 
                     if (j > 1) {
-                        P.add(id, RHS.index({i,k,j-1}), (-dz2)*1/dx2);
+                        P.add(id, RHS.index({i,k,j-1}), 1/dx2);
                     }
 
-                    P.add(id, RHS.index({i,k,j}), (-dz2)* ( -2/dx2-2/dy2-2/dz2 ));
+                    P.add(id, RHS.index({i,k,j}), ( -2/dx2-2/dy2-2/dz2 ));
 
                     if (j < nx) {
-                        P.add(id, RHS.index({i,k,j+1}), (-dz2)* 1/dx2);
+                        P.add(id, RHS.index({i,k,j+1}), 1/dx2);
                     }
 
                     if (k < ny) {
-                        P.add(id, RHS.index({i,k+1,j}), (-dz2)*1/dy2);
+                        P.add(id, RHS.index({i,k+1,j}), 1/dy2);
                     }
 
                     if (i < nz) {
-                        P.add(id, RHS.index({i+1,k,j}), (-dz2)*1/dz2);
+                        P.add(id, RHS.index({i+1,k,j}), 1/dz2);
                     }
                 }
             }
@@ -406,6 +411,7 @@ private:
 
         solver = std::move(P);
     }
+    */
 
     void init_P_slices() {
         for (int i = 1; i <= nz; i++) {
@@ -492,36 +498,36 @@ private:
         for (int i = 1; i <= nz; i++) {
             for (int k = 1; k <= ny; k++) {
                 for (int j = 1; j <= nx; j++) {
-                    RHS[i][k][j] = (-dz2)* ((F[i][k][j]-F[i][k][j-1])/dx
+                    RHS[i][k][j] =  ((F[i][k][j]-F[i][k][j-1])/dx
                                     +(G[i][k][j]-G[i][k-1][j])/dy
                                     +(H[i][k][j]-H[i-1][k][j])/dz)/dt;
 
                     if (i <= 1) {
-                        RHS[i][k][j] -= (-dz2)*p[i-1][k][j]/dz2;
+                        RHS[i][k][j] -= p[i-1][k][j]/dz2;
                     }
                     if (k <= 1) {
-                        RHS[i][k][j] -= (-dz2)*p[i][k-1][j]/dy2;
+                        RHS[i][k][j] -= p[i][k-1][j]/dy2;
                     }
                     if (j <= 1) {
-                        RHS[i][k][j] -= (-dz2)*p[i][k][j-1]/dx2;
+                        RHS[i][k][j] -= p[i][k][j-1]/dx2;
                     }
 
 
                     if (j >= nx) {
-                        RHS[i][k][j] -= (-dz2)*p[i][k][j+1]/dx2;
+                        RHS[i][k][j] -= p[i][k][j+1]/dx2;
                     }
                     if (k >= ny) {
-                        RHS[i][k][j] -= (-dz2)*p[i][k+1][j]/dy2;
+                        RHS[i][k][j] -= p[i][k+1][j]/dy2;
                     }
                     if (i >= nz) {
-                        RHS[i][k][j] -= (-dz2)*p[i+1][k][j]/dz2;
+                        RHS[i][k][j] -= p[i+1][k][j]/dz2;
                     }
                 }
             }
         }
 
-        solver.solve(&x[1][1][1], &RHS[1][1][1]);
-        //gmres_solver.solve(&x[1][1][1], &RHS[1][1][1]);
+        //solver.solve(&x[1][1][1], &RHS[1][1][1]);
+        lapl_solver.solve(&x[1][1][1], &RHS[1][1][1]);
     }
 
     void poisson_stream() {
