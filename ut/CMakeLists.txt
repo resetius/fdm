@@ -46,4 +46,12 @@ target_link_libraries(ut_lapl_rect fdm ${CMOCKA_LIBRARIES})
 add_test(NAME lapl_rect COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_lapl_rect)
 set_tests_properties(lapl_rect PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=lapl_rect.xml")
 
+add_executable(ut_lapl_cube ut_lapl_cube.cpp)
+target_include_directories(ut_lapl_cube PRIVATE ${CMOCKA_INCLUDE_DIRS})
+target_link_directories(ut_lapl_cube PRIVATE ${CMOCKA_LIBRARY_DIRS})
+target_link_libraries(ut_lapl_cube fdm ${CMOCKA_LIBRARIES})
+
+add_test(NAME lapl_cube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_lapl_cube)
+set_tests_properties(lapl_cube PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=lapl_cube.xml")
+
 endif()
