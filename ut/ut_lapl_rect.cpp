@@ -316,7 +316,8 @@ void test_lapl_rect_fft1_fft2_cmp(void** data) {
 
     double dx = (x2-x1)/nx, dy = (y2-y1)/ny;
 
-    LaplRect<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
+    LaplRect<T,check> lapl1(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
+    LaplRectFFT2<T,check> lapl2(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
 
     vector<int> indices = {1,ny,1,nx};
     matrix RHS(indices);
@@ -344,7 +345,7 @@ void test_lapl_rect_fft1_fft2_cmp(void** data) {
 
     {
         auto t1 = steady_clock::now();
-        lapl.solve1(&ANS[1][1], &RHS[1][1]);
+        lapl1.solve(&ANS[1][1], &RHS[1][1]);
         auto t2 = steady_clock::now();
 
         auto interval1 = duration_cast<duration<double>>(t2 - t1).count();
@@ -355,7 +356,7 @@ void test_lapl_rect_fft1_fft2_cmp(void** data) {
 
     {
         auto t1 = steady_clock::now();
-        lapl.solve2(&ANS2[1][1], &RHS[1][1]);
+        lapl2.solve(&ANS2[1][1], &RHS[1][1]);
         auto t2 = steady_clock::now();
 
         auto interval1 = duration_cast<duration<double>>(t2 - t1).count();

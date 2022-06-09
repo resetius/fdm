@@ -59,6 +59,7 @@ set(SRC
     src/arpack_solver.cpp
     src/sparse.cpp
     src/fft.cpp
+    src/lapl_rect.cpp
     )
 add_library(fdm SHARED ${SRC})
 
