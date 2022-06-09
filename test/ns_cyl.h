@@ -123,8 +123,8 @@ public:
         update_uvwp();
         time_index++;
         //update_uvi(); // remove
-        printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
-               p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
+        printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
+               dt*time_index, p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
                RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
     }
 
