@@ -214,6 +214,103 @@ void test_lapl_cyl_float(void** data) {
     test_lapl_cyl<float,superlu_solver>(data);
 }
 
+template<typename T>
+T solve_lapl(Config* c, int nr, int nz, int nphi) {
+    constexpr bool check = true;
+    using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
+
+    int verbose = c->get("test", "verbose", 0);
+    double r0 = M_PI/2, R = M_PI;
+    double h0 = 0, h1 = 10;
+    double dr = (R-r0)/nr;
+    double dz = (h1-h0)/nz;
+    double dphi = 2*M_PI/nphi;
+
+    LaplCyl3FFT2<T, true> lapl(dr, dz, r0-dr/2, R-r0+dr, h1-h0+dz, nr, nz, nphi);
+
+    std::vector<int> indices = {0, nphi-1, 1, nz, 1, nr};
+    tensor<T,3,check,tensor_flags> RHS(indices);
+    tensor<T,3,check,tensor_flags> ANS(indices);
+
+    for (int i = 0; i < nphi; i++) {
+        for (int k = 1; k <= nz; k++) {
+            for (int j = 1; j <= nr; j++) {
+                double r = r0+dr*j-dr/2;
+
+                RHS[i][k][j] = rp(i, k, j, dr, dz, dphi, r0, R, h0, h1);
+
+                if (k <= 1) {
+                    RHS[i][k][j] -= ans(i,k-1,j,dr,dz,dphi, r0, R, h0, h1)/dz/dz;
+                }
+                if (j <= 1) {
+                    RHS[i][k][j] -= (r-dr/2)/r*ans(i,k,j-1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
+                }
+                if (j >= nr) {
+                    RHS[i][k][j] -= (r+dr/2)/r*ans(i,k,j+1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
+                }
+                if (k >= nz) {
+                    RHS[i][k][j] -= ans(i,k+1,j,dr,dz,dphi,r0,R,h0,h1)/dz/dz;
+                }
+            }
+        }
+    }
+
+    auto t1 = steady_clock::now();
+    lapl.solve(&ANS[0][1][1], &RHS[0][1][1]);
+    auto t2 = steady_clock::now();
+
+    double nrm = 0.0;
+    double nrm1 = 0.0;
+    for (int i = 0; i < nphi; i++) {
+        for (int k = 1; k <= nz; k++) {
+            for (int j = 1; j <= nr; j++) {
+                double f = ans(i,k,j, dr, dz, dphi,r0,R,h0,h1);
+                if (verbose > 1) {
+                    printf("%e %e %e %e\n",
+                           ANS[i][k][j], f,
+                           ANS[i][k][j]/f,
+                           std::abs(ANS[i][k][j]-f));
+                }
+                nrm = std::max(nrm, std::abs(ANS[i][k][j]-f));
+                nrm1 = std::max(nrm1, std::abs(f));
+            }
+        }
+    }
+    nrm /= nrm1;
+    auto interval = duration_cast<duration<double>>(t2 - t1);
+
+    if (verbose) {
+        printf("It took me '%f' seconds, err = '%e'\n", interval.count(), nrm);
+    }
+
+    return nrm;
+}
+
+template<typename T>
+void test_lapl_cyl_norm_decr(void** data) {
+    Config* c = static_cast<Config*>(*data);
+
+    int nr = c->get("test", "nr", 16);
+    int nz = c->get("test", "nz", 15);
+    int nphi = c->get("test", "nphi", 16);
+
+    double nrm1 = solve_lapl<T>(c, nr, nz, nphi);
+    double nrm2 = solve_lapl<T>(c, nr*2, (nz+1)*2-1, nphi*2);
+    int verbose = c->get("test", "verbose", 0);
+    if (verbose) {
+        printf("nrm1/nrm2 = %e, %e %e\n", nrm1/nrm2, nrm1, nrm2);
+    }
+    assert_true(nrm1/nrm2 > 3.7);
+}
+
+void test_lapl_cyl_norm_decr_double(void** data) {
+    test_lapl_cyl_norm_decr<double>(data);
+}
+
+void test_lapl_cyl_norm_decr_float(void** data) {
+    test_lapl_cyl_norm_decr<float>(data);
+}
+
 void test_lapl_cyl_fft1_fft2_cmp(void** data) {
     using T = double;
     Config* c = static_cast<Config*>(*data);
@@ -301,6 +398,8 @@ int main(int argc, char** argv) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_prestate(test_lapl_cyl_simple_double, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_simple_float, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_norm_decr_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_norm_decr_float, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_double, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_float, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_fft1_fft2_cmp, &c),
