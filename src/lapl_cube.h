@@ -9,7 +9,7 @@ namespace fdm {
 template<typename T, bool check>
 class LaplCube {
 public:
-    using tensor = tensor<T,3,check>;
+    using tensor = fdm::tensor<T,3,check>;
 
     const double dx, dy, dz;
     const double dx2, dy2, dz2;
@@ -17,12 +17,16 @@ public:
     const double lx, ly, lz;
     const double slx, sly, slz;
 
+    const int nx, ny, nz;
+
     const std::vector<int> indices;
 
+    FFTTable<T> ft_x_table;
     FFTTable<T> ft_y_table;
-    FFT<T> ft_z;
-    FFT<T> ft_y;
+    FFTTable<T> ft_z_table;
     FFT<T> ft_x;
+    FFT<T> ft_y;
+    FFT<T> ft_z;
 
     std::vector<T> lm_y;
     std::vector<T> lm_x_;
@@ -37,12 +41,16 @@ public:
         , dx2(dx*dx), dy2(dy*dy), dz2(dz*dz)
         , lx(lx), ly(ly), lz(lz)
         , slx(sqrt(2./lx)), sly(sqrt(2./ly)), slz(sqrt(2./lz))
-        , indices({1,nz,1,ny,1,nz})
+        , nx(nx), ny(ny), nz(nz)
+        , indices({1,nz,1,ny,1,nx})
 
-        , ft_y_table(ny) // TODO
-        , ft_z(ft_y_table, nz) // TODO
-        , ft_y(ft_y_table, ny) // TODO
-        , ft_x(ft_x_table, nx) // TODO
+        , ft_x_table(nx+1)
+        , ft_y_table((nx==ny&&nx==nz)?1:ny+1)
+        , ft_z_table((nx==ny&&nx==nz)?1:nz+1)
+
+        , ft_x(ft_x_table, nx+1)
+        , ft_y((nx==ny&&nx==nz)?ft_x_table:ft_y_table, ny+1)
+        , ft_z((nx==ny&&nx==nz)?ft_x_table:ft_z_table, nz+1)
     {
         init_lm();
     }
@@ -51,6 +59,11 @@ public:
         tensor ANS(indices, ans);
         tensor RHS(indices, rhs);
         tensor RHSm(indices);
+
+
+        // TODO
+        std::vector<T> s(ny+1), S(ny+1);
+
 
         for (int k = 1; k <= ny; k++) {
             for (int j = 1; j <= nx; j++) {
@@ -97,7 +110,7 @@ public:
         for (int i = 1; i <= nz; i++) {
             for (int k = 1; k <= ny; k++) {
                 for (int j = 1; j <= nx; j++) {
-                    RHSm[k][j] /= -lm_z[i]-lm_y[k]-lm_x[j];
+                    RHSm[i][k][j] /= -lm_z[i]-lm_y[k]-lm_x[j];
                 }
             }
         }
@@ -108,7 +121,7 @@ public:
                     s[j] = RHSm[i][k][j];
                 }
 
-                ft_x.sFFT(&S[0], &s[0], dx*slx);
+                ft_x.sFFT(&S[0], &s[0], slx);
 
                 for (int j = 1; j <= nx; j++) {
                     ANS[i][k][j] = S[j];
@@ -122,9 +135,9 @@ public:
                     s[k] = ANS[i][k][j];
                 }
 
-                ft_y.sFFT(&S[0], &s[0], dy*sly);
+                ft_y.sFFT(&S[0], &s[0], sly);
 
-                for (int k = 1; i <= ny; k++) {
+                for (int k = 1; k <= ny; k++) {
                     ANS[i][k][j] = S[k];
                 }
             }
@@ -136,7 +149,7 @@ public:
                     s[i] = ANS[i][k][j];
                 }
 
-                ft_z.sFFT(&S[0], &s[0], dz*slz);
+                ft_z.sFFT(&S[0], &s[0], slz);
 
                 for (int i = 1; i <= nz; i++) {
                     ANS[i][k][j] = S[i];
