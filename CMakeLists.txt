@@ -60,6 +60,7 @@ set(SRC
     src/sparse.cpp
     src/fft.cpp
     src/lapl_rect.cpp
+    src/lapl_cyl.cpp
     )
 add_library(fdm SHARED ${SRC})
 
