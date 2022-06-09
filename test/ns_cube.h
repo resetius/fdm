@@ -97,14 +97,14 @@ public:
         , psi_y({1, nz, 1, nx})
         , psi_z({1, ny, 1, nx})
 
-        , uz({0, ny, 0, nx}) // inner u
-        , vz({0, ny, 0, nx}) // inner v
+        , uz({0, ny+1, 0, nx+1}) // inner u
+        , vz({0, ny+1, 0, nx+1}) // inner v
 
-        , uy({0, nz, 0, nx})
-        , wy({0, nz, 0, nx})
+        , uy({0, nz+1, 0, nx+1})
+        , wy({0, nz+1, 0, nx+1})
 
-        , vx({0, nz, 0, ny})
-        , wx({0, nz, 0, ny})
+        , vx({0, nz+1, 0, ny+1})
+        , wx({0, nz+1, 0, ny+1})
     {
         init_P();
         init_P_slices();
@@ -527,7 +527,7 @@ private:
     void poisson_stream() {
         for (int i = 1; i <= nz; i++) {
             for (int k = 1; k <= ny; k++) {
-                RHS_x[i][k] = (wx[i][k]-wx[i][k-1]) / dy - (vx[i][k] - vx[i-1][k]) / dz;
+                RHS_x[i][k] = (wx[i][k+1]-wx[i][k-1]) /2/ dy - (vx[i+1][k] - vx[i-1][k]) /2/ dz;
             }
         }
 
@@ -535,7 +535,7 @@ private:
 
         for (int i = 1; i <= nz; i++) {
             for (int j = 1; j <= nx; j++) {
-                RHS_y[i][j] = (wy[i][j]-wy[i][j-1]) / dx - (uy[i][j] - uy[i-1][j]) / dz;
+                RHS_y[i][j] = (wy[i][j+1]-wy[i][j-1]) /2/ dx - (uy[i+1][j] - uy[i-1][j]) /2/ dz;
             }
         }
 
@@ -543,7 +543,7 @@ private:
 
         for (int k = 1; k <= ny; k++) {
             for (int j = 1; j <= nx; j++) {
-                RHS_z[k][j] = (vz[k][j]-vz[k][j-1]) / dx - (uz[k][j] - uz[k-1][j]) / dy;
+                RHS_z[k][j] = (vz[k][j+1]-vz[k][j-1]) /2/ dx - (uz[k+1][j] - uz[k-1][j]) /2/ dy;
             }
         }
 
@@ -606,22 +606,22 @@ private:
             return;
         }
 
-        for (int k = 0; k <= ny; k++) {
-            for (int j = 0; j <= nx; j++) {
+        for (int k = 0; k <= ny+1; k++) {
+            for (int j = 0; j <= nx+1; j++) {
                 uz[k][j] = 0.5*(u[nz/2][k][j-1] + u[nz/2][k][j]);
                 vz[k][j] = 0.5*(v[nz/2][k-1][j] + v[nz/2][k][j]);
             }
         }
 
-        for (int i = 0; i <= nz; i++) {
-            for (int j = 0; j <= nx; j++) {
+        for (int i = 0; i <= nz+1; i++) {
+            for (int j = 0; j <= nx+1; j++) {
                 uy[i][j] = 0.5*(u[i][ny/2][j-1] + u[i][ny/2][j]);
                 wy[i][j] = 0.5*(w[i-1][ny/2][j] + w[i][ny/2][j]);
             }
         }
 
-        for (int i = 0; i <= nz; i++) {
-            for (int k = 0; k <= ny; k++) {
+        for (int i = 0; i <= nz+1; i++) {
+            for (int k = 0; k <= ny+1; k++) {
                 vx[i][k] = 0.5*(v[i][k-1][nx/2] + v[i][k][nx/2]);
                 wx[i][k] = 0.5*(w[i-1][k][nx/2] + w[i][k][nx/2]);
             }

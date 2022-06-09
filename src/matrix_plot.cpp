@@ -9,8 +9,8 @@ matrix_plotter::matrix_plotter(const matrix_plotter::settings& s)
     plspage(300, 300, 2000, 2000, 0, 0);
     plsdev(s.dname.c_str());
     plsfnam(s.fname_.c_str());
-    plscolor(0);
-    //plsdiori(3);
+    plscolbga(255,255,255,1);
+    plscol0(1,0,0,0); // foreground
     plssub(s.x, s.y);
     plinit();
 }
@@ -55,7 +55,6 @@ void matrix_plotter::plot_internal(const page& p) {
                transform,
                const_cast<matrix_plotter::page*>(&p));
     }
-    //pladv(0);
 }
 
 void matrix_plotter::transform(double y, double x, double* ty, double* tx, void* data) {
