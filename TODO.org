@@ -1,10 +1,12 @@
 
 * lib
-** link libfdm with all deps (umfpack, superlu, arpack ...)
+** DONE link libfdm with all deps (umfpack, superlu, arpack ...)
 
 * ns_cube
 ** spectral
+** linearization
 
 * ns_cyl
-** plot slices (like in ns_cube)
-** spectral
+** DONE plot slices (like in ns_cube)
+** DONE spectral
+** linearization
