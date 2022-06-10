@@ -32,7 +32,11 @@ void LaplCyl3FFT2<T,check,zflag>::solve(T* ans, T* rhs) {
                 s[i*zpoints+k] = RHSm[i][k][j];
             }
 
-            ft_z[i].sFFT(&S[i*zpoints], &s[i*zpoints], dz*slz);
+            if constexpr(zflag==tensor_flag::none) {
+                ft_z[i].sFFT(&S[i*zpoints], &s[i*zpoints], dz*slz);
+            } else {
+                ft_z[i].pFFT_1(&S[i*zpoints], &s[i*zpoints], dz*slz);
+            }
 
             for (int k = z1; k <= zn; k++) {
                 RHSm[i][k][j] = S[i*zpoints+k];
@@ -63,7 +67,11 @@ void LaplCyl3FFT2<T,check,zflag>::solve(T* ans, T* rhs) {
                 s[i*zpoints+k] = RHSm[i][k][j];
             }
 
-            ft_z[i].sFFT(&S[i*zpoints], &s[i*zpoints], slz);
+            if constexpr(zflag==tensor_flag::none) {
+                ft_z[i].sFFT(&S[i*zpoints], &s[i*zpoints], slz);
+            } else {
+                ft_z[i].pFFT(&S[i*zpoints], &s[i*zpoints], slz);
+            }
 
             for (int k = z1; k <= zn; k++) {
                 ANS[i][k][j] = S[i*zpoints+k];

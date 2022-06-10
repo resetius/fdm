@@ -44,6 +44,27 @@ double rp(int i, int k, int j, double dr, double dz, double dphi, double r0, dou
     return f;
 }
 
+//(r-r0)*(r-R)*(sin(φ) + cos(φ)) + sin(z)^2+cos(z)^2
+double ansp(int i, int k, int j, double dr, double dz, double dphi, double r0, double R, double h0, double h1) {
+    double r = r0+dr*j-dr/2;
+    double z = h0+dz*k-dz/2;
+    double phi = dphi*(i+1)-dphi/2;
+    double f = (r-r0)*(r-R)*(sin(phi) + cos(phi)) + sq(sin(z)) + sq(cos(z));
+    return f;
+}
+
+double rpp(int i, int k, int j, double dr, double dz, double dphi, double r0, double R, double h0, double h1)
+{
+    double r = r0+dr*j-dr/2;
+    //double z = h0+dz*k-dz/2;
+    double phi = dphi*(i+1)-dphi/2;
+
+    return ((-sin(phi)-cos(phi))*(r-R)*(r-r0))/r/r+
+        ((sin(phi)+cos(phi))*(r-r0)+
+         (sin(phi)+cos(phi))*(r-R)+
+         (2*sin(phi)+2*cos(phi))*r)/r;
+}
+
 template<typename T,template<typename> class Solver>
 void test_lapl_cyl_simple(void** data) {
     constexpr bool check = true;
@@ -212,6 +233,86 @@ void test_lapl_cyl_double(void** data) {
 
 void test_lapl_cyl_float(void** data) {
     test_lapl_cyl<float,superlu_solver>(data);
+}
+
+template<typename T>
+void test_lapl_cyl_zp(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    constexpr bool check = true;
+    using tensor_flags = fdm::tensor_flags<tensor_flag::periodic,tensor_flag::periodic>;
+
+    int nr = c->get("test", "nr", 32);
+    int nz = c->get("test", "nz", 32);
+    int nphi = c->get("test", "nphi", 32);
+    int verbose = c->get("test", "verbose", 0);
+    double r0 = M_PI/2, R = M_PI;
+    double h0 = 0, h1 = 10;
+    double dr = (R-r0)/nr;
+    double dz = (h1-h0)/nz;
+    double dphi = 2*M_PI/nphi;
+
+    LaplCyl3FFT2<T,true,tensor_flag::periodic>
+        lapl(dr, dz, r0-dr/2, R-r0+dr, h1-h0, nr, nz, nphi);
+
+    std::vector<int> indices = {0, nphi-1, 0, nz-1, 1, nr};
+    tensor<T,3,check,tensor_flags> RHS(indices);
+    tensor<T,3,check,tensor_flags> ANS(indices);
+
+    for (int i = 0; i < nphi; i++) {
+        for (int k = 0; k < nz; k++) {
+            for (int j = 1; j <= nr; j++) {
+                double r = r0+dr*j-dr/2;
+
+                RHS[i][k][j] = rpp(i, k, j, dr, dz, dphi, r0, R, h0, h1);
+
+                if (j <= 1) {
+                    RHS[i][k][j] -= (r-dr/2)/r*ansp(i,k,j-1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
+                }
+                if (j >= nr) {
+                    RHS[i][k][j] -= (r+dr/2)/r*ansp(i,k,j+1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
+                }
+            }
+        }
+    }
+
+    auto t1 = steady_clock::now();
+    //             phi z  r
+    lapl.solve(&ANS[0][0][1], &RHS[0][0][1]);
+    auto t2 = steady_clock::now();
+
+    double nrm = 0.0;
+    double nrm1 = 0.0;
+    for (int i = 0; i < nphi; i++) {
+        for (int k = 0; k < nz; k++) {
+            for (int j = 1; j <= nr; j++) {
+                double f = ansp(i,k,j, dr, dz, dphi,r0,R,h0,h1);
+                if (verbose > 1) {
+                    printf("%e %e %e %e\n",
+                           ANS[i][k][j], f,
+                           ANS[i][k][j]/f,
+                           std::abs(ANS[i][k][j]-f));
+                }
+                nrm = std::max(nrm, std::abs(ANS[i][k][j]-f));
+                nrm1 = std::max(nrm1, std::abs(f));
+            }
+        }
+    }
+    nrm /= nrm1;
+    auto interval = duration_cast<duration<double>>(t2 - t1);
+
+    if (verbose) {
+        printf("It took me '%f' seconds, err = '%e'\n", interval.count(), nrm);
+    }
+
+    assert_true(nrm < 1e-3);
+}
+
+void test_lapl_cyl_zp_double(void** data) {
+    test_lapl_cyl_zp<double>(data);
+}
+
+void test_lapl_cyl_zp_float(void** data) {
+    test_lapl_cyl_zp<float>(data);
 }
 
 template<typename T>
@@ -402,6 +503,8 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_lapl_cyl_norm_decr_float, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_double, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_float, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_zp_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_zp_float, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_fft1_fft2_cmp, &c),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
