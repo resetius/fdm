@@ -15,15 +15,21 @@ struct LaplCyl3Data {
     const double r0, lr, lz;
     const double slz;
 
+    const int zpoints;
     const int nr, nz, nphi;
+    const int z1, zn;
 
     LaplCyl3Data(double dr, double dz,
                  double r0, double lr, double lz,
-                 int nr, int nz, int nphi)
+                 int nr, int nz, int nphi,
+                 tensor_flag zflag = tensor_flag::none)
         : dr(dr), dz(dz), dphi(2*M_PI/nphi)
         , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
         , r0(r0), lr(lr), lz(lz), slz(sqrt(2./lz))
+        , zpoints(zflag==tensor_flag::none?nz+1:nz)
         , nr(nr), nz(nz), nphi(nphi)
+        , z1(zflag==tensor_flag::none?1:0)
+        , zn(zflag==tensor_flag::none?nz:nz-1)
     { }
 };
 
@@ -147,11 +153,11 @@ private:
     }
 };
 
-template<typename T, bool check>
+template<typename T, bool check, tensor_flag zflag=tensor_flag::none>
 class LaplCyl3FFT2: public LaplCyl3Data {
 public:
     constexpr static T SQRT_M_1_PI = 0.56418958354775629;
-    using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
+    using tensor_flags = fdm::tensor_flags<tensor_flag::periodic,zflag>;
     using tensor = fdm::tensor<T,3,check,tensor_flags>;
 
     std::vector<int> indices;
@@ -171,21 +177,31 @@ public:
     fdm::tensor<T,3,check> matrices;
     fdm::tensor<int,3,check> ipivs;
 
+    /**
+       \param nr,nz,nphi - число ячеек по соответствующим направлениям
+       \param dr,dz - размер ячеек
+       \param r0 - координата первой точки по оси r
+       (включая точку за границей области для смещенных сеток)
+       \param lr, lz - расстояние от первой до последней точки
+       (включая точки за границами).
+       Для смещенных сеток lr=nr*dr+dr.
+       Для обычных сеток lr=nr*dr.
+     */
     LaplCyl3FFT2(double dr, double dz,
                  double r0, double lr, double lz,
                  int nr, int nz, int nphi)
-        : LaplCyl3Data(dr, dz, r0, lr, lz, nr, nz, nphi)
+        : LaplCyl3Data(dr, dz, r0, lr, lz, nr, nz, nphi, zflag)
         , indices({0, nphi-1, 1, nz, 1, nr})
         , RHS(indices), ANS(indices), RHSm(indices)
         , s((nz+1)*nphi), S((nz+1)*nphi)
 
         , ft_phi_table(nphi)
-        , ft_z_table_(nphi == nz+1 ? 1 : nz+1)
-        , ft_z_table(nphi == nz+1 ? &ft_phi_table : &ft_z_table_)
+        , ft_z_table_(nphi == zpoints ? 1 : zpoints)
+        , ft_z_table(nphi == zpoints ? &ft_phi_table : &ft_z_table_)
 
-        , ft_z(nphi == nz+1 ? ft_phi : ft_z_)
+        , ft_z(nphi == zpoints ? ft_phi : ft_z_)
 
-        , lm_phi(nphi), lm_z(nz+1)
+        , lm_phi(nphi), lm_z(zpoints)
         , matrices({0,nphi-1,1,nz,0,4*nr-1})
         , ipivs({0,nphi-1,1,nz,0,nr-1})
     {

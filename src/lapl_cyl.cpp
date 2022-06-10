@@ -6,12 +6,12 @@ using namespace asp;
 
 namespace fdm {
 
-template<typename T, bool check>
-void LaplCyl3FFT2<T,check>::solve(T* ans, T* rhs) {
+template<typename T, bool check, tensor_flag zflag>
+void LaplCyl3FFT2<T,check,zflag>::solve(T* ans, T* rhs) {
     RHS.use(rhs); ANS.use(ans);
 
 #pragma omp parallel for
-    for (int k = 1; k <= nz; k++) {
+    for (int k = z1; k <= zn; k++) {
         for (int j = 1; j <= nr; j++) {
             for (int i = 0; i < nphi; i++) {
                 s[k*nphi+i] = RHS[i][k][j];
@@ -28,14 +28,14 @@ void LaplCyl3FFT2<T,check>::solve(T* ans, T* rhs) {
 #pragma omp parallel for
     for (int i = 0; i < nphi; i++) {
         for (int j = 1; j <= nr; j++) {
-            for (int k = 1; k <= nz; k++) {
-                s[i*(nz+1)+k] = RHSm[i][k][j];
+            for (int k = z1; k <= zn; k++) {
+                s[i*zpoints+k] = RHSm[i][k][j];
             }
 
-            ft_z[i].sFFT(&S[i*(nz+1)], &s[i*(nz+1)], dz*slz);
+            ft_z[i].sFFT(&S[i*zpoints], &s[i*zpoints], dz*slz);
 
-            for (int k = 1; k <= nz; k++) {
-                RHSm[i][k][j] = S[i*(nz+1)+k];
+            for (int k = z1; k <= zn; k++) {
+                RHSm[i][k][j] = S[i*zpoints+k];
             }
         }
     }
@@ -43,7 +43,7 @@ void LaplCyl3FFT2<T,check>::solve(T* ans, T* rhs) {
     // solve
 #pragma omp parallel for
     for (int i = 0; i < nphi; i++) {
-        for (int k = 1; k <= nz; k++) {
+        for (int k = z1; k <= zn; k++) {
             T* L = &matrices[i][k][0*nr];
             T* D = &matrices[i][k][1*nr];
             T* U = &matrices[i][k][2*nr];
@@ -59,20 +59,20 @@ void LaplCyl3FFT2<T,check>::solve(T* ans, T* rhs) {
 #pragma omp parallel for
     for (int i = 0; i < nphi; i++) {
         for (int j = 1; j <= nr; j++) {
-            for (int k = 1; k <= nz; k++) {
-                s[i*(nz+1)+k] = RHSm[i][k][j];
+            for (int k = z1; k <= zn; k++) {
+                s[i*zpoints+k] = RHSm[i][k][j];
             }
 
-            ft_z[i].sFFT(&S[i*(nz+1)], &s[i*(nz+1)], slz);
+            ft_z[i].sFFT(&S[i*zpoints], &s[i*zpoints], slz);
 
-            for (int k = 1; k <= nz; k++) {
-                ANS[i][k][j] = S[i*(nz+1)+k];
+            for (int k = z1; k <= zn; k++) {
+                ANS[i][k][j] = S[i*zpoints+k];
             }
         }
     }
 
 #pragma omp parallel for
-    for (int k = 1; k <= nz; k++) {
+    for (int k = z1; k <= zn; k++) {
         for (int j = 1; j <= nr; j++) {
             for (int i = 0; i < nphi; i++) {
                 s[k*nphi+i] = ANS[i][k][j];
@@ -87,17 +87,17 @@ void LaplCyl3FFT2<T,check>::solve(T* ans, T* rhs) {
     }
 }
 
-template<typename T, bool check>
-void LaplCyl3FFT2<T,check>::init_solver() {
+template<typename T, bool check,tensor_flag zflag>
+void LaplCyl3FFT2<T,check,zflag>::init_solver() {
     for (int i = 0; i < nphi; i++) {
         lm_phi[i] = 4.0/dphi2*sq(sin(i*dphi*0.5));
     }
-    for (int k = 0; k <= nz; k++) {
-        lm_z[k] = 4./dz2*sq(sin(k*M_PI*0.5/(nz+1)));
+    for (int k = 0; k < zpoints; k++) {
+        lm_z[k] = 4./dz2*sq(sin(k*M_PI*0.5/zpoints));
     }
 
     for (int i = 0; i < nphi; i++) {
-        for (int k = 1; k <= nz; k++) {
+        for (int k = z1; k <= zn; k++) {
             int li, di, ui; li = di = ui = 0;
             T* L = &matrices[i][k][0*nr];
             T* D = &matrices[i][k][1*nr];
@@ -124,24 +124,29 @@ void LaplCyl3FFT2<T,check>::init_solver() {
         }
     }
 
-    ft_phi.reserve(nz+1);
-    for (int k = 0; k <= nz; k++) {
+    ft_phi.reserve(zpoints);
+    for (int k = 0; k < zpoints; k++) {
         ft_phi.emplace_back(ft_phi_table, nphi);
     }
 
-    if (nphi == nz+1) {
+    if (nphi == zpoints) {
         return;
     }
 
     ft_z.reserve(nphi);
     for (int k = 0; k < nphi; k++) {
-        ft_z.emplace_back(*ft_z_table, nz+1);
+        ft_z.emplace_back(*ft_z_table, zpoints);
     }
 }
 
-template class LaplCyl3FFT2<double,true>;
-template class LaplCyl3FFT2<double,false>;
-template class LaplCyl3FFT2<float,true>;
-template class LaplCyl3FFT2<float,false>;
+template class LaplCyl3FFT2<double,true,tensor_flag::none>;
+template class LaplCyl3FFT2<double,false,tensor_flag::none>;
+template class LaplCyl3FFT2<float,true,tensor_flag::none>;
+template class LaplCyl3FFT2<float,false,tensor_flag::none>;
+
+template class LaplCyl3FFT2<double,true,tensor_flag::periodic>;
+template class LaplCyl3FFT2<double,false,tensor_flag::periodic>;
+template class LaplCyl3FFT2<float,true,tensor_flag::periodic>;
+template class LaplCyl3FFT2<float,false,tensor_flag::periodic>;
 
 } // namespace fdm
