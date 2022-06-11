@@ -122,16 +122,12 @@ public:
     { }
 
     T& operator[](int x) {
-        if constexpr(check == true) {
-            verify(offsets[2*index] <= x && x <= offsets[2*index+1]);
-        }
+        x = adjust_and_check(x);
         return vec[x];
     }
 
     T operator[](int x) const {
-        if constexpr(check == true) {
-            verify(offsets[2*index] <= x && x <= offsets[2*index+1]);
-        }
+        x = adjust_and_check(x);
         return vec[x];
     }
 
@@ -150,6 +146,20 @@ public:
 
     void use(T* vec) {
         this->vec = vec;
+    }
+
+private:
+    // TODO: remove copy-paste
+    int adjust_and_check(int y) const {
+        if constexpr(has_tensor_flag(F::head, tensor_flag::periodic)) {
+            y -= offsets[2*index];
+            y = (y+offsets[2*index+1]-offsets[2*index]+1) % (offsets[2*index+1]-offsets[2*index]+1);
+            y += offsets[2*index];
+        }
+        if constexpr(check == true) {
+            verify(offsets[2*index] <= y && y <= offsets[2*index+1]);
+        }
+        return y;
     }
 };
 

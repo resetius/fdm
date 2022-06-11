@@ -19,13 +19,21 @@ using namespace fdm;
 using asp::format;
 using asp::sq;
 
-template<typename T, template <typename> class Solver, bool check>
+template<typename T, template <typename> class Solver, bool check, tensor_flag zflag=tensor_flag::none>
 class NSCyl {
 public:
-    using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
+    using tensor_flags = fdm::tensor_flags<tensor_flag::periodic, zflag>;
     using tensor = fdm::tensor<T,3,check,tensor_flags>;
-    using matrix = fdm::tensor<T,2,check>;
-    using matrix_p = fdm::tensor<T,2,check,tensor_flags>;
+
+// phi, z
+    using matrix_r = fdm::tensor<T,2,check,
+                                 fdm::tensor_flags<tensor_flag::periodic, zflag>>;
+// phi, r
+    using matrix_z = fdm::tensor<T,2,check,
+                                 fdm::tensor_flags<tensor_flag::periodic>>;
+// z, r
+    using matrix_phi = fdm::tensor<T,2,check,
+                                   fdm::tensor_flags<zflag>>;
 
     const double R, r0;
     const double h1, h2;
@@ -35,6 +43,8 @@ public:
     const double dt;
 
     const int nr, nz, nphi;
+    const int z_, z0, z1, zn, znn; // z bounds
+
     const double dr, dz, dphi;
     const double dr2, dz2, dphi2;
 
@@ -42,23 +52,24 @@ public:
     tensor p,x;
     tensor F,G,H,RHS;
 
-    matrix_p RHS_r,RHS_z;
-    matrix RHS_phi;
+    matrix_r RHS_r;
+    matrix_z RHS_z;
+    matrix_phi RHS_phi;
 
-    matrix_p psi_r, psi_z;
-    matrix psi_phi; // срезы
+    matrix_r psi_r;
+    matrix_z psi_z;
+    matrix_phi psi_phi; // срезы
 
-    matrix uphi, vphi;
-    matrix_p uz, wz;
-    matrix_p vr, wr;
+    matrix_phi uphi, vphi;
+    matrix_z uz, wz;
+    matrix_r vr, wr;
 
     csr_matrix<T> P_r, P_z, P_phi;
 
     Solver<T> solver_stream_r; // для функции тока по срезу
     Solver<T> solver_stream_z; // для функции тока по срезу
     Solver<T> solver_stream_phi; // для функции тока по срезу
-    LaplCyl3FFT2<T,check> lapl3_solver;
-    //LaplCyl3FFT1<T,Solver,check> lapl3_solver;
+    LaplCyl3FFT2<T,check,zflag> lapl3_solver;
 
     int time_index = 0;
     int plot_time_index = -1;
@@ -75,39 +86,48 @@ public:
         , nr(c.get("ns", "nr", 32))
         , nz(c.get("ns", "nz", 31))
         , nphi(c.get("ns", "nphi", 32))
+
+        , z_(zflag==tensor_flag::none?-1:0)
+        , z0(zflag==tensor_flag::none?0:0)
+        , z1(zflag==tensor_flag::none?1:0)
+        , zn(zflag==tensor_flag::none?nz:nz-1)
+        , znn(zflag==tensor_flag::none?nz+1:nz-1)
+
         , dr((R-r0)/nr), dz((h2-h1)/nz), dphi(2*M_PI/nphi)
         , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
 
           // phi, z, r
-        , u{{0, nphi-1, 0, nz+1, -1, nr+1}} // check bounds
-        , v{{0, nphi-1, -1, nz+1, 0, nr+1}} // check bounds
-        , w{{0, nphi-1, 0, nz+1, 0, nr+1}} // check bounds
-        , p({0, nphi-1, 0, nz+1, 0, nr+1})
+        , u{{0, nphi-1, z0, znn, -1, nr+1}} // check bounds
+        , v{{0, nphi-1, z_, znn, 0, nr+1}} // check bounds
+        , w{{0, nphi-1, z0, znn, 0, nr+1}} // check bounds
+        , p({0, nphi-1, z0, znn, 0, nr+1})
 
-        , x({0, nphi-1, 1, nz, 1, nr})
-        , F({0, nphi-1, 1, nz, 0, nr}) // check bounds
-        , G({0, nphi-1, 0, nz, 1, nr}) // check bounds
-        , H({0, nphi-1, 1, nz, 1, nr}) // check bounds
-        , RHS({0, nphi-1, 1, nz, 1, nr})
+        , x({0, nphi-1, z1, zn, 1, nr})
+        , F({0, nphi-1, z1, zn, 0, nr}) // check bounds
+        , G({0, nphi-1, z0, zn, 1, nr}) // check bounds
+        , H({0, nphi-1, z1, zn, 1, nr}) // check bounds
+        , RHS({0, nphi-1, z1, zn, 1, nr})
 
-        , RHS_r({0, nphi-1, 1, nz})
+        , RHS_r({0, nphi-1, z1, zn})
         , RHS_z({0, nphi-1, 1, nr})
-        , RHS_phi({1, nz, 1, nr})
+        , RHS_phi({z1, zn, 1, nr})
 
-        , psi_r({0, nphi-1, 1, nz})
+        , psi_r({0, nphi-1, z1, zn})
         , psi_z({0, nphi-1, 1, nr})
         , psi_phi({1, nz, 1, nr})
 
-        , uphi({0, nz+1, 0, nr+1})
-        , vphi({0, nz+1, 0, nr+1})
+        , uphi({z0, znn, 0, nr+1})
+        , vphi({z0, znn, 0, nr+1})
 
         , uz({0, nphi-1, 0, nr+1})
         , wz({0, nphi-1, 0, nr+1})
 
-        , vr({0, nphi-1, 0, nz+1})
-        , wr({0, nphi-1, 0, nz+1})
+        , vr({0, nphi-1, z0, znn})
+        , wr({0, nphi-1, z0, znn})
 
-        , lapl3_solver(dr, dz, r0-dr/2, R-r0+dr, h2-h1+dz, nr, nz, nphi)
+        , lapl3_solver(dr, dz, r0-dr/2, R-r0+dr,
+                       zflag==tensor_flag::none?h2-h1+dz:h2-h1,
+                       nr, nz, nphi)
     {
         init_P_slices();
     }
@@ -185,9 +205,9 @@ public:
         fprintf(f, "ASCII\n");
         fprintf(f, "DATASET UNSTRUCTURED_GRID\n");
         //fprintf(f, "DIMENSIONS %d %d %d\n", nr, nz, nphi);
-        fprintf(f, "POINTS %d double\n", (nr+1)*(nz+1)*nphi);
+        fprintf(f, "POINTS %d double\n", (nr+1)*(zn+1)*nphi);
         for (int i = 0; i < nphi; i++) {
-            for (int k = 0; k < nz+1; k++) {
+            for (int k = z0; k <= zn; k++) {
                 for (int j = 0; j < nr+1; j++) {
                     double r = r0+dr*j;
                     double z = h1+dz*k;
@@ -236,7 +256,7 @@ public:
         fprintf(f, "VECTORS u double\n");
 
         for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k <= nz; k++) {
+            for (int k = z1; k <= zn; k++) {
                 for (int j = 1; j <= nr; j++) {
                     double phi = dphi*i+dphi/2;
                     double r = r0+dr*j+dr/2;
@@ -265,14 +285,14 @@ private:
     void init_bound() {
         // внутренний цилиндр
         for (int i = 0; i < nphi; i++) {
-            for (int k = 0; k <= nz+1; k++) {
+            for (int k = z0; k <= znn; k++) {
                 // 0.5*(w[i][k][0] + w[i][k][1]) = U0
                 w[i][k][0] = 2*U0 - w[i][k][1]; // inner
                 w[i][k][nr+1] = -w[i][k][nr]; // outer
             }
         }
         for (int i = 0; i < nphi; i++) {
-            for (int k = -1; k <= nz+1; k++) {
+            for (int k = z_; k <= znn; k++) {
                 v[i][k][0]    = - v[i][k][1]; // inner
                 v[i][k][nr+1] = -v[i][k][nr]; // outer
             }
@@ -281,56 +301,60 @@ private:
         // div=0 на границе
         // инициализация узлов за пределами области
         for (int i = 0; i < nphi; i++) {
-            for (int k = 0; k <= nz+1; k++) {
+            for (int k = z0; k <= znn; k++) {
                 u[i][k][-1]   = u[i][k][1];
                 u[i][k][nr+1] = u[i][k][nr-1];
             }
         }
 
-        for (int i = 0; i < nphi; i++) {
-            for (int j = 0; j <= nr+1; j++) {
-                v[i][-1][j]   = v[i][1][j];
-                v[i][nz+1][j] = v[i][nz-1][j];
+        if constexpr(zflag==tensor_flag::none) {
+            for (int i = 0; i < nphi; i++) {
+                for (int j = z0; j <= znn; j++) {
+                    v[i][-1][j]   = v[i][1][j];
+                    v[i][nz+1][j] = v[i][nz-1][j];
+                }
             }
-        }
 
-        // check me
-        for (int i = 0; i < nphi; i++) {
-            for (int j = -1; j <= nr+1; j++) {
-                u[i][0][j]    = -u[i][1][j];
-                u[i][nz+1][j] = -u[i][nz][j];
+            // check me
+            for (int i = 0; i < nphi; i++) {
+                for (int j = -1; j <= nr+1; j++) {
+                    u[i][0][j]    = -u[i][1][j];
+                    u[i][nz+1][j] = -u[i][nz][j];
+                }
             }
-        }
 
-        for (int i = 0; i < nphi; i++) {
-            for (int j = 0; j <= nr+1; j++) {
-                w[i][0][j]    = -w[i][1][j];
-                w[i][nz+1][j] = -w[i][nz][j];
+            for (int i = 0; i < nphi; i++) {
+                for (int j = 0; j <= nr+1; j++) {
+                    w[i][0][j]    = -w[i][1][j];
+                    w[i][nz+1][j] = -w[i][nz][j];
+                }
             }
         }
 
         // давление
         // check me
         for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k <= nz; k++) {
+            for (int k = z1; k <= zn; k++) {
                 int j = 0;
                 double r = r0+j*dr-dr/2;
                 p[i][k][0]  = (r+0.5*dr)/(r-0.5*dr) * p[i][k][1] -
-                    ((r+0.5*dr)*u[i][k][1]/r-2*u[i][k][0]+(r-0.5*dr)*u[i][k][-1]/r)/Re/dr*r;
+                    ((r+0.5*dr)*u[i][k][1]/r-2*u[i][k][0]+(r-0.5*dr)*u[i][k][-1]/r)/Re/dr;
 
                 j = nr;
                 r = r0+j*dr-dr/2;
 
                 p[i][k][nr+1] = (r-0.5*dr)/(r+0.5*dr) * p[i][k][nr]+
-                    ((r+0.5*dr)*u[i][k][nr+1]/r-2*u[i][k][nr]+(r-0.5*dr)*u[i][k][nr-1]/r)/Re/dr*r;
+                    ((r+0.5*dr)*u[i][k][nr+1]/r-2*u[i][k][nr]+(r-0.5*dr)*u[i][k][nr-1]/r)/Re/dr;
             }
         }
-        for (int i = 0; i < nphi; i++) {
-            for (int j = 1; j <= nr; j++) {
-                p[i][0][j]    = p[i][1][j] -
-                    (v[i][1][j]-2*v[i][0][j]+v[i][-1][j])/Re/dz;
-                p[i][nz+1][j] = p[i][nz][j]+
-                    (v[i][nz+1][j]-2*v[i][nz][j]+v[i][nz-1][j])/Re/dz;
+        if constexpr(zflag==tensor_flag::none) {
+            for (int i = 0; i < nphi; i++) {
+                for (int j = 1; j <= nr; j++) {
+                    p[i][0][j]    = p[i][1][j] -
+                        (v[i][1][j]-2*v[i][0][j]+v[i][-1][j])/Re/dz;
+                    p[i][nz+1][j] = p[i][nz][j]+
+                        (v[i][nz+1][j]-2*v[i][nz][j]+v[i][nz-1][j])/Re/dz;
+                }
             }
         }
     }
@@ -345,7 +369,7 @@ private:
         // F (r)
 #pragma omp task
         for (int i = 1; i <= nphi; i++) {
-            for (int k = 1; k <= nz; k++) { // 3/2 ..
+            for (int k = z1; k <= zn; k++) { // 3/2 ..
                 for (int j = 0; j <= nr; j++) { // 1/2 ..
                     double r = r0+dr*j;
                     double r2 = (r+0.5*dr)/r;
@@ -377,8 +401,8 @@ private:
         }
         // G (z)
 #pragma omp task
-        for (int i = 1; i <= nphi; i++) {
-            for (int k = 0; k <= nz; k++) {
+        for (int i = 0; i < nphi; i++) {
+            for (int k = z0; k <= zn; k++) {
                 for (int j = 1; j <= nr; j++) {
                     double r = r0+dr*j-dr/2;
                     double r2 = (r+0.5*dr)/r;
@@ -407,7 +431,7 @@ private:
         // H (phi)
 #pragma omp task
         for (int i = 0; i < nphi; i++) { // 1/2 ...
-            for (int k = 1; k <= nz; k++) {
+            for (int k = z1; k <= zn; k++) {
                 for (int j = 1; j <= nr; j++) {
                     double r = r0+dr*j-dr/2;
                     double r2 = (r+0.5*dr)/r;
@@ -447,21 +471,25 @@ private:
 
     void init_P_slices() {
         for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k <= nz; k++) {
+            for (int k = z1; k <= zn; k++) {
                 int id = RHS_r.index({i,k});
                 double r = r0-dr/2;
                 double r2 = r*r;
 
                 P_r.add(id, RHS_r.index({i-1,k}), 1/dphi2/r2);
 
-                if (k > 1) {
-                    P_r.add(id, RHS_r.index({i,k-1}), 1/dz2);
+                if constexpr(zflag==tensor_flag::none) {
+                    if (k > 1) {
+                        P_r.add(id, RHS_r.index({i,k-1}), 1/dz2);
+                    }
                 }
 
                 P_r.add(id, RHS_r.index({i,k}), -2/dz2-2/dphi2/r2);
 
-                if (k < nz) {
-                    P_r.add(id, RHS_r.index({i,k+1}), 1/dz2);
+                if constexpr(zflag==tensor_flag::none) {
+                    if (k < nz) {
+                        P_r.add(id, RHS_r.index({i,k+1}), 1/dz2);
+                    }
                 }
 
                 P_r.add(id, RHS_r.index({i+1,k}), 1/dphi2/r2);
@@ -499,15 +527,17 @@ private:
 
         solver_stream_z = std::move(P_z);
 
-        for (int k = 1; k <= nz; k++) {
+        for (int k = z1; k <= zn; k++) {
             for (int j = 1; j <= nr; j++) {
                 int id = RHS_phi.index({k,j});
                 double r = r0+j*dr-dr/2;
                 double rm = 2;
                 double zm = 2;
 
-                if (k > 1) {
-                    P_phi.add(id, RHS_phi.index({k-1,j}), 1/dz2);
+                if constexpr(zflag==tensor_flag::none) {
+                    if (k > 1) {
+                        P_phi.add(id, RHS_phi.index({k-1,j}), 1/dz2);
+                    }
                 }
 
                 if (j > 1) {
@@ -520,8 +550,10 @@ private:
                     P_phi.add(id, RHS_phi.index({k,j+1}), (r+0.5*dr)/dr2/r);
                 }
 
-                if (k < nz) {
-                    P_phi.add(id, RHS_phi.index({k+1,j}), 1/dz2);
+                if constexpr(zflag==tensor_flag::none) {
+                    if (k < nz) {
+                        P_phi.add(id, RHS_phi.index({k+1,j}), 1/dz2);
+                    }
                 }
             }
         }
@@ -534,7 +566,7 @@ private:
     void poisson() {
 #pragma omp parallel for
         for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k <= nz; k++) {
+            for (int k = z1; k <= zn; k++) {
                 for (int j = 1; j <= nr; j++) {
                     double r = r0+dr*j-dr/2;
 
@@ -542,8 +574,10 @@ private:
                                     +(G[i][k][j]-G[i][k-1][j])/dz
                                     +(H[i][k][j]-H[i-1][k][j])/dphi/r)/dt;
 
-                    if (k <= 1) {
-                        RHS[i][k][j] -= p[i][k-1][j]/dz2;
+                    if constexpr(zflag==tensor_flag::none) {
+                        if (k <= 1) {
+                            RHS[i][k][j] -= p[i][k-1][j]/dz2;
+                        }
                     }
                     if (j <= 1) {
                         RHS[i][k][j] -= (r-dr/2)/r*p[i][k][j-1]/dr2;
@@ -553,25 +587,27 @@ private:
                     if (j >= nr) {
                         RHS[i][k][j] -= (r+dr/2)/r*p[i][k][j+1]/dr2;
                     }
-                    if (k >= nz) {
-                        RHS[i][k][j] -= p[i][k+1][j]/dz2;
+                    if constexpr(zflag==tensor_flag::none) {
+                        if (k >= nz) {
+                            RHS[i][k][j] -= p[i][k+1][j]/dz2;
+                        }
                     }
                 }
             }
         }
 
-        //solver.solve(&x[0][1][1], &RHS[0][1][1]);
-        lapl3_solver.solve(&x[0][1][1], &RHS[0][1][1]);
+        lapl3_solver.solve(&x[0][z1][1], &RHS[0][z1][1]);
     }
 
     void poisson_stream() {
+        // TODO: z-periodicity matrix
         for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k <= nz; k++) {
+            for (int k = z1; k <= zn; k++) {
                 RHS_r[i][k] = (wr[i][k+1]-wr[i][k-1]) /2/ dz - (vr[i+1][k] - vr[i-1][k]) /2/ dphi;
             }
         }
 
-        solver_stream_r.solve(&psi_r[0][1], &RHS_r[0][1]);
+        solver_stream_r.solve(&psi_r[0][z1], &RHS_r[0][z1]);
 
         for (int i = 0; i < nphi; i++) {
             for (int j = 1; j <= nr; j++) {
@@ -581,13 +617,14 @@ private:
 
         solver_stream_z.solve(&psi_z[0][1], &RHS_z[0][1]);
 
-        for (int k = 1; k <= nz; k++) {
+        // TODO: z-periodicity matrix
+        for (int k = z1; k <= zn; k++) {
             for (int j = 1; j <= nr; j++) {
                 RHS_phi[k][j] = (vphi[k][j+1]-vphi[k][j-1])/2 / dr - (uphi[k+1][j] - uphi[k-1][j])/2 / dz;
             }
         }
 
-        solver_stream_phi.solve(&psi_phi[1][1], &RHS_phi[1][1]);
+        solver_stream_phi.solve(&psi_phi[z1][1], &RHS_phi[z1][1]);
     }
 
     void update_uvwp() {
@@ -599,7 +636,7 @@ private:
 
 #pragma omp task
         for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k <= nz; k++) {
+            for (int k = z1; k <= zn; k++) {
                 for (int j = 1; j < nr; j++) {
                     //double r = r0+dr*j;
                     u[i][k][j] = F[i][k][j]-dt/dr*(x[i][k][j+1]-x[i][k][j]);
@@ -609,7 +646,7 @@ private:
 
 #pragma omp task
         for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k < nz; k++) {
+            for (int k = z1; k < nz /*ok*/; k++) {
                 for (int j = 1; j <= nr; j++) {
                     //double r = r0+dr*j-dr/2;
                     v[i][k][j] = G[i][k][j]-dt/dz*(x[i][k+1][j]-x[i][k][j]);
@@ -619,7 +656,7 @@ private:
 
 #pragma omp task
         for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k <= nz; k++) {
+            for (int k = z1; k <= zn; k++) {
                 for (int j = 1; j <= nr; j++) {
                     double r = r0+dr*j-dr/2;
                     w[i][k][j] = H[i][k][j]-dt/dphi/r*(x[i+1][k][j]-x[i][k][j]);
@@ -629,8 +666,9 @@ private:
 
 #pragma omp task
         for (int i = 0; i < nphi; i++) {
-            for (int k = 1; k < nz; k++) {
-                for (int j = 1; j < nr; j++) {
+            // TODO
+            for (int k = z1; k < zn; k++) {
+                for (int j = 1; j <= nr; j++) {
                     p[i][k][j] = x[i][k][j];
                 }
             }
@@ -646,7 +684,7 @@ private:
             return;
         }
 
-        for (int k = 0; k <= nz+1; k++) {
+        for (int k = z0; k <= znn; k++) {
             for (int j = 0; j <= nr+1; j++) {
                 uphi[k][j] = 0.5*(u[nphi/2][k][j-1] + u[nphi/2][k][j]);
                 vphi[k][j] = 0.5*(v[nphi/2][k-1][j] + v[nphi/2][k][j]);
@@ -661,7 +699,7 @@ private:
         }
 
         for (int i = 0; i < nphi; i++) {
-            for (int k = 0; k <= nz+1; k++) {
+            for (int k = z0; k <= znn; k++) {
                 vr[i][k] = 0.5*(v[i][k-1][nr/2] + v[i][k][nr/2]);
                 wr[i][k] = 0.5*(w[i-1][k][nr/2] + w[i][k][nr/2]);
             }

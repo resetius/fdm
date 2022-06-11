@@ -9,6 +9,7 @@ template<typename T, template<typename> class Solver, bool check>
 void calc(const Config& c) {
     using namespace std::chrono;
 
+    //NSCyl<T, Solver, true, tensor_flag::periodic> ns(c);
     NSCyl<T, Solver, true> ns(c);
 
     const int steps = c.get("ns", "steps", 1);
