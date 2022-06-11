@@ -5,12 +5,11 @@
 #include "superlu_solver.h"
 #include "jacobi_solver.h"
 
-template<typename T, template<typename> class Solver, bool check>
+template<typename T, template<typename> class Solver, bool check, tensor_flag zflag>
 void calc(const Config& c) {
     using namespace std::chrono;
 
-    //NSCyl<T, Solver, true, tensor_flag::periodic> ns(c);
-    NSCyl<T, Solver, true> ns(c);
+    NSCyl<T, Solver, true, zflag> ns(c);
 
     const int steps = c.get("ns", "steps", 1);
     const int plot_interval = c.get("plot", "interval", 100);
@@ -44,13 +43,23 @@ void calc(const Config& c) {
     printf("It took me '%f' seconds\n", interval.count());
 }
 
-template<typename T, template<typename> class Solver>
+template<typename T, template<typename> class Solver, tensor_flag zflag>
 void calc1(const Config& c) {
     bool check = c.get("other", "check", 0) == 1;
     if (check) {
-        calc<T, Solver, true>(c);
+        calc<T, Solver, true, zflag>(c);
     } else {
-        calc<T, Solver, false>(c);
+        calc<T, Solver, false, zflag>(c);
+    }
+}
+
+template<typename T, template<typename> class Solver>
+void calc2(const Config& c) {
+    bool periodic = c.get("ns", "zperiod", 0) == 1;
+    if (periodic) {
+        calc1<T, Solver, tensor_flag::periodic>(c);
+    } else {
+        calc1<T, Solver, tensor_flag::none>(c);
     }
 }
 
@@ -69,24 +78,24 @@ int main(int argc, char** argv) {
     if (datatype == "float") {
         using T = float;
         if (solver == "gmres") {
-            calc1<T, gmres_solver>(c);
+            calc2<T, gmres_solver>(c);
         } else if (solver == "superlu") {
-            calc1<T, superlu_solver>(c);
+            calc2<T, superlu_solver>(c);
         } else if (solver == "jacobi") {
-            calc1<T, jacobi_solver>(c);
+            calc2<T, jacobi_solver>(c);
         } else {
-            calc1<T, superlu_solver>(c);
+            calc2<T, superlu_solver>(c);
         }
     } else {
         using T = double;
         if (solver == "gmres") {
-            calc1<T, gmres_solver>(c);
+            calc2<T, gmres_solver>(c);
         } else if (solver == "superlu") {
-            calc1<T, superlu_solver>(c);
+            calc2<T, superlu_solver>(c);
         } else if (solver == "jacobi") {
-            calc1<T, jacobi_solver>(c);
+            calc2<T, jacobi_solver>(c);
         } else {
-            calc1<T, umfpack_solver>(c);
+            calc2<T, umfpack_solver>(c);
         }
     }
 
