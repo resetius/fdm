@@ -101,7 +101,11 @@ void LaplCyl3FFT2<T,check,zflag>::init_solver() {
         lm_phi[i] = 4.0/dphi2*sq(sin(i*dphi*0.5));
     }
     for (int k = 0; k < zpoints; k++) {
-        lm_z[k] = 4./dz2*sq(sin(k*M_PI*0.5/zpoints));
+        if constexpr(zflag==tensor_flag::none) {
+            lm_z[k] = 4./dz2*sq(sin(k*M_PI*0.5/zpoints));
+        } else {
+            lm_z[k] = 4./dz2*sq(sin(k*M_PI/zpoints));
+        }
     }
 
     for (int i = 0; i < nphi; i++) {

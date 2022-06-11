@@ -114,7 +114,7 @@ public:
 
         , psi_r({0, nphi-1, z1, zn})
         , psi_z({0, nphi-1, 1, nr})
-        , psi_phi({1, nz, 1, nr})
+        , psi_phi({z1, zn, 1, nr})
 
         , uphi({z0, znn, 0, nr+1})
         , vphi({z0, znn, 0, nr+1})
@@ -498,6 +498,8 @@ private:
                     if (k > 1) {
                         P_r.add(id, RHS_r.index({i,k-1}), 1/dz2);
                     }
+                } else {
+                    P_r.add(id, RHS_r.index({i,k-1}), 1/dz2);
                 }
 
                 P_r.add(id, RHS_r.index({i,k}), -2/dz2-2/dphi2/r2);
@@ -506,6 +508,8 @@ private:
                     if (k < nz) {
                         P_r.add(id, RHS_r.index({i,k+1}), 1/dz2);
                     }
+                } else {
+                    P_r.add(id, RHS_r.index({i,k+1}), 1/dz2);
                 }
 
                 P_r.add(id, RHS_r.index({i+1,k}), 1/dphi2/r2);
@@ -554,6 +558,8 @@ private:
                     if (k > 1) {
                         P_phi.add(id, RHS_phi.index({k-1,j}), 1/dz2);
                     }
+                } else {
+                    P_phi.add(id, RHS_phi.index({k-1,j}), 1/dz2);
                 }
 
                 if (j > 1) {
@@ -570,6 +576,8 @@ private:
                     if (k < nz) {
                         P_phi.add(id, RHS_phi.index({k+1,j}), 1/dz2);
                     }
+                } else {
+                    P_phi.add(id, RHS_phi.index({k+1,j}), 1/dz2);
                 }
             }
         }
