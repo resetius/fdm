@@ -5,6 +5,7 @@
 #include <climits>
 #include <cmath>
 #include <chrono>
+#include <random>
 
 #include "tensor.h"
 #include "matrix_plot.h"
@@ -129,6 +130,17 @@ public:
                        zflag==tensor_flag::none?h2-h1+dz:h2-h1,
                        nr, nz, nphi)
     {
+        if (c.get("ns", "vrandom", 0) == 1) {
+            std::default_random_engine generator;
+            std::uniform_real_distribution<T> distribution(-1e-3, 1e-3);
+            for (int i = 0; i < nphi; i++) {
+                for (int k = z1; k <= zn; k++) {
+                    for (int j = 1; j <= nr; j++) {
+                        v[i][k][j] = distribution(generator);
+                    }
+                }
+            }
+        }
         init_P_slices();
     }
 
