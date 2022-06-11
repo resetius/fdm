@@ -337,19 +337,35 @@ private:
             for (int k = z1; k <= zn; k++) {
                 int j = 0;
                 double r = r0+j*dr-dr/2;
-                p[i][k][0]  = (r+0.5*dr)/(r-0.5*dr) * p[i][k][1] -
+                verify(std::abs(u[i][k][j]) < 1e-15);
+                verify(std::abs(u[i][k][j-1]-u[i][k][j+1])<1e-15);
+
+                //p[i][k][0]  = (r+0.5*dr)/(r-0.5*dr) * p[i][k][1] -
+                //    ((r+0.5*dr)*u[i][k][1]/r-2*u[i][k][0]+(r-0.5*dr)*u[i][k][-1]/r)/Re/dr;
+                p[i][k][0]  = p[i][k][1] -
                     ((r+0.5*dr)*u[i][k][1]/r-2*u[i][k][0]+(r-0.5*dr)*u[i][k][-1]/r)/Re/dr;
 
                 j = nr;
                 r = r0+j*dr-dr/2;
 
-                p[i][k][nr+1] = (r-0.5*dr)/(r+0.5*dr) * p[i][k][nr]+
+                verify(std::abs(u[i][k][j]) < 1e-15);
+                verify(std::abs(u[i][k][j-1]-u[i][k][j+1])<1e-15);
+
+                //p[i][k][nr+1] = (r-0.5*dr)/(r+0.5*dr) * p[i][k][nr]+
+                //    ((r+0.5*dr)*u[i][k][nr+1]/r-2*u[i][k][nr]+(r-0.5*dr)*u[i][k][nr-1]/r)/Re/dr;
+                p[i][k][nr+1] = p[i][k][nr]+
                     ((r+0.5*dr)*u[i][k][nr+1]/r-2*u[i][k][nr]+(r-0.5*dr)*u[i][k][nr-1]/r)/Re/dr;
             }
         }
         if constexpr(zflag==tensor_flag::none) {
             for (int i = 0; i < nphi; i++) {
                 for (int j = 1; j <= nr; j++) {
+                    verify(std::abs(v[i][0][j]) < 1e-15);
+                    verify(std::abs(v[i][nz][j]) < 1e-15);
+
+                    verify(std::abs(v[i][1][j]-v[i][-1][j]) < 1e-15);
+                    verify(std::abs(v[i][nz+1][j]-v[i][nz-1][j]) < 1e-15);
+
                     p[i][0][j]    = p[i][1][j] -
                         (v[i][1][j]-2*v[i][0][j]+v[i][-1][j])/Re/dz;
                     p[i][nz+1][j] = p[i][nz][j]+
@@ -665,13 +681,8 @@ private:
         }
 
 #pragma omp task
-        for (int i = 0; i < nphi; i++) {
-            // TODO
-            for (int k = z1; k < zn; k++) {
-                for (int j = 1; j <= nr; j++) {
-                    p[i][k][j] = x[i][k][j];
-                }
-            }
+        {
+            p = x;
         }
 
 #pragma omp taskwait

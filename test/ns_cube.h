@@ -594,12 +594,8 @@ private:
             }
         }
 #pragma omp task
-        for (int i = 1; i <= nz; i++) {
-            for (int k = 1; k <= ny; k++) {
-                for (int j = 1; j <= nx; j++) {
-                    p[i][k][j] = x[i][k][j];
-                }
-            }
+        {
+            p = x;
         }
 
 #pragma omp taskwait
