@@ -320,7 +320,7 @@ void arpack_solver<T>::solve(
 
     int ldz = n;
 
-    vector<T> z(n * (nev+1), 0.);
+    vector<T> z(n * (2*nev), 0.);
 
     T sigmar = 0.0; // real part of the shift
     T sigmai = 0.0; // imaginary part of the shift
@@ -328,8 +328,8 @@ void arpack_solver<T>::solve(
     int lworkev = 3 * ncv;
     vector<T> workev(lworkev, 0.);
 
-    vector<T> eigenvalues_real(nev+1, 0.);
-    vector<T> eigenvalues_im(nev+1, 0.);
+    vector<T> eigenvalues_real(2*nev, 0.);
+    vector<T> eigenvalues_im(2*nev, 0.);
 
     if constexpr (is_same<T,double>::value) {
         dneupd_(
@@ -388,6 +388,7 @@ void arpack_solver<T>::solve(
     }
 
     verify(info == 0, format("*neupd: %d: ", info).c_str());
+//    int nconv = std::min(iparam[4], nev);
     int nconv = iparam[4];
 
     eigenvectors.resize(nconv);
