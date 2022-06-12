@@ -70,6 +70,7 @@ void calc(const Config& c) {
     ns.U0 = 0;
 
     printf("%d\n", n);
+    auto t0 = steady_clock::now();
     solver.solve([&](T* y, const T* x) {
         // copy to inner domain
         auto t1 = steady_clock::now();
@@ -88,9 +89,11 @@ void calc(const Config& c) {
         u = ns.u; v = ns.v; w = ns.w; p = ns.p;
         it++;
         auto t2 = steady_clock::now();
-        auto interval = duration_cast<duration<double>>(t2 - t1);
-
-        printf("Iter %d in %f seconds\n", it, interval.count());
+        auto interval1 = duration_cast<duration<double>>(t2 - t1);
+        auto interval2 = duration_cast<duration<double>>(t1 - t0);
+        t0 = t2;
+        printf("Iter %d in %f/%f seconds (ns/arpack)\n",
+               it, interval1.count(), interval2.count());
     }, eigenvalues, eigenvectors, nev);
 
     auto t2 = steady_clock::now();
