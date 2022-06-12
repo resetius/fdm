@@ -10,7 +10,7 @@ template<typename T, template<typename> class Solver, bool check>
 void calc(const Config& c) {
     using namespace std::chrono;
 
-    using Task = NSCyl<T, Solver, check>;
+    using Task = NSCyl<T, Solver, check, tensor_flag::periodic>;
     using tensor = typename Task::tensor;
     Task ns(c);
 
@@ -28,15 +28,10 @@ void calc(const Config& c) {
     //const int vtk = c.get("plot", "vtk", 0);
     int i, nphi, nz, nr;
     nphi = ns.nphi; nz = ns.nz; nr = ns.nr;
-    tensor u{{0, nphi-1, 1, nz,   1, nr-1}};
-    tensor v{{0, nphi-1, 1, nz-1, 1, nr}};
-    tensor w{{0, nphi-1, 1, nz,   1, nr}};
-    tensor p({0, nphi-1, 1, nz,   1, nr});
-
-    tensor u0{{0, nphi-1, 1, nz,   1, nr-1}};
-    tensor v0{{0, nphi-1, 1, nz-1, 1, nr}};
-    tensor w0{{0, nphi-1, 1, nz,   1, nr}};
-    tensor p0({0, nphi-1, 1, nz,   1, nr});
+    tensor u{{0, nphi-1, 0, nz-1, 1, nr-1}};
+    tensor v{{0, nphi-1, 0, nz-1, 1, nr}};
+    tensor w{{0, nphi-1, 0, nz-1, 1, nr}};
+    tensor p({0, nphi-1, 0, nz-1, 1, nr});
 
     int n = u.size+v.size+w.size+p.size;
     arpack_solver<T> solver(
@@ -58,17 +53,11 @@ void calc(const Config& c) {
     vector<complex<T>> eigenvalues;
     vector<vector<T>> eigenvectors;
 
-    vector<T> zero(n, 0.0);
     int off = 0;
-    u0.use(&zero[0] + off); off += u0.size;
-    v0.use(&zero[0] + off); off += v0.size;
-    w0.use(&zero[0] + off); off += w0.size;
-    p0.use(&zero[0] + off); off += p0.size;
-
     for (i = 0; i < steps; i++) {
         ns.step();
     }
-    u0 = ns.u; v0 = ns.v; w0 = ns.w; p0 = ns.p;
+    ns.u0 = ns.u; ns.v0 = ns.v; ns.w0 = ns.w;
 
     printf("%d\n", n);
     solver.solve([&](T* y, const T* x) {
@@ -81,12 +70,10 @@ void calc(const Config& c) {
         p.use(y + off); off += p.size;
         ns.u = u; ns.v = v; ns.w = w; ns.p = p;
         for (i = 0; i < steps; i++) {
-            ns.step();
+            ns.L_step();
         }
         // copy out
         u = ns.u; v = ns.v; w = ns.w; p = ns.p;
-        blas::axpy(n, -1.0, &zero[0], 1, y, 1);
-
         it++;
     }, eigenvalues, eigenvectors, nev);
 

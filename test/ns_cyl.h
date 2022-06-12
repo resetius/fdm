@@ -50,7 +50,8 @@ public:
     const double dr2, dz2, dphi2;
 
     tensor u /*r*/,v/*z*/,w/*phi*/, p;
-    tensor u0, v0, w0, p0;
+    // linearization near this point
+    tensor u0, v0, w0;
 
     tensor x;
     tensor F,G,H,RHS;
@@ -108,7 +109,6 @@ public:
         , u0{{0, nphi-1, z0, znn, -1, nr+1}}
         , v0{{0, nphi-1, z_, znn, 0, nr+1}}
         , w0{{0, nphi-1, z0, znn, 0, nr+1}}
-        , p0{{0, nphi-1, z0, znn, 0, nr+1}}
 
         , x({0, nphi-1, z1, zn, 1, nr})
         , F({0, nphi-1, z1, zn, 0, nr}) // check bounds
