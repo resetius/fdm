@@ -49,8 +49,10 @@ public:
     const double dr, dz, dphi;
     const double dr2, dz2, dphi2;
 
-    tensor u /*r*/,v/*z*/,w/*phi*/;
-    tensor p,x;
+    tensor u /*r*/,v/*z*/,w/*phi*/, p;
+    tensor u0, v0, w0, p0;
+
+    tensor x;
     tensor F,G,H,RHS;
 
     matrix_r RHS_r;
@@ -98,10 +100,15 @@ public:
         , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
 
           // phi, z, r
-        , u{{0, nphi-1, z0, znn, -1, nr+1}} // check bounds
-        , v{{0, nphi-1, z_, znn, 0, nr+1}} // check bounds
-        , w{{0, nphi-1, z0, znn, 0, nr+1}} // check bounds
+        , u{{0, nphi-1, z0, znn, -1, nr+1}}
+        , v{{0, nphi-1, z_, znn, 0, nr+1}}
+        , w{{0, nphi-1, z0, znn, 0, nr+1}}
         , p({0, nphi-1, z0, znn, 0, nr+1})
+
+        , u0{{0, nphi-1, z0, znn, -1, nr+1}}
+        , v0{{0, nphi-1, z_, znn, 0, nr+1}}
+        , w0{{0, nphi-1, z0, znn, 0, nr+1}}
+        , p0{{0, nphi-1, z0, znn, 0, nr+1}}
 
         , x({0, nphi-1, z1, zn, 1, nr})
         , F({0, nphi-1, z1, zn, 0, nr}) // check bounds
@@ -154,7 +161,17 @@ public:
         poisson();
         update_uvwp();
         time_index++;
-        //update_uvi(); // remove
+        printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
+               dt*time_index, p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
+               RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
+    }
+
+    void L_step() {
+        init_bound();
+        L_FGH();
+        poisson();
+        update_uvwp();
+        time_index++;
         printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
                dt*time_index, p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
                RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
@@ -417,6 +434,124 @@ private:
 
                         0.25*((u[i]  [k][j]+u[i+1][k][j])*(w[i]  [k][j+1]+w[i]  [k][j])-
                               (u[i-1][k][j]+u[i]  [k][j])*(w[i-1][k][j+1]+w[i-1][k][j])
+                            )/dphi/r
+
+                        // TODO: check
+                        +sq(0.5*(w[i][k][j+1]+w[i][k][j]))/r-u[i][k][j]/rr/Re
+                        -2*( 0.5*(w[i]  [k][j+1]+w[i]  [k][j])
+                            -0.5*(w[i-1][k][j+1]+w[i-1][k][j]))/rr/dphi/Re
+                        );
+                }
+            }
+        }
+        // G (z)
+#pragma omp task
+        for (int i = 0; i < nphi; i++) {
+            for (int k = z0; k <= zn; k++) {
+                for (int j = 1; j <= nr; j++) {
+                    double r = r0+dr*j-dr/2;
+                    double r2 = (r+0.5*dr)/r;
+                    double r1 = (r-0.5*dr)/r;
+                    double rr = r*r;
+
+                    // 17.11
+                    G[i][k][j] = v[i][k][j] + dt*(
+                        (r2*v[i][k][j+1]-2*v[i][k][j]+r1*v[i][k][j-1])/Re/dr2+
+                        (   v[i][k+1][j]-2*v[i][k][j]+   v[i][k-1][j])/Re/dz2+
+                        (   v[i+1][k][j]-2*v[i][k][j]+   v[i-1][k][j])/Re/dphi2/rr-
+                        (sq(0.5*(v[i][k][j]+v[i][k+1][j]))-sq(0.5*(v[i][k-1][j]+v[i][k][j])))/dz-
+
+                        // TODO: check
+                        0.25*(r2*(u[i][k][j]+  u[i][k+1][j])*  (v[i][k][j+1]+v[i][k][j])-
+                              r1*(u[i][k][j-1]+u[i][k+1][j-1])*(v[i][k][j]  +v[i][k][j-1])
+                            )/dr-
+
+                        0.25*((w[i]  [k][j]+w[i]  [k+1][j])*(v[i]  [k][j]+v[i+1][k][j])-
+                              (w[i-1][k][j]+w[i-1][k+1][j])*(v[i-1][k][j]+v[i]  [k][j])
+                            )/dphi/r
+                        );
+                }
+            }
+        }
+        // H (phi)
+#pragma omp task
+        for (int i = 0; i < nphi; i++) { // 1/2 ...
+            for (int k = z1; k <= zn; k++) {
+                for (int j = 1; j <= nr; j++) {
+                    double r = r0+dr*j-dr/2;
+                    double r2 = (r+0.5*dr)/r;
+                    double r1 = (r-0.5*dr)/r;
+                    double rr = r*r;
+
+                    H[i][k][j] = w[i][k][j] + dt*(
+                        (r2*w[i][k][j+1]-2*w[i][k][j]+r1*w[i][k][j-1])/Re/dr2+
+                        (   w[i][k+1][j]-2*w[i][k][j]+   w[i][k-1][j])/Re/dz2+
+                        (   w[i+1][k][j]-2*w[i][k][j]+   w[i-1][k][j])/Re/dphi2/rr-
+                        (sq(0.5*(w[i+1][k][j]+w[i][k][j]))-sq(0.5*(w[i-1][k][j]+w[i][k][j])))/dphi/r-
+
+                        // TODO: check
+                        0.25*(r2*(u[i+1][k][j]+  u[i][k][j])*  (w[i][k][j+1]+w[i][k][j])-
+                              r1*(u[i+1][k][j-1]+u[i][k][j-1])*(w[i][k][j]  +w[i][k][j-1])
+                            )/dr-
+
+                        0.25*((w[i][k][j]+  w[i][k+1][j])*(v[i][k]  [j]+v[i+1][k]  [j])-
+                              (w[i][k-1][j]+w[i][k]  [j])*(v[i][k-1][j]+v[i+1][k-1][j])
+                            )/dz
+
+                        // TODO: check
+
+                        -w[i][k][j]*0.5*(u[i+1][k][j]+u[i][k][j])/r-w[i][k][j]/rr/Re
+                        +2*( 0.5*(u[i+1][k][j]+u[i]  [k][j])
+                           -0.5*(u[i]  [k][j]+u[i-1][k][j]))/rr/dphi/Re
+                        );
+                }
+            }
+        }
+
+#pragma omp taskwait
+
+        } // end of omp single
+        } // end of omp parallel
+    }
+
+    void L_FGH() {
+#pragma omp parallel
+        { // omp parallel
+
+#pragma omp single
+        { // omp single
+
+        // F (r)
+#pragma omp task
+        for (int i = 1; i <= nphi; i++) {
+            for (int k = z1; k <= zn; k++) { // 3/2 ..
+                for (int j = 0; j <= nr; j++) { // 1/2 ..
+                    double r = r0+dr*j;
+                    double r2 = (r+0.5*dr)/r;
+                    double r1 = (r-0.5*dr)/r;
+                    double rr = r*r;
+
+                    // 17.9
+                    F[i][k][j] = u[i][k][j] + dt*(
+                        (r2*u[i][k][j+1]-2*u[i][k][j]+r1*u[i][k][j-1])/Re/dr2+
+                        (   u[i][k+1][j]-2*u[i][k][j]+   u[i][k-1][j])/Re/dz2+
+                        (   u[i+1][k][j]-2*u[i][k][j]+   u[i-1][k][j])/Re/dphi2/rr-
+
+                        (r2*(u[i][k][j]+u[i][k][j+1])*(u0[i][k][j]+u0[i][k][j+1])
+                        -r1*(u[i][k][j-1]+u[i][k][j])*(u0[i][k][j-1]+u0[i][k][j]))/dr-
+
+                        0.25*((u[i][k]  [j]+u[i][k+1][j])*(v0[i][k]  [j+1]+v0[i][k]  [j])-
+                              (u[i][k-1][j]+u[i][k]  [j])*(v0[i][k-1][j+1]+v0[i][k-1][j])
+                            )/dz-
+                        0.25*((u0[i][k]  [j]+u0[i][k+1][j])*(v[i][k]  [j+1]+v[i][k]  [j])-
+                              (u0[i][k-1][j]+u0[i][k]  [j])*(v[i][k-1][j+1]+v[i][k-1][j])
+                            )/dz-
+
+                        0.25*((u[i]  [k][j]+u[i+1][k][j])*(w0[i]  [k][j+1]+w0[i]  [k][j])-
+                              (u[i-1][k][j]+u[i]  [k][j])*(w0[i-1][k][j+1]+w0[i-1][k][j])
+                            )/dphi/r-
+                        0.25*((u0[i]  [k][j]+u0[i+1][k][j])*(w[i]  [k][j+1]+w[i]  [k][j])-
+                              (u0[i-1][k][j]+u0[i]  [k][j])*(w[i-1][k][j+1]+w[i-1][k][j])
                             )/dphi/r
 
                         // TODO: check
