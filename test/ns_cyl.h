@@ -537,8 +537,8 @@ private:
                         (   u[i][k+1][j]-2*u[i][k][j]+   u[i][k-1][j])/Re/dz2+
                         (   u[i+1][k][j]-2*u[i][k][j]+   u[i-1][k][j])/Re/dphi2/rr-
 
-                        (r2*(u[i][k][j]+u[i][k][j+1])*(u0[i][k][j]+u0[i][k][j+1])
-                        -r1*(u[i][k][j-1]+u[i][k][j])*(u0[i][k][j-1]+u0[i][k][j]))/dr-
+                        (r2*(0.5*u[i][k][j]+u[i][k][j+1])*(u0[i][k][j]+u0[i][k][j+1])
+                        -r1*(0.5*u[i][k][j-1]+u[i][k][j])*(u0[i][k][j-1]+u0[i][k][j]))/dr-
 
                         0.25*((u[i][k]  [j]+u[i][k+1][j])*(v0[i][k]  [j+1]+v0[i][k]  [j])-
                               (u[i][k-1][j]+u[i][k]  [j])*(v0[i][k-1][j+1]+v0[i][k-1][j])
@@ -554,8 +554,8 @@ private:
                               (u0[i-1][k][j]+u0[i]  [k][j])*(w[i-1][k][j+1]+w[i-1][k][j])
                             )/dphi/r
 
-                        // TODO: check
-                        +sq(0.5*(w[i][k][j+1]+w[i][k][j]))/r-u[i][k][j]/rr/Re
+                        +0.5*(w[i][k][j+1]+w[i][k][j])*(w0[i][k][j+1]+w0[i][k][j])/r
+                        -u[i][k][j]/rr/Re
                         -2*( 0.5*(w[i]  [k][j+1]+w[i]  [k][j])
                             -0.5*(w[i-1][k][j+1]+w[i-1][k][j]))/rr/dphi/Re
                         );
@@ -577,15 +577,22 @@ private:
                         (r2*v[i][k][j+1]-2*v[i][k][j]+r1*v[i][k][j-1])/Re/dr2+
                         (   v[i][k+1][j]-2*v[i][k][j]+   v[i][k-1][j])/Re/dz2+
                         (   v[i+1][k][j]-2*v[i][k][j]+   v[i-1][k][j])/Re/dphi2/rr-
-                        (sq(0.5*(v[i][k][j]+v[i][k+1][j]))-sq(0.5*(v[i][k-1][j]+v[i][k][j])))/dz-
 
-                        // TODO: check
-                        0.25*(r2*(u[i][k][j]+  u[i][k+1][j])*  (v[i][k][j+1]+v[i][k][j])-
-                              r1*(u[i][k][j-1]+u[i][k+1][j-1])*(v[i][k][j]  +v[i][k][j-1])
+                        (0.5*(v[i][k][j]+v[i][k+1][j])*(v0[i][k][j]+v0[i][k+1][j])
+                        -0.5*(v[i][k-1][j]+v[i][k][j])*(v0[i][k-1][j]+v0[i][k][j]))/dz-
+
+                        0.25*(r2*(u[i][k][j]+ u[i][k+1][j])* (v0[i][k][j+1]+v0[i][k][j])-
+                            r1*(u[i][k][j-1]+u[i][k+1][j-1])*(v0[i][k][j]  +v0[i][k][j-1])
+                            )/dr-
+                        0.25*(r2*(u0[i][k][j]+u0[i][k+1][j])*  (v[i][k][j+1]+v[i][k][j])-
+                            r1*(u0[i][k][j-1]+u0[i][k+1][j-1])*(v[i][k][j]  +v[i][k][j-1])
                             )/dr-
 
-                        0.25*((w[i]  [k][j]+w[i]  [k+1][j])*(v[i]  [k][j]+v[i+1][k][j])-
-                              (w[i-1][k][j]+w[i-1][k+1][j])*(v[i-1][k][j]+v[i]  [k][j])
+                        0.25*((w[i]  [k][j]+w[i]  [k+1][j])*(v0[i]  [k][j]+v0[i+1][k][j])-
+                              (w[i-1][k][j]+w[i-1][k+1][j])*(v0[i-1][k][j]+v0[i]  [k][j])
+                            )/dphi/r-
+                        0.25*((w0[i]  [k][j]+w0[i]  [k+1][j])*(v[i]  [k][j]+v[i+1][k][j])-
+                              (w0[i-1][k][j]+w0[i-1][k+1][j])*(v[i-1][k][j]+v[i]  [k][j])
                             )/dphi/r
                         );
                 }
@@ -605,20 +612,28 @@ private:
                         (r2*w[i][k][j+1]-2*w[i][k][j]+r1*w[i][k][j-1])/Re/dr2+
                         (   w[i][k+1][j]-2*w[i][k][j]+   w[i][k-1][j])/Re/dz2+
                         (   w[i+1][k][j]-2*w[i][k][j]+   w[i-1][k][j])/Re/dphi2/rr-
-                        (sq(0.5*(w[i+1][k][j]+w[i][k][j]))-sq(0.5*(w[i-1][k][j]+w[i][k][j])))/dphi/r-
 
-                        // TODO: check
-                        0.25*(r2*(u[i+1][k][j]+  u[i][k][j])*  (w[i][k][j+1]+w[i][k][j])-
-                              r1*(u[i+1][k][j-1]+u[i][k][j-1])*(w[i][k][j]  +w[i][k][j-1])
+                        (0.5*(w[i+1][k][j]+w[i][k][j])*(w0[i+1][k][j]+w0[i][k][j])
+                       -0.5*(w[i-1][k][j]+w[i][k][j])*(w0[i-1][k][j]+w0[i][k][j]))/dphi/r-
+
+                        0.25*(r2*(u[i+1][k][j]+  u[i][k][j])* (w0[i][k][j+1]+w0[i][k][j])-
+                              r1*(u[i+1][k][j-1]+u[i][k][j-1])*(w0[i][k][j]+w0[i][k][j-1])
+                            )/dr-
+                        0.25*(r2*(u0[i+1][k][j]+u0[i][k][j])*  (w[i][k][j+1]+w[i][k][j])-
+                            r1*(u0[i+1][k][j-1]+u0[i][k][j-1])*(w[i][k][j]  +w[i][k][j-1])
                             )/dr-
 
-                        0.25*((w[i][k][j]+  w[i][k+1][j])*(v[i][k]  [j]+v[i+1][k]  [j])-
-                              (w[i][k-1][j]+w[i][k]  [j])*(v[i][k-1][j]+v[i+1][k-1][j])
+                        0.25*((w[i][k][j]+  w[i][k+1][j])*(v0[i][k]  [j]+v0[i+1][k]  [j])-
+                              (w[i][k-1][j]+w[i][k]  [j])*(v0[i][k-1][j]+v0[i+1][k-1][j])
+                            )/dz-
+                        0.25*((w0[i][k][j]+  w0[i][k+1][j])*(v[i][k]  [j]+v[i+1][k]  [j])-
+                              (w0[i][k-1][j]+w0[i][k]  [j])*(v[i][k-1][j]+v[i+1][k-1][j])
                             )/dz
 
-                        // TODO: check
+                        -w0[i][k][j]*0.5*(u[i+1][k][j]+u[i][k][j])/r
+                        -w[i][k][j]*0.5*(u0[i+1][k][j]+u0[i][k][j])/r
 
-                        -w[i][k][j]*0.5*(u[i+1][k][j]+u[i][k][j])/r-w[i][k][j]/rr/Re
+                        -w[i][k][j]/rr/Re
                         +2*( 0.5*(u[i+1][k][j]+u[i]  [k][j])
                            -0.5*(u[i]  [k][j]+u[i-1][k][j]))/rr/dphi/Re
                         );
