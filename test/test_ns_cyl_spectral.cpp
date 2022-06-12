@@ -53,15 +53,27 @@ void calc(const Config& c) {
     vector<complex<T>> eigenvalues;
     vector<vector<T>> eigenvectors;
 
-    int off = 0;
-    for (i = 0; i < steps; i++) {
-        ns.step();
+    for (int i = 0; i < nphi; i++) {
+        for (int k = 0; k < nz; k++) {
+            for (int j = 0; j <= nr; j++) {
+                double r = ns.r0+ns.dr*j+ns.dr/2;
+                ns.w0[i][k][j] =
+                    -ns.U0*sq(ns.r0)/(sq(ns.R)-sq(ns.r0))
+                    + ns.U0*sq(ns.r0)*sq(ns.R)/(sq(ns.R)-sq(ns.r0))/r/r;
+            }
+        }
     }
-    ns.u0 = ns.u; ns.v0 = ns.v; ns.w0 = ns.w;
+    int off = 0;
+
+    // Мы решаем спектральную задачу для возмущения
+    // На возмущение накладываются нулевые граничные условия
+    ns.U0 = 0;
 
     printf("%d\n", n);
     solver.solve([&](T* y, const T* x) {
         // copy to inner domain
+        auto t1 = steady_clock::now();
+
         memcpy(y, x, n*sizeof(T));
         off = 0;
         u.use(y + off); off += u.size;
@@ -75,6 +87,10 @@ void calc(const Config& c) {
         // copy out
         u = ns.u; v = ns.v; w = ns.w; p = ns.p;
         it++;
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+
+        printf("Iter %d in %f seconds\n", it, interval.count());
     }, eigenvalues, eigenvectors, nev);
 
     auto t2 = steady_clock::now();

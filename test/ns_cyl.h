@@ -38,12 +38,14 @@ public:
 
     const double R, r0;
     const double h1, h2;
-    const double U0; // скорость вращения внутреннего цилиндра
+    double U0; // скорость вращения внутреннего цилиндра
 
     const double Re;
     const double dt;
 
     const int nr, nz, nphi;
+    const int verbose;
+
     const int z_, z0, z1, zn, znn; // z bounds
 
     const double dr, dz, dphi;
@@ -90,6 +92,7 @@ public:
         , nr(c.get("ns", "nr", 32))
         , nz(c.get("ns", "nz", 31))
         , nphi(c.get("ns", "nphi", 32))
+        , verbose(c.get("ns", "verbose", 0))
 
         , z_(zflag==tensor_flag::none?-1:0)
         , z0(zflag==tensor_flag::none?0:0)
@@ -161,9 +164,12 @@ public:
         poisson();
         update_uvwp();
         time_index++;
-        printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
-               dt*time_index, p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
-               RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
+        if (verbose) {
+            printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
+                   dt*time_index,
+                   p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
+                   RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
+        }
     }
 
     void L_step() {
@@ -172,9 +178,12 @@ public:
         poisson();
         update_uvwp();
         time_index++;
-        printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
-               dt*time_index, p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
-               RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
+        if (verbose) {
+            printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
+                   dt*time_index,
+                   p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
+                   RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
+        }
     }
 
     void plot() {

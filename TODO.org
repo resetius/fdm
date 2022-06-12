@@ -9,5 +9,5 @@
 * ns_cyl
 ** DONE plot slices (like in ns_cube)
 ** DONE spectral
-** linearization
-** optional periodicity along z-axis
+** DONE linearization
+** DONE optional periodicity along z-axis
