@@ -125,6 +125,89 @@ void test_lapl_rect_float(void** data) {
     test_lapl_rect<float>(data);
 }
 
+template<typename T, template<class, bool, class> class LaplSolver >
+void test_lapl_rect_yp(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    constexpr bool check = true;
+    using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
+    using matrix = tensor<T,2,check,tensor_flags>;
+
+    double x1 = c->get("test", "x1", 0.0);
+    double y1 = c->get("test", "y1", 0.0);
+    double x2 = c->get("test", "x2", M_PI);
+    double y2 = c->get("test", "y2", M_PI);
+    int nx = c->get("test", "nx", 31);
+    int ny = c->get("test", "ny", 32);
+    int verbose = c->get("test", "verbose", 0);
+
+    double dx = (x2-x1)/nx, dy = (y2-y1)/ny;
+
+    LaplSolver<T,check,tensor_flags> lapl(dx, dy, x2-x1+dx, y2-y1, nx, ny);
+
+    vector<int> indices = {0,ny-1,1,nx};
+    matrix RHS(indices);
+    matrix ANS(indices);
+
+    for (int k = 0; k < ny; k++) {
+        for (int j = 1; j <= nx; j++) {
+            RHS[k][j] = rp(k, j, dy, dx, x1, y1, x2, y2);
+
+            if (j <= 1) {
+                RHS[k][j] -= ans(k, j-1, dy, dx, x1, y1, x2, y2)/dx/dx;
+            }
+            if (j >= nx) {
+                RHS[k][j] -= ans(k, j+1, dy, dx, x1, y1, x2, y2)/dx/dx;
+            }
+        }
+    }
+
+    auto t1 = steady_clock::now();
+    lapl.solve(&ANS[0][1], &RHS[0][1]);
+    auto t2 = steady_clock::now();
+
+    double nrm = 0;
+    double nrm1= 0;
+    for (int k = 0; k < ny; k++) {
+        for (int j = 1; j <= nx; j++) {
+            double f = ans(k, j, dy, dx, x1, y1, x2, y2);
+            if (verbose > 1) {
+                printf("%e %e %e %e\n",
+                       ANS[k][j], f,
+                       ANS[k][j]/f,
+                       std::abs(ANS[k][j]-f));
+            }
+
+            nrm = std::max(nrm, std::abs(ANS[k][j]-f));
+            nrm1 = std::max(nrm1, std::abs(f));
+        }
+    }
+
+    nrm /= nrm1;
+    auto interval = duration_cast<duration<double>>(t2 - t1);
+
+    if (verbose) {
+        printf("It took me '%f' seconds, err = '%e'\n", interval.count(), nrm);
+    }
+
+    assert_true(nrm < 3e-3);
+}
+
+void test_lapl_rect_yp_double(void** data) {
+    test_lapl_rect_yp<double,LaplRect>(data);
+}
+
+void test_lapl_rect_yp_float(void** data) {
+    test_lapl_rect_yp<float,LaplRect>(data);
+}
+
+void test_lapl_rect_yp_fft2_double(void** data) {
+    test_lapl_rect_yp<double,LaplRectFFT2>(data);
+}
+
+void test_lapl_rect_yp_fft2_float(void** data) {
+    test_lapl_rect_yp<float,LaplRectFFT2>(data);
+}
+
 template<typename T>
 T solve_lapl(Config* c, int nx, int ny) {
     constexpr bool check = true;
@@ -381,6 +464,10 @@ int main(int argc, char** argv) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_prestate(test_lapl_rect_double, &c),
         cmocka_unit_test_prestate(test_lapl_rect_float, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_yp_double, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_yp_float, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_yp_fft2_double, &c),
+        cmocka_unit_test_prestate(test_lapl_rect_yp_fft2_float, &c),
         cmocka_unit_test_prestate(test_lapl_rect_norm_decr_double, &c),
         cmocka_unit_test_prestate(test_lapl_rect_norm_decr_float, &c),
         cmocka_unit_test_prestate(test_lapl_rect_ex_double, &c),
