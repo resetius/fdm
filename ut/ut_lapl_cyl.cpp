@@ -498,7 +498,7 @@ int main(int argc, char** argv) {
     c.rewrite(argc, argv);
 
     const struct CMUnitTest tests[] = {
-        xcmocka_unit_test_prestate(test_lapl_cyl_simple_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_simple_double, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_simple_float, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_norm_decr_double, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_norm_decr_float, &c),
