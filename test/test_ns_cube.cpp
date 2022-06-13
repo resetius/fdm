@@ -12,6 +12,9 @@
 #include "asp_misc.h"
 #include "ns_cube.h"
 
+using namespace fdm;
+using namespace std;
+
 template<typename T, bool check>
 void calc(const Config& c) {
     using namespace std::chrono;

@@ -13,12 +13,6 @@
 #include "lapl_cube.h"
 #include "lapl_rect.h"
 
-using namespace std;
-using namespace fdm;
-
-using asp::format;
-using asp::sq;
-
 namespace fdm {
 
 template<typename T, bool check>
