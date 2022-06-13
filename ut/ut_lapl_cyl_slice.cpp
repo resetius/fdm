@@ -19,20 +19,18 @@ using namespace std;
 using namespace std::chrono;
 using namespace asp;
 
-double ans_z(int i, int j, double dr, double dphi, double r0, double R)
-{
+double ans(int i, int k, int j, double dr, double dz, double dphi, double r0, double R, double h0, double h1) {
     double r = r0+dr*j-dr/2;
+    double z = h0+dz*k-dz/2;
     double phi = dphi*(i+1)-dphi/2;
-    double z = 1; double h0 = 0; double h1 = 5;
     double f = (z-h0)*(z-h1)*(r-r0)*(r-R)*(sin(phi) + cos(phi));
     return f;
 }
 
-double rp_z(int i, int j, double dr, double dphi, double r0, double R)
-{
+double rp(int i, int k, int j, double dr, double dz, double dphi, double r0, double R, double h0, double h1) {
     double r = r0+dr*j-dr/2;
+    double z = h0+dz*k-dz/2;
     double phi = dphi*(i+1)-dphi/2;
-    double z = 1; double h0 = 0; double h1 = 5;
     double f = ((r-r0)*(z-h0)*(z-h1)*(sin(phi)+cos(phi))
                 +(r-R)*(z-h0)*(z-h1)*(sin(phi)+cos(phi))
                 +2*r*(z-h0)*(z-h1)*(sin(phi)+cos(phi)))/r
@@ -51,9 +49,12 @@ void test_lapl_cyl_slice_z(void** data) {
     double r0 = c->get("test", "r0", M_PI/2);
     double R = c->get("test", "R", M_PI);
     int nr = c->get("test", "nr", 31);
+    int nz = c->get("test", "nz", 32);
     int nphi = c->get("test", "nphi", 32);
     int verbose = c->get("test", "verbose", 0);
+    double h0 = 0; double h1 = 10;
     double dr = (R-r0)/nr;
+    double dz = 10./nz;
     double dphi = 2*M_PI/nphi;
     double dphi2 = dphi*dphi; double dr2 = dr*dr;
     LaplRect<T,check,tensor_flags> lapl(dr, dphi, R-r0+dr, 2*M_PI, nr, nphi);
@@ -68,19 +69,20 @@ void test_lapl_cyl_slice_z(void** data) {
     matrix RHS_z(indices);
     matrix ANS(indices);
     matrix ANS2(indices);
-    matrix ANS3(indices);
+
+    int k = nz/2;
 
     for (int i = 0; i < nphi; i++) {
         for (int j = 1; j <= nr; j++) {
             double r = r0+dr*j-dr/2;
 
-            RHS_z[i][j] = rp_z(i, j, dr, dphi, r0, R);
+            RHS_z[i][j] = rp(i, k, j, dr, dz, dphi, r0, R, h0, h1);
 
             if (j <= 1) {
-                RHS_z[i][j] -= (r-dr/2)/r*ans_z(i, j-1, dr, dphi, r0, R)/dr/dr;
+                RHS_z[i][j] -= (r-dr/2)/r*ans(i,k,j-1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
             }
             if (j >= nr) {
-                RHS_z[i][j] -= (r+dr/2)/r*ans_z(i, j+1, dr, dphi, r0, R)/dr/dr;
+                RHS_z[i][j] -= (r+dr/2)/r*ans(i,k,j+1,dr,dz,dphi,r0,R,h0,h1)/dr/dr;
             }
         }
     }
@@ -94,7 +96,7 @@ void test_lapl_cyl_slice_z(void** data) {
 
     for (int i = 0; i < nphi; i++) {
         for (int j = 1; j <= nr; j++) {
-            double f = ans_z(i, j, dr, dphi, r0, R);
+            double f = ans(i, k, j, dr, dz, dphi, r0, R, h0, h1);
             if (verbose > 1) {
                 printf("%e %e %e %e\n",
                        ANS[i][j], f,
