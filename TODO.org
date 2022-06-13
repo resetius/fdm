@@ -11,3 +11,5 @@
 ** DONE spectral
 ** DONE linearization
 ** DONE optional periodicity along z-axis
+** check test test_lapl_cyl_zp
+** check test test_lapl_cyl_slice_phi
