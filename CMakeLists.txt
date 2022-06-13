@@ -4,6 +4,7 @@ find_package(PkgConfig REQUIRED)
 find_package(OpenMP)
 enable_testing()
 
+pkg_check_modules(NETCDF REQUIRED netcdf)
 pkg_check_modules(PLPLOT REQUIRED plplot)
 if (NOT BLAS_FOUND)
 pkg_check_modules(BLAS openblas)

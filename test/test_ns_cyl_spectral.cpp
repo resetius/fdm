@@ -129,8 +129,12 @@ void calc(const Config& c) {
             verify(code == 0, nc_strerror(code)); \
         } while(0);
 
+        string filename = format(
+            "eigenvectors_%f_%d_%d_%d.nc",
+            ns.Re, ns.nr, ns.nz, ns.nphi);
+
         int ncid;
-        nc_call(nc_create("simple_xy.nc", NC_CLOBBER, &ncid));
+        nc_call(nc_create(filename.c_str(), NC_CLOBBER, &ncid));
         int phi_dim, z_dim, r_dim, r0_dim;
 
         nc_call(nc_def_dim(ncid, "phi", nphi, &phi_dim));
@@ -159,7 +163,7 @@ void calc(const Config& c) {
             pids.push_back(pid);
         }
 
-        verify(nc_enddef(ncid) == 0);
+        nc_call(nc_enddef(ncid));
 
         for (int  i = 0; i < count; i++) {
             int j = indices[i];

@@ -18,7 +18,7 @@ jobs:
     - name: apt-get update
       run: sudo apt-get update
     - name: Install packages
-      run: sudo apt-get install libopenblas-openmp-dev libcmocka-dev libplplot-dev cmake ninja-build
+      run: sudo apt-get install libopenblas-openmp-dev libcmocka-dev libplplot-dev libnetcdf-dev cmake ninja-build
     - name: configure
       run: mkdir build && cmake -B build -G Ninja
     - name: make
