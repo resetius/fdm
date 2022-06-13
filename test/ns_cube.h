@@ -10,8 +10,8 @@
 #include "tensor.h"
 #include "matrix_plot.h"
 #include "config.h"
-#include "sparse.h"
 #include "lapl_cube.h"
+#include "lapl_rect.h"
 
 using namespace std;
 using namespace fdm;
@@ -19,7 +19,7 @@ using namespace fdm;
 using asp::format;
 using asp::sq;
 
-template<typename T, template <typename> class Solver, bool check>
+template<typename T, bool check>
 class NSCube {
 public:
     using tensor = fdm::tensor<T,3,check>;
@@ -48,16 +48,12 @@ public:
     matrix uy, wy; // срез по плоскости Oxz
     matrix vx, wx; // срез по плоскости Oyz
 
-    //csr_matrix<T> P;
-    csr_matrix<T> P_x; // для функции тока
-    csr_matrix<T> P_y; // для функции тока
-    csr_matrix<T> P_z; // для функции тока
-
-    //Solver<T> solver;
-    Solver<T> solver_stream_x; // для функции тока по срезу
-    Solver<T> solver_stream_y; // для функции тока по срезу
-    Solver<T> solver_stream_z; // для функции тока по срезу
     LaplCube<T,check> lapl_solver;
+
+    // для визуализации срезов
+    LaplRect<T,check> lapl_x_solver;
+    LaplRect<T,check> lapl_y_solver;
+    LaplRect<T,check> lapl_z_solver;
 
     int time_index = 0;
     int plot_time_index = -1;
@@ -109,10 +105,11 @@ public:
         , wx({0, nz+1, 0, ny+1})
 
         , lapl_solver(dx, dy, dz, x2-x1+dx, y2-y1+dy, z2-z1+dz, nx, ny, nz)
-    {
-        //init_P();
-        init_P_slices();
-    }
+
+        , lapl_x_solver(dy, dz, y2-y1+dy, z2-z1+dz, ny, nz)
+        , lapl_y_solver(dx, dz, x2-x1+dx, z2-z1+dz, nx, nz)
+        , lapl_z_solver(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny)
+    { }
 
     void step() {
         // printf("1\n");
@@ -372,128 +369,6 @@ private:
         } // end of omp parallel
     }
 
-    /*
-    void init_P() {
-        for (int i = 1; i <= nz; i++) {
-            for (int k = 1; k <= ny; k++) {
-                for (int j = 1; j <= nx; j++) {
-                    int id = RHS.index({i,k,j});
-                    if (i > 1) {
-                        P.add(id, RHS.index({i-1,k,j}), 1/dz2);
-                    }
-
-                    if (k > 1) {
-                        P.add(id, RHS.index({i,k-1,j}), 1/dy2);
-                    }
-
-                    if (j > 1) {
-                        P.add(id, RHS.index({i,k,j-1}), 1/dx2);
-                    }
-
-                    P.add(id, RHS.index({i,k,j}), ( -2/dx2-2/dy2-2/dz2 ));
-
-                    if (j < nx) {
-                        P.add(id, RHS.index({i,k,j+1}), 1/dx2);
-                    }
-
-                    if (k < ny) {
-                        P.add(id, RHS.index({i,k+1,j}), 1/dy2);
-                    }
-
-                    if (i < nz) {
-                        P.add(id, RHS.index({i+1,k,j}), 1/dz2);
-                    }
-                }
-            }
-        }
-        P.close();
-        // P.sort_rows();
-
-        solver = std::move(P);
-    }
-    */
-
-    void init_P_slices() {
-        for (int i = 1; i <= nz; i++) {
-            for (int k = 1; k <= ny; k++) {
-                int id = RHS_x.index({i,k});
-                if (i > 1) {
-                    P_x.add(id, RHS_x.index({i-1,k}), 1/dz2);
-                }
-
-                if (k > 1) {
-                    P_x.add(id, RHS_x.index({i,k-1}), 1/dy2);
-                }
-
-                P_x.add(id, RHS_x.index({i,k}), -2/dy2-2/dz2);
-
-                if (k < ny) {
-                    P_x.add(id, RHS_x.index({i,k+1}), 1/dy2);
-                }
-
-                if (i < nz) {
-                    P_x.add(id, RHS_x.index({i+1,k}), 1/dz2);
-                }
-            }
-        }
-        P_x.close();
-
-        solver_stream_x = std::move(P_x);
-
-
-        for (int i = 1; i <= nz; i++) {
-            for (int j = 1; j <= nx; j++) {
-                int id = RHS_y.index({i,j});
-                if (i > 1) {
-                    P_y.add(id, RHS_y.index({i-1,j}), 1/dz2);
-                }
-
-                if (j > 1) {
-                    P_y.add(id, RHS_y.index({i,j-1}), 1/dx2);
-                }
-
-                P_y.add(id, RHS_y.index({i,j}), -2/dx2-2/dz2);
-
-                if (j < nx) {
-                    P_y.add(id, RHS_y.index({i,j+1}), 1/dx2);
-                }
-
-                if (i < nz) {
-                    P_y.add(id, RHS_y.index({i+1,j}), 1/dz2);
-                }
-            }
-        }
-        P_y.close();
-
-        solver_stream_y = std::move(P_y);
-
-        for (int k = 1; k <= ny; k++) {
-            for (int j = 1; j <= nx; j++) {
-                int id = RHS_z.index({k,j});
-                if (k > 1) {
-                    P_z.add(id, RHS_z.index({k-1,j}), 1/dy2);
-                }
-
-                if (j > 1) {
-                    P_z.add(id, RHS_z.index({k,j-1}), 1/dx2);
-                }
-
-                P_z.add(id, RHS_z.index({k,j}), -2/dx2-2/dy2);
-
-                if (j < nx) {
-                    P_z.add(id, RHS_z.index({k,j+1}), 1/dx2);
-                }
-
-                if (k < ny) {
-                    P_z.add(id, RHS_z.index({k+1,j}), 1/dy2);
-                }
-            }
-        }
-        P_z.close();
-
-        solver_stream_z = std::move(P_z);
-    }
-
     void poisson() {
         for (int i = 1; i <= nz; i++) {
             for (int k = 1; k <= ny; k++) {
@@ -526,7 +401,6 @@ private:
             }
         }
 
-        //solver.solve(&x[1][1][1], &RHS[1][1][1]);
         lapl_solver.solve(&x[1][1][1], &RHS[1][1][1]);
     }
 
@@ -537,7 +411,8 @@ private:
             }
         }
 
-        solver_stream_x.solve(&psi_x[1][1], &RHS_x[1][1]);
+        lapl_x_solver.solve(&psi_x[1][1], &RHS_x[1][1]);
+
 
         for (int i = 1; i <= nz; i++) {
             for (int j = 1; j <= nx; j++) {
@@ -545,7 +420,7 @@ private:
             }
         }
 
-        solver_stream_y.solve(&psi_y[1][1], &RHS_y[1][1]);
+        lapl_y_solver.solve(&psi_y[1][1], &RHS_y[1][1]);
 
         for (int k = 1; k <= ny; k++) {
             for (int j = 1; j <= nx; j++) {
@@ -553,7 +428,7 @@ private:
             }
         }
 
-        solver_stream_z.solve(&psi_z[1][1], &RHS_z[1][1]);
+        lapl_z_solver.solve(&psi_z[1][1], &RHS_z[1][1]);
     }
 
     void update_stream() {
