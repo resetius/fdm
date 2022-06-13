@@ -34,6 +34,8 @@ public:
     std::vector<T> lm_x_;
     T* lm_x;
 
+    std::vector<T> lm_y_scale, L_scale, U_scale;
+
     /**
        \param dx, dy - расстояние между точками
        \param lx, ly - расстояние между первой и последне краевой точкой по осям x,y
@@ -55,9 +57,13 @@ public:
         , L(nx-1), D(nx), U(nx-1)
         , ft_y_table(ypoints)
         , ft_y(ft_y_table, ypoints)
-        , ft_x_table_(nx == ypoints ? 1 : nx+1)
-        , ft_x_table(nx == ypoints ? &ft_y_table: &ft_x_table_)
+        , ft_x_table_(nx+1 == ypoints ? 1 : nx+1)
+        , ft_x_table(nx+1 == ypoints ? &ft_y_table: &ft_x_table_)
         , ft_x(*ft_x_table, nx+1)
+
+        , lm_y_scale(nx+1, 1) // use 1/r/r for cylindrical coordinates
+        , L_scale(nx+1, 1) // use (r-0.5*dr)/r for cyl...
+        , U_scale(nx+1, 1) // use (r+0.5*dr)/r for cyl...
     {
         init_lm();
     }

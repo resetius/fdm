@@ -24,7 +24,7 @@ void LaplRect<T,check,F>::init_lm() {
         lm_x_[j] = 4./dx2*sq(sin(j*M_PI*0.5/(nx+1)));
     }
     if constexpr(is_same<F,tensor_flags<>>::value) {
-        lm_x = nx == ny ? &lm_y[0] : &lm_x_[0];
+        lm_x = nx+1 == ypoints ? &lm_y[0] : &lm_x_[0];
     } else {
         lm_x = &lm_x_[0];
     }
@@ -34,16 +34,18 @@ template<typename T, bool check, typename F>
 void LaplRect<T,check,F>::init_Mat(int i) {
     int di, li, ui;
     di = li = ui = 0;
-    double lm = lm_y[i];
     for (int j = 1; j <= nx; j++) {
-        D[di++] = -2/dx2-lm;
+        D[di++] = -2/dx2-lm_y[i]*lm_y_scale[j];
         if (j > 1) {
-            L[li++] = 1/dx2;
+            L[li++] = L_scale[j]/dx2;
         }
         if (j < nx) {
-            U[ui++] = 1/dx2;
+            U[ui++] = U_scale[j]/dx2;
         }
     }
+    verify(di == nx);
+    verify(ui == nx-1);
+    verify(li == nx-1);
 }
 
 template<typename T, bool check, typename F>
@@ -59,9 +61,9 @@ void LaplRect<T,check,F>::solve(T* ans, T* rhs) {
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y.pFFT_1(&S[0], &s[0], dy*sqrt(2./ly));
+            ft_y.pFFT_1(&S[0], &s[0], dy*sly);
         } else {
-            ft_y.sFFT(&S[0], &s[0], dy*sqrt(2./ly));
+            ft_y.sFFT(&S[0], &s[0], dy*sly);
         }
 
         for (int k = y1; k <= yn; k++) {
@@ -83,9 +85,9 @@ void LaplRect<T,check,F>::solve(T* ans, T* rhs) {
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y.pFFT(&S[0], &s[0], sqrt(2./ly));
+            ft_y.pFFT(&S[0], &s[0], sly);
         } else {
-            ft_y.sFFT(&S[0], &s[0], sqrt(2./ly));
+            ft_y.sFFT(&S[0], &s[0], sly);
         }
 
         for (int k = y1; k <= yn; k++) {
@@ -102,6 +104,7 @@ void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
     auto sly = this->sly; auto slx = this->slx;
     auto& ft_y = this->ft_y; auto& ft_x = this->ft_x;
     auto& lm_y = this->lm_y; auto& lm_x = this->lm_x;
+    auto& lm_y_scale = this->lm_y_scale;
     typename LaplRect<T,check>::matrix ANS({y1,yn,1,nx}, ans);
     typename LaplRect<T,check>::matrix RHS({y1,yn,1,nx}, rhs);
     typename LaplRect<T,check>::matrix RHSm({y1,yn,1,nx});
@@ -137,7 +140,7 @@ void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
 
     for (int k = y1; k <= yn; k++) {
         for (int j = 1; j <= nx; j++) {
-            RHSm[k][j] /= -lm_y[k]-lm_x[j];
+            RHSm[k][j] /= -lm_y[k]*lm_y_scale[j]-lm_x[j];
         }
     }
 

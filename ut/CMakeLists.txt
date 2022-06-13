@@ -38,6 +38,14 @@ target_link_libraries(ut_lapl_cyl fdm ${CMOCKA_LIBRARIES})
 add_test(NAME lapl_cyl COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_lapl_cyl)
 set_tests_properties(lapl_cyl PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=lapl_cyl.xml")
 
+add_executable(ut_lapl_cyl_slice ut_lapl_cyl_slice.cpp)
+target_include_directories(ut_lapl_cyl_slice PRIVATE ${CMOCKA_INCLUDE_DIRS})
+target_link_directories(ut_lapl_cyl_slice PRIVATE ${CMOCKA_LIBRARY_DIRS})
+target_link_libraries(ut_lapl_cyl_slice fdm ${CMOCKA_LIBRARIES})
+
+add_test(NAME lapl_cyl_slice COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_lapl_cyl_slice)
+set_tests_properties(lapl_cyl_slice PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=lapl_cyl_slice.xml")
+
 add_executable(ut_lapl_rect ut_lapl_rect.cpp)
 target_include_directories(ut_lapl_rect PRIVATE ${CMOCKA_INCLUDE_DIRS})
 target_link_directories(ut_lapl_rect PRIVATE ${CMOCKA_LIBRARY_DIRS})
