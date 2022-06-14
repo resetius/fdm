@@ -1,15 +1,13 @@
 #include "ns_cyl.h"
 
 #include "umfpack_solver.h"
-#include "gmres_solver.h"
-#include "superlu_solver.h"
-#include "jacobi_solver.h"
+#include "velocity_plot.h"
 
-template<typename T, template<typename> class Solver, bool check, tensor_flag zflag>
+template<typename T, bool check, tensor_flag zflag>
 void calc(const Config& c) {
     using namespace std::chrono;
 
-    NSCyl<T, Solver, true, zflag> ns(c);
+    NSCyl<T, true, zflag> ns(c);
 
     const int steps = c.get("ns", "steps", 1);
     const int plot_interval = c.get("plot", "interval", 100);
@@ -17,23 +15,40 @@ void calc(const Config& c) {
     const int vtk = c.get("plot", "vtk", 0);
     int i;
 
+    velocity_plotter<T,true,typename NSCyl<T, true, zflag>::tensor_flags> plot(
+        ns.dr, ns.dz, ns.dphi,
+        ns.nr, ns.nz, ns.nphi,
+        ns.r0, ns.R,
+        ns.h1, ns.h2,
+        0, 2*M_PI, true);
+
+    if (png || vtk) {
+        plot.use(ns.u.vec, ns.v.vec, ns.w.vec);
+        plot.update();
+    }
+
     if (png) {
-        ns.plot();
+        //ns.plot();
+        plot.plot(format("step_%07d.png", ns.time_index), ns.time_index*ns.dt);
     }
     if (vtk) {
-        ns.vtk_out();
+        //ns.vtk_out();
+        plot.vtk_out(format("step_%07d.vtk", ns.time_index), ns.time_index);
     }
 
     auto t1 = steady_clock::now();
     for (i = 0; i < steps; i++) {
         ns.step();
 
-        if ((i+1) % plot_interval == 0) {
+        if ((i+1) % plot_interval == 0 && (png || vtk)) {
+            plot.update();
             if (png) {
-                ns.plot();
+                //ns.plot();
+                plot.plot(format("step_%07d.png", ns.time_index), ns.time_index*ns.dt);
             }
             if (vtk) {
-                ns.vtk_out();
+                //ns.vtk_out();
+                plot.vtk_out(format("step_%07d.vtk", ns.time_index), ns.time_index);
             }
         }
     }
@@ -43,23 +58,23 @@ void calc(const Config& c) {
     printf("It took me '%f' seconds\n", interval.count());
 }
 
-template<typename T, template<typename> class Solver, tensor_flag zflag>
+template<typename T, tensor_flag zflag>
 void calc1(const Config& c) {
     bool check = c.get("other", "check", 0) == 1;
     if (check) {
-        calc<T, Solver, true, zflag>(c);
+        calc<T, true, zflag>(c);
     } else {
-        calc<T, Solver, false, zflag>(c);
+        calc<T, false, zflag>(c);
     }
 }
 
-template<typename T, template<typename> class Solver>
+template<typename T>
 void calc2(const Config& c) {
     bool periodic = c.get("ns", "zperiod", 0) == 1;
     if (periodic) {
-        calc1<T, Solver, tensor_flag::periodic>(c);
+        calc1<T, tensor_flag::periodic>(c);
     } else {
-        calc1<T, Solver, tensor_flag::none>(c);
+        calc1<T, tensor_flag::none>(c);
     }
 }
 
@@ -77,26 +92,10 @@ int main(int argc, char** argv) {
 
     if (datatype == "float") {
         using T = float;
-        if (solver == "gmres") {
-            calc2<T, gmres_solver>(c);
-        } else if (solver == "superlu") {
-            calc2<T, superlu_solver>(c);
-        } else if (solver == "jacobi") {
-            calc2<T, jacobi_solver>(c);
-        } else {
-            calc2<T, superlu_solver>(c);
-        }
+        calc2<T>(c);
     } else {
         using T = double;
-        if (solver == "gmres") {
-            calc2<T, gmres_solver>(c);
-        } else if (solver == "superlu") {
-            calc2<T, superlu_solver>(c);
-        } else if (solver == "jacobi") {
-            calc2<T, jacobi_solver>(c);
-        } else {
-            calc2<T, umfpack_solver>(c);
-        }
+        calc2<T>(c);
     }
 
     return 0;

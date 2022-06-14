@@ -2,18 +2,14 @@
 #include "ns_cyl.h"
 
 #include "arpack_solver.h"
-#include "umfpack_solver.h"
-#include "gmres_solver.h"
-#include "superlu_solver.h"
-#include "jacobi_solver.h"
 
 using namespace std;
 
-template<typename T, template<typename> class Solver, bool check>
+template<typename T, bool check>
 void calc(const Config& c) {
     using namespace std::chrono;
 
-    using Task = NSCyl<T, Solver, check, tensor_flag::periodic>;
+    using Task = NSCyl<T, check, tensor_flag::periodic>;
     using tensor = typename Task::tensor;
     Task ns(c);
 
@@ -195,13 +191,13 @@ void calc(const Config& c) {
     }
 }
 
-template<typename T, template<typename> class Solver>
+template<typename T>
 void calc1(const Config& c) {
     bool check = c.get("other", "check", 0) == 1;
     if (check) {
-        calc<T, Solver, true>(c);
+        calc<T, true>(c);
     } else {
-        calc<T, Solver, false>(c);
+        calc<T, false>(c);
     }
 }
 
@@ -214,31 +210,14 @@ int main(int argc, char** argv) {
     c.open(config_fn);
     c.rewrite(argc, argv);
 
-    string solver = c.get("solver", "name", "umfpack");
     string datatype = c.get("solver", "datatype", "double");
 
     if (datatype == "float") {
         using T = float;
-        if (solver == "gmres") {
-            calc1<T, gmres_solver>(c);
-        } else if (solver == "superlu") {
-            calc1<T, superlu_solver>(c);
-        } else if (solver == "jacobi") {
-            calc1<T, jacobi_solver>(c);
-        } else {
-            calc1<T, superlu_solver>(c);
-        }
+        calc1<T>(c);
     } else {
         using T = double;
-        if (solver == "gmres") {
-            calc1<T, gmres_solver>(c);
-        } else if (solver == "superlu") {
-            calc1<T, superlu_solver>(c);
-        } else if (solver == "jacobi") {
-            calc1<T, jacobi_solver>(c);
-        } else {
-            calc1<T, umfpack_solver>(c);
-        }
+        calc1<T>(c);
     }
 
     return 0;

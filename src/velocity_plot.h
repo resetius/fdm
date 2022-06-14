@@ -7,21 +7,6 @@
 
 namespace fdm {
 
-template<tensor_flag zflag, tensor_flag yflag = tensor_flag::none>
-struct lapl_flags {
-    using value = tensor_flags<zflag,yflag>;
-};
-
-template<>
-struct lapl_flags<tensor_flag::periodic, tensor_flag::none> {
-    using value = tensor_flags<tensor_flag::periodic>;
-};
-
-template<>
-struct lapl_flags<tensor_flag::none, tensor_flag::none> {
-    using value = tensor_flags<>;
-};
-
 template<typename T, bool check, typename F = tensor_flags<>>
 class velocity_plotter {
     // z,y,x
@@ -29,9 +14,9 @@ class velocity_plotter {
     static constexpr tensor_flag zflag = F::head;
     static constexpr tensor_flag yflag = F::tail::head;
 
-    using matrix_x = tensor<T,2,check,typename lapl_flags<zflag,yflag>::value>;
-    using matrix_y = tensor<T,2,check,typename lapl_flags<zflag>::value>;
-    using matrix_z = tensor<T,2,check,typename lapl_flags<yflag>::value>;
+    using matrix_x = tensor<T,2,check,typename short_flags<zflag,yflag>::value>;
+    using matrix_y = tensor<T,2,check,typename short_flags<zflag>::value>;
+    using matrix_z = tensor<T,2,check,typename short_flags<yflag>::value>;
 
     const int nx,ny,nz;
     const bool cyl;
@@ -63,11 +48,11 @@ class velocity_plotter {
     std::string Zlabel = "Z";
 
     // z,y
-    LaplRectFFT2<T,check,typename lapl_flags<zflag,yflag>::value> lapl_x; // lapl_r in cyl coords
+    LaplRectFFT2<T,check,typename short_flags<zflag,yflag>::value> lapl_x; // lapl_r in cyl coords
     // z,x
-    LaplRect<T,check,typename lapl_flags<zflag>::value> lapl_y; // lapl_z in cyl coords
+    LaplRect<T,check,typename short_flags<zflag>::value> lapl_y; // lapl_z in cyl coords
     // y,x
-    LaplRect<T,check,typename lapl_flags<yflag>::value> lapl_z; // lapl_phi in cyl coords
+    LaplRect<T,check,typename short_flags<yflag>::value> lapl_z; // lapl_phi in cyl coords
 
 public:
     // этот plotter работает только для сдвинутых сеток

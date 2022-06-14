@@ -31,6 +31,27 @@ struct tensor_flags<>
     static constexpr tensor_flag head = tensor_flag::none;
 };
 
+template<tensor_flag... Args>
+struct short_flags
+{
+    using value = tensor_flags<Args...>;
+};
+
+template<>
+struct short_flags<tensor_flag::periodic, tensor_flag::none> {
+    using value = tensor_flags<tensor_flag::periodic>;
+};
+
+template<>
+struct short_flags<tensor_flag::none, tensor_flag::none> {
+    using value = tensor_flags<>;
+};
+
+template<>
+struct short_flags<tensor_flag::none> {
+    using value = tensor_flags<>;
+};
+
 constexpr bool has_tensor_flag(tensor_flag flags, tensor_flag flag) {
     return (static_cast<int>(flags) & static_cast<int>(flag)) != 0;
 }
