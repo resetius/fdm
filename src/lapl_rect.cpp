@@ -60,7 +60,7 @@ void LaplRect<T,check,F>::solve(T* ans, T* rhs) {
     matrix RHSm({y1,yn,x1,xn});
     std::vector<T> s(ny+1), S(ny+1);
 
-    for (int j = x1; j <= xn; j++) {
+    for (int j = 1; j <= nx; j++) {
         for (int k = y1; k <= yn; k++) {
             s[k] = RHS[k][j];
         }
@@ -84,7 +84,7 @@ void LaplRect<T,check,F>::solve(T* ans, T* rhs) {
         verify(info == 0);
     }
 
-    for (int j = x1; j <= xn; j++) {
+    for (int j = 1; j <= nx; j++) {
         for (int k = y1; k <= yn; k++) {
             s[k] = RHSm[k][j];
         }
