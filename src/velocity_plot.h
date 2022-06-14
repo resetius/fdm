@@ -70,12 +70,13 @@ class velocity_plotter {
     LaplRect<T,check,typename lapl_flags<yflag>::value> lapl_z; // lapl_phi in cyl coords
 
 public:
-    // TODO: lx,ly,lz -- вычисляем, остальное как есть
-    // TODO: этот plotter работает только для сдвинутых сеток
+    // этот plotter работает только для сдвинутых сеток
     velocity_plotter(double dx, double dy, double dz,
-                     double xx1, double yy1, double zz1,
-                     double xx2, double yy2, double zz2,
-                     int nx, int ny, int nz, bool cyl = false)
+                     int nx, int ny, int nz,
+                     double xx1, double xx2,
+                     double yy1, double yy2,
+                     double zz1, double zz2,
+                     bool cyl = false)
 
         : nx(nx), ny(ny), nz(nz)
         , cyl(cyl)
@@ -145,7 +146,8 @@ public:
         Xlabel = X; Ylabel = Y; Zlabel = Z;
     }
 
-    void update_slices(T* u, T* v, T* w);
+    void use(T* u, T* v, T* w);
+    void update();
     void plot(const std::string& name, double t);
     void vtk_out(const std::string& name, int step);
 };

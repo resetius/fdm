@@ -8,10 +8,14 @@ using namespace asp;
 namespace fdm {
 
 template<typename T, bool check, typename F>
-void velocity_plotter<T,check,F>::update_slices(T* u0, T* v0, T* w0)
+void velocity_plotter<T,check,F>::use(T* u0, T* v0, T* w0)
 {
     u.use(u0); v.use(v0); w.use(w0);
+}
 
+template<typename T, bool check, typename F>
+void velocity_plotter<T,check,F>::update()
+{
     for (int i = z0; i <= znn; i++) {
         for (int k = y0; k <= ynn; k++) {
             vx[i][k] = 0.5*(v[i][k-1][nx/2] + v[i][k][nx/2]);

@@ -30,24 +30,10 @@ public:
     tensor u /*x*/,v/*y*/,w/*z*/;
     tensor p,x;
     tensor F,G,H,RHS;
-    matrix RHS_x,RHS_y,RHS_z;
-
-    matrix psi_x;
-    matrix psi_y;
-    matrix psi_z; // срез по плоскости Oxy
-    matrix uz, vz; // срез по плоскости Oxy
-    matrix uy, wy; // срез по плоскости Oxz
-    matrix vx, wx; // срез по плоскости Oyz
 
     LaplCube<T,check> lapl_solver;
 
-    // для визуализации срезов
-    LaplRect<T,check> lapl_x_solver;
-    LaplRect<T,check> lapl_y_solver;
-    LaplRect<T,check> lapl_z_solver;
-
     int time_index = 0;
-    int plot_time_index = -1;
 
     NSCube(const Config& c)
         : x1(c.get("ns", "x1", -M_PI))
@@ -78,35 +64,10 @@ public:
         , H({0, nz, 1, ny, 1, nx})
         , RHS({1, nz, 1, ny, 1, nx})
 
-        , RHS_x({1, nz, 1, ny})
-        , RHS_y({1, nz, 1, nx})
-        , RHS_z({1, ny, 1, nx})
-
-        , psi_x({1, nz, 1, ny})
-        , psi_y({1, nz, 1, nx})
-        , psi_z({1, ny, 1, nx})
-
-        , uz({0, ny+1, 0, nx+1}) // inner u
-        , vz({0, ny+1, 0, nx+1}) // inner v
-
-        , uy({0, nz+1, 0, nx+1})
-        , wy({0, nz+1, 0, nx+1})
-
-        , vx({0, nz+1, 0, ny+1})
-        , wx({0, nz+1, 0, ny+1})
-
         , lapl_solver(dx, dy, dz, x2-x1+dx, y2-y1+dy, z2-z1+dz, nx, ny, nz)
-
-        , lapl_x_solver(dy, dz, y2-y1+dy, z2-z1+dz, ny, nz)
-        , lapl_y_solver(dx, dz, x2-x1+dx, z2-z1+dz, nx, nz)
-        , lapl_z_solver(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny)
     { }
 
     void step();
-
-    void plot();
-
-    void vtk_out();
 
 private:
     void init_bound();
@@ -115,15 +76,7 @@ private:
 
     void poisson();
 
-    void poisson_stream();
-
-    void update_stream() {
-        poisson_stream();
-    }
-
     void update_uvwp();
-
-    void update_uvi();
 };
 
 } // namespace fdm
