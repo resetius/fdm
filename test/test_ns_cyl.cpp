@@ -26,6 +26,8 @@ void calc(const Config& c) {
         ns.h1, ns.h2,
         0, 2*M_PI, true);
 
+    plot.set_labels("R", "Z", "PHI");
+
     if (png || vtk) {
         plot.use(ns.u.vec, ns.v.vec, ns.w.vec);
         plot.update();

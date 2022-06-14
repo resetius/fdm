@@ -1,6 +1,7 @@
 #include <netcdf.h>
 #include "ns_cyl.h"
 #include "arpack_solver.h"
+#include "velocity_plot.h"
 
 using namespace std;
 using namespace fdm;
@@ -13,6 +14,13 @@ void calc(const Config& c) {
     using Task = NSCyl<T, check, tensor_flag::periodic>;
     using tensor = typename Task::tensor;
     Task ns(c);
+    velocity_plotter<T,true, typename Task::tensor_flags> plot(
+        ns.dr, ns.dz, ns.dphi,
+        ns.nr, ns.nz, ns.nphi,
+        ns.r0, ns.R,
+        ns.h1, ns.h2,
+        0, 2*M_PI, true);
+    plot.set_labels("R", "Z", "PHI");
 
     int nev = c.get("test", "nev", 4);
     T tol = c.get("test", "tol", 1e-7);
@@ -121,10 +129,32 @@ void calc(const Config& c) {
     printf("above 1: %d\n", count);
 
     if (count > 0) {
+        plot.use(ns.u.vec, ns.v.vec, ns.w.vec);
+
+        for (int  i = 0; i < count; i++) {
+            int j = indices[i];
+            u.use(&eigenvectors[j][off]); off += u.size;
+            v.use(&eigenvectors[j][off]); off += v.size;
+            w.use(&eigenvectors[j][off]); off += w.size;
+            p.use(&eigenvectors[j][off]); off += p.size;
+
+            ns.u = u; ns.v = v; ns.w = w; ns.p = p;
+
+            plot.update();
+            plot.plot(format("eigenvector_%07d.png", i), 0);
+        }
+    }
+
+    if (count > 0) {
 #define nc_call(expr) do { \
             int code = expr; \
             verify(code == 0, nc_strerror(code)); \
         } while(0);
+
+        vector<char> mem(1024000);
+        FILE* cf = fmemopen(&mem[0], mem.size(), "wb");
+        c.print(cf);
+        fclose(cf);
 
         string filename = format(
             "eigenvectors_%f_%d_%d_%d.nc",
@@ -134,6 +164,7 @@ void calc(const Config& c) {
         nc_call(nc_create(filename.c_str(), NC_CLOBBER, &ncid));
         int phi_dim, z_dim, r_dim, r0_dim;
 
+        nc_call(nc_put_att_text(ncid, NC_GLOBAL, "config", strlen(&mem[0]), &mem[0]));
         nc_call(nc_def_dim(ncid, "phi", nphi, &phi_dim));
         nc_call(nc_def_dim(ncid, "z", nz, &z_dim));
         nc_call(nc_def_dim(ncid, "r", nr, &r_dim));
