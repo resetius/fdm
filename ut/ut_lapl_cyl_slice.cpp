@@ -302,10 +302,6 @@ void test_lapl_cyl_slice_r(void** data) {
     double dphi = 2*M_PI/nphi;
     double dphi2 = dphi*dphi; double dz2 = dz*dz;
     LaplRectFFT2<T,check,tensor_flags> lapl(dz, dphi, h1-h0, 2*M_PI, nz, nphi);
-    for (int j = 1; j <= nr; j++) {
-        double r = r0+j*dr-dr/2;
-        lapl.lm_y_scale[j] = 1./r/r;
-    }
 
     vector<int> indices = {0,nphi-1,0,nz-1};
     matrix RHS_r(indices);
