@@ -196,7 +196,6 @@ void test_lapl_cyl_slice_phi(void** data) {
     LaplRect<T,check,tensor_flags> lapl(dr, dz, R-r0+dr, h1-h0, nr, nz);
     for (int j = 1; j <= nr; j++) {
         double r = r0+j*dr-dr/2;
-        lapl.lm_y_scale[j] = 1./r/r;
         lapl.U_scale[j] = (r+dr/2)/r;
         lapl.L_scale[j] = (r-dr/2)/r;
     }
@@ -270,8 +269,7 @@ void test_lapl_cyl_slice_phi(void** data) {
     }
     for (int k = 0; k < nz; k++) {
         for (int j = 1; j <= nr; j++) {
-            // TODO:
-            //assert_float_equal(ANS2[k][j], ANS[k][j], tol);
+            assert_float_equal(ANS2[k][j], ANS[k][j], tol);
         }
     }
 }
