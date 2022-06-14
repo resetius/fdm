@@ -3,6 +3,10 @@
 #include "umfpack_solver.h"
 #include "velocity_plot.h"
 
+using namespace fdm;
+using namespace std;
+using namespace asp;
+
 template<typename T, bool check, tensor_flag zflag>
 void calc(const Config& c) {
     using namespace std::chrono;

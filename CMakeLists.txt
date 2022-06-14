@@ -64,6 +64,7 @@ set(SRC
     src/lapl_cyl.cpp
     src/lapl_cube.cpp
     src/ns_cube.cpp
+    src/ns_cyl.cpp
     src/velocity_plot.cpp
     )
 add_library(fdm SHARED ${SRC})

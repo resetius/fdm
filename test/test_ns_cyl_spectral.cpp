@@ -1,9 +1,10 @@
 #include <netcdf.h>
 #include "ns_cyl.h"
-
 #include "arpack_solver.h"
 
 using namespace std;
+using namespace fdm;
+using namespace asp;
 
 template<typename T, bool check>
 void calc(const Config& c) {
