@@ -243,9 +243,9 @@ public:
         fprintf(f, "ASCII\n");
         fprintf(f, "DATASET UNSTRUCTURED_GRID\n");
         //fprintf(f, "DIMENSIONS %d %d %d\n", nr, nz, nphi);
-        fprintf(f, "POINTS %d double\n", (nr+1)*(zn+1)*nphi);
+        fprintf(f, "POINTS %d double\n", (nr+1)*(nz+1)*nphi);
         for (int i = 0; i < nphi; i++) {
-            for (int k = z0; k <= zn; k++) {
+            for (int k = 0; k < nz+1; k++) {
                 for (int j = 0; j < nr+1; j++) {
                     double r = r0+dr*j;
                     double z = h1+dz*k;
@@ -304,6 +304,9 @@ public:
                     double w0 = 0.5*(w[i][k][j]+w[i-1][k][j]);
 
                     double l = sqrt(u0*u0+v0*v0+r*r*w0*w0);
+                    if (std::abs(l) < 1e-7) {
+                        l = 1e-4; // hack
+                    }
                     u0 /= l; v0 /= l; w0 /= l;
 
                     double x = u0 * cos(phi) - w0 * sin(phi);
