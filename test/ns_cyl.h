@@ -660,7 +660,8 @@ private:
         for (int i = 0; i < nphi; i++) {
             for (int k = z1; k <= zn; k++) {
                 int id = RHS_r.index({i,k});
-                double r = r0-dr/2;
+                int j = nr/2;
+                double r = r0+j*dr-dr/2;
                 double r2 = r*r;
 
                 P_r.add(id, RHS_r.index({i-1,k}), 1/dphi2/r2);

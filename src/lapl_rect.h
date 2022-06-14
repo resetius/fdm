@@ -19,8 +19,9 @@ public:
     const double slx, sly;
 
     const int nx, ny;
-    const int y1, yn;
-    const int ypoints;
+
+    const int x1, xn, xpoints;
+    const int y1, yn, ypoints;
 
     std::vector<T> L,D,U;
 
@@ -50,6 +51,10 @@ public:
         , slx(sqrt(2./lx)), sly(sqrt(2./ly))
         , nx(nx), ny(ny)
 
+        , x1(has_tensor_flag(F::tail::head,tensor_flag::periodic)?0:1)
+        , xn(has_tensor_flag(F::tail::head,tensor_flag::periodic)?nx-1:nx)
+        , xpoints(has_tensor_flag(F::tail::head,tensor_flag::periodic)?nx:nx+1)
+
         , y1(has_tensor_flag(F::head,tensor_flag::periodic)?0:1)
         , yn(has_tensor_flag(F::head,tensor_flag::periodic)?ny-1:ny)
         , ypoints(has_tensor_flag(F::head,tensor_flag::periodic)?ny:ny+1)
@@ -57,9 +62,9 @@ public:
         , L(nx-1), D(nx), U(nx-1)
         , ft_y_table(ypoints)
         , ft_y(ft_y_table, ypoints)
-        , ft_x_table_(nx+1 == ypoints ? 1 : nx+1)
-        , ft_x_table(nx+1 == ypoints ? &ft_y_table: &ft_x_table_)
-        , ft_x(*ft_x_table, nx+1)
+        , ft_x_table_(xpoints == ypoints ? 1 : xpoints)
+        , ft_x_table(xpoints == ypoints ? &ft_y_table: &ft_x_table_)
+        , ft_x(*ft_x_table, xpoints)
 
         , lm_y_scale(nx+1, 1) // use 1/r/r for cylindrical coordinates
         , L_scale(nx+1, 1) // use (r-0.5*dr)/r for cyl...
