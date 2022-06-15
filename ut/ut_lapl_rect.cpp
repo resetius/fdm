@@ -63,7 +63,7 @@ void test_lapl_rect(void** data) {
 
     LaplRect<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
 
-    vector<int> indices = {1,ny,1,nx};
+    array<int,4> indices = {1,ny,1,nx};
     matrix RHS(indices);
     matrix ANS(indices);
 
@@ -144,7 +144,7 @@ void test_lapl_rect_yp(void** data) {
 
     LaplSolver<T,check,tensor_flags> lapl(dx, dy, x2-x1+dx, y2-y1, nx, ny);
 
-    vector<int> indices = {0,ny-1,1,nx};
+    array<int,4> indices = {0,ny-1,1,nx};
     matrix RHS(indices);
     matrix ANS(indices);
 
@@ -223,7 +223,7 @@ T solve_lapl(Config* c, int nx, int ny) {
 
     LaplRect<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
 
-    vector<int> indices = {1,ny,1,nx};
+    array<int,4> indices = {1,ny,1,nx};
     matrix RHS(indices);
     matrix ANS(indices);
 
@@ -315,7 +315,7 @@ void test_lapl_rect_ex(void** data) {
 
     LaplRect<T,check> lapl(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
 
-    vector<int> indices = {1,ny,1,nx};
+    array<int,4> indices = {1,ny,1,nx};
     matrix RHS(indices);
     matrix ANS(indices);
 
@@ -402,7 +402,7 @@ void test_lapl_rect_fft1_fft2_cmp(void** data) {
     LaplRect<T,check> lapl1(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
     LaplRectFFT2<T,check> lapl2(dx, dy, x2-x1+dx, y2-y1+dy, nx, ny);
 
-    vector<int> indices = {1,ny,1,nx};
+    array<int,4> indices = {1,ny,1,nx};
     matrix RHS(indices);
     matrix ANS(indices);
     matrix ANS2(indices);

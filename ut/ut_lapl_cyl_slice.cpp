@@ -65,7 +65,7 @@ void test_lapl_cyl_slice_z(void** data) {
         lapl.L_scale[j] = (r-dr/2)/r;
     }
 
-    vector<int> indices = {0,nphi-1,1,nr};
+    array<int,4> indices = {0,nphi-1,1,nr};
     matrix RHS_z(indices);
     matrix ANS(indices);
     matrix ANS2(indices);
@@ -201,7 +201,7 @@ void test_lapl_cyl_slice_phi(void** data) {
         lapl.L_scale[j] = (r-dr/2)/r;
     }
 
-    vector<int> indices = {0,nz-1,1,nr};
+    array<int,4> indices = {0,nz-1,1,nr};
     matrix RHS_phi(indices);
     matrix ANS(indices);
     matrix ANS2(indices);
@@ -303,7 +303,7 @@ void test_lapl_cyl_slice_r(void** data) {
     double dphi2 = dphi*dphi; double dz2 = dz*dz;
     LaplRectFFT2<T,check,tensor_flags> lapl(dz, dphi, h1-h0, 2*M_PI, nz, nphi);
 
-    vector<int> indices = {0,nphi-1,0,nz-1};
+    array<int,4> indices = {0,nphi-1,0,nz-1};
     matrix RHS_r(indices);
     matrix ANS(indices);
     matrix ANS2(indices);

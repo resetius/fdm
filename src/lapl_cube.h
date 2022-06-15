@@ -20,7 +20,7 @@ public:
     const int nx, ny, nz;
     const int mxdim;
 
-    const std::vector<int> indices;
+    const std::array<int,6> indices;
 
     FFTTable<T> ft_x_table;
     FFTTable<T> ft_y_table;

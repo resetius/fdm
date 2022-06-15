@@ -60,7 +60,7 @@ void test_lapl_cube(void** data) {
         x2-x1+dx, y2-y1+dy, z2-z1+dz,
         nx, ny, nz);
 
-    vector<int> indices = {1,nz,1,ny,1,nx};
+    array<int,6> indices = {1,nz,1,ny,1,nx};
     tensor RHS(indices);
     tensor ANS(indices);
 

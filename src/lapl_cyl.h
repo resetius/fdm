@@ -40,7 +40,7 @@ public:
     using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
     using tensor = fdm::tensor<T,3,check,tensor_flags>;
 
-    std::vector<int> indices;
+    std::array<int,6> indices;
     tensor RHS, ANS, RHSm, RHSx;
     std::vector<T> s, S;
 
@@ -160,7 +160,7 @@ public:
     using tensor_flags = fdm::tensor_flags<tensor_flag::periodic,zflag>;
     using tensor = fdm::tensor<T,3,check,tensor_flags>;
 
-    std::vector<int> indices;
+    std::array<int,6> indices;
     tensor RHS, ANS, RHSm;
 
     int lds;
@@ -244,7 +244,7 @@ public:
 
     void solve(T* ans, T* rhs) {
         using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
-        std::vector<int> indices = {0, nphi-1, 1, nz, 1, nr};
+        std::array<int,6> indices = {0, nphi-1, 1, nz, 1, nr};
 
         tensor<T,3,check,tensor_flags> RHS(indices, rhs);
         tensor<T,3,check,tensor_flags> ANS(indices, ans);
@@ -256,7 +256,7 @@ private:
     void init_solver() {
         using tensor_flags = fdm::tensor_flags<tensor_flag::periodic>;
 
-        std::vector<int> indices = {0, nphi-1, 1, nz, 1, nr};
+        std::array<int,6> indices = {0, nphi-1, 1, nz, 1, nr};
         tensor<T,3,check,tensor_flags> RHS(indices);
 
         csr_matrix<T> P;

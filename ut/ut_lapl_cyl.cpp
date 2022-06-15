@@ -84,7 +84,7 @@ void test_lapl_cyl_simple(void** data) {
     double dr, dz, dphi;
     dr = lapl.dr; dz = lapl.dz; dphi = lapl.dphi;
 
-    std::vector<int> indices = {0, nphi-1, 1, nz, 1, nr};
+    std::array<int,6> indices = {0, nphi-1, 1, nz, 1, nr};
     tensor<T,3,check,tensor_flags> RHS(indices);
     tensor<T,3,check,tensor_flags> ANS(indices);
 
@@ -169,7 +169,7 @@ void test_lapl_cyl(void** data) {
 
     LaplCyl3FFT1<T, Solver, true> lapl(dr, dz, r0-dr/2, R-r0+dr, h1-h0+dz, nr, nz, nphi);
 
-    std::vector<int> indices = {0, nphi-1, 1, nz, 1, nr};
+    std::array<int,6> indices = {0, nphi-1, 1, nz, 1, nr};
     tensor<T,3,check,tensor_flags> RHS(indices);
     tensor<T,3,check,tensor_flags> ANS(indices);
 
@@ -254,7 +254,7 @@ void test_lapl_cyl_zp(void** data) {
     LaplCyl3FFT2<T,true,tensor_flag::periodic>
         lapl(dr, dz, r0-dr/2, R-r0+dr, h1-h0, nr, nz, nphi);
 
-    std::vector<int> indices = {0, nphi-1, 0, nz-1, 1, nr};
+    std::array<int,6> indices = {0, nphi-1, 0, nz-1, 1, nr};
     tensor<T,3,check,tensor_flags> RHS(indices);
     tensor<T,3,check,tensor_flags> ANS(indices);
 
@@ -330,7 +330,7 @@ T solve_lapl(Config* c, int nr, int nz, int nphi) {
 
     LaplCyl3FFT2<T, true> lapl(dr, dz, r0-dr/2, R-r0+dr, h1-h0+dz, nr, nz, nphi);
 
-    std::vector<int> indices = {0, nphi-1, 1, nz, 1, nr};
+    std::array<int,6> indices = {0, nphi-1, 1, nz, 1, nr};
     tensor<T,3,check,tensor_flags> RHS(indices);
     tensor<T,3,check,tensor_flags> ANS(indices);
 
@@ -432,7 +432,7 @@ void test_lapl_cyl_fft1_fft2_cmp(void** data) {
     LaplCyl3FFT1<T, umfpack_solver, true> lapl1(dr, dz, r0-dr/2, R-r0+dr, h1-h0+dz, nr, nz, nphi);
     LaplCyl3FFT2<T, true> lapl2(dr, dz, r0-dr/2, R-r0+dr, h1-h0+dz, nr, nz, nphi);
 
-    std::vector<int> indices = {0, nphi-1, 1, nz, 1, nr};
+    std::array<int,6> indices = {0, nphi-1, 1, nz, 1, nr};
     tensor<T,3,check,tensor_flags> RHS(indices);
     tensor<T,3,check,tensor_flags> ANS(indices);
     tensor<T,3,check,tensor_flags> ANS2(indices);

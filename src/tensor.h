@@ -62,12 +62,12 @@ class tensor_accessor {
     const std::vector<int>& sizes;
 
 public:
-    const std::vector<int>& offsets;
+    const int* offsets;
     const int index;
 
     tensor_accessor(T* v,
                     const std::vector<int>& sizes,
-                    const std::vector<int>& offsets,
+                    const int* offsets,
                     int index)
         : vec(v)
         , sizes(sizes)
@@ -130,12 +130,12 @@ class tensor_accessor<T, 1, check, F>
     T* vec;
 
 public:
-    const std::vector<int>& offsets;
+    const int* offsets;
     const int index;
 
     tensor_accessor(T* v,
                     const std::vector<int>& sizes,
-                    const std::vector<int>& offsets,
+                    const int* offsets,
                     int index)
         : vec(v-offsets[2*index])
         , offsets(offsets)
@@ -187,7 +187,7 @@ private:
 template<typename T, int rank, bool check=true, typename F = tensor_flags<>>
 class tensor {
 public:
-    std::vector<int> offsets;
+    std::array<int,rank*2> offsets;
     std::vector<int> sizes;
     int size;
     std::vector<T> storage;
@@ -196,15 +196,14 @@ public:
 
 public:
     // z1,z2 y1,y2 x1,x2
-    tensor(const std::vector<int>& offsets_, T* data = nullptr)
+    tensor(const std::array<int,rank*2>& offsets_, T* data = nullptr)
         : offsets(offsets_)
         , sizes(calc_sizes(offsets))
         , size((offsets[1]-offsets[0]+1)*sizes[0])
         , storage(data ? 0 : size)
         , vec(data ? data : &storage[0])
-        , acc(&vec[0], sizes, offsets, 0)
+        , acc(&vec[0], sizes, &offsets[0], 0)
     {
-        verify(offsets.size() == rank*2);
         verify(sizes.size() == rank-1);
     }
 
@@ -238,7 +237,7 @@ public:
     }
 
 private:
-    static std::vector<int> calc_sizes(const std::vector<int>& offsets) {
+    static std::vector<int> calc_sizes(const std::array<int,rank*2>& offsets) {
         std::vector<int> s;
         int prev = 1;
         for (int i = rank-1; i >= 1; i--) {
