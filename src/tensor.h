@@ -188,7 +188,7 @@ template<typename T, int rank, bool check=true, typename F = tensor_flags<>>
 class tensor {
 public:
     const std::array<int,rank*2> offsets;
-    const std::vector<int> sizes;
+    const std::array<int,rank-1> sizes;
     const int size;
     std::vector<T> storage;
     T* vec;
@@ -198,13 +198,12 @@ public:
     // z1,z2 y1,y2 x1,x2
     tensor(const std::array<int,rank*2>& offsets_, T* data = nullptr)
         : offsets(offsets_)
-        , sizes(calc_sizes(offsets))
-        , size((offsets[1]-offsets[0]+1)*sizes[0])
+        , sizes{}
+        , size(calc_size())
         , storage(data ? 0 : size)
         , vec(data ? data : &storage[0])
         , acc(&vec[0], &sizes[0], &offsets[0], 0)
     {
-        verify(sizes.size() == rank-1);
     }
 
     auto operator[](int y) {
@@ -237,16 +236,17 @@ public:
     }
 
 private:
-    static std::vector<int> calc_sizes(const std::array<int,rank*2>& offsets) {
-        std::vector<int> s;
-        int prev = 1;
+    int calc_size() {
+        int* s = const_cast<int*>(&sizes[0]);
+        int prev = 1; int j = 0;
         for (int i = rank-1; i >= 1; i--) {
             int size = prev*(offsets[2*i+1] - offsets[2*i] + 1);
-            s.push_back(size);
+            s[j++] = size;
             prev = size;
         }
-        std::reverse(s.begin(), s.end());
-        return s;
+        std::reverse(&s[0], &s[0]+j);
+
+        return (offsets[1]-offsets[0]+1)*sizes[0];
     }
 };
 
