@@ -19,16 +19,21 @@ void LaplRect<T,check,F>::init_lm() {
             lm_y[k] = 4./dy2*sq(sin(k*M_PI*0.5/(ny+1)));
         }
     }
-    lm_x_.resize(nx+1);
+}
+
+template<typename T, bool check, typename F>
+void LaplRectFFT2<T,check,F>::init_lm() {
+    base::init_lm();
+    lm_x_.resize(xpoints);
     for (int j = x1; j <= xn; j++) {
         if constexpr(has_tensor_flag(F::tail::head,tensor_flag::periodic)) {
-            lm_x_[j] = 4./dx2*sq(sin(j*M_PI/nx));
+            lm_x_[j] = 4./this->dx2*sq(sin(j*M_PI/xpoints));
         } else {
-            lm_x_[j] = 4./dx2*sq(sin(j*M_PI*0.5/(nx+1)));
+            lm_x_[j] = 4./this->dx2*sq(sin(j*M_PI*0.5/xpoints));
         }
     }
     if constexpr(is_same<F,tensor_flags<>>::value) {
-        lm_x = xpoints == ypoints ? &lm_y[0] : &lm_x_[0];
+        lm_x = xpoints == this->ypoints ? &this->lm_y[0] : &lm_x_[0];
     } else {
         lm_x = &lm_x_[0];
     }
@@ -55,9 +60,9 @@ void LaplRect<T,check,F>::init_Mat(int i) {
 
 template<typename T, bool check, typename F>
 void LaplRect<T,check,F>::solve(T* ans, T* rhs) {
-    matrix ANS({y1,yn,x1,xn}, ans);
-    matrix RHS({y1,yn,x1,xn}, rhs);
-    matrix RHSm({y1,yn,x1,xn});
+    matrix ANS({y1,yn,1,nx}, ans);
+    matrix RHS({y1,yn,1,nx}, rhs);
+    matrix RHSm({y1,yn,1,nx});
     std::vector<T> s(ny+1), S(ny+1);
 
     for (int j = 1; j <= nx; j++) {
@@ -105,11 +110,10 @@ template<typename T, bool check, typename F>
 void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
     int nx = this->nx; int ny = this->ny;
     int y1 = this->y1; int yn = this->yn;
-    int x1 = this->x1; int xn = this->xn;
     auto dy = this->dy; auto dx = this->dx;
     auto sly = this->sly; auto slx = this->slx;
-    auto& ft_y = this->ft_y; auto& ft_x = this->ft_x;
-    auto& lm_y = this->lm_y; auto& lm_x = this->lm_x;
+    auto& ft_y = this->ft_y;
+    auto& lm_y = this->lm_y;
     auto& lm_y_scale = this->lm_y_scale;
     typename LaplRect<T,check>::matrix ANS({y1,yn,x1,xn}, ans);
     typename LaplRect<T,check>::matrix RHS({y1,yn,x1,xn}, rhs);
