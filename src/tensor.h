@@ -59,14 +59,14 @@ constexpr bool has_tensor_flag(tensor_flag flags, tensor_flag flag) {
 template<typename T, int rank, bool check, typename F>
 class tensor_accessor {
     T* vec;
-    const std::vector<int>& sizes;
+    const int* sizes;
 
 public:
     const int* offsets;
     const int index;
 
     tensor_accessor(T* v,
-                    const std::vector<int>& sizes,
+                    const int* sizes,
                     const int* offsets,
                     int index)
         : vec(v)
@@ -134,7 +134,7 @@ public:
     const int index;
 
     tensor_accessor(T* v,
-                    const std::vector<int>& sizes,
+                    const int* sizes,
                     const int* offsets,
                     int index)
         : vec(v-offsets[2*index])
@@ -187,9 +187,9 @@ private:
 template<typename T, int rank, bool check=true, typename F = tensor_flags<>>
 class tensor {
 public:
-    std::array<int,rank*2> offsets;
-    std::vector<int> sizes;
-    int size;
+    const std::array<int,rank*2> offsets;
+    const std::vector<int> sizes;
+    const int size;
     std::vector<T> storage;
     T* vec;
     tensor_accessor<T, rank, check, F> acc;
@@ -202,7 +202,7 @@ public:
         , size((offsets[1]-offsets[0]+1)*sizes[0])
         , storage(data ? 0 : size)
         , vec(data ? data : &storage[0])
-        , acc(&vec[0], sizes, &offsets[0], 0)
+        , acc(&vec[0], &sizes[0], &offsets[0], 0)
     {
         verify(sizes.size() == rank-1);
     }
