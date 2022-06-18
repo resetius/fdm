@@ -57,10 +57,7 @@ void printcopyright() {
 	printf("2. Redistributions in binary form must reproduce the above copyright\n");
 	printf("   notice, this list of conditions and the following disclaimer in the\n");
 	printf("   documentation and/or other materials provided with the distribution.\n");
-	printf("3. All advertising materials mentioning features or use of this software\n");
-	printf("   must display the following acknowledgement:\n");
-	printf("     This product includes software developed by Alexey Ozeritsky.\n");
-	printf("4. The name of the author may not be used to endorse or promote products\n");
+	printf("3. The name of the author may not be used to endorse or promote products\n");
 	printf("   derived from this software without specific prior written permission\n\n");
 	printf("THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR\n");
 	printf("IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES\n");
