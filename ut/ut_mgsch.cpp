@@ -106,6 +106,14 @@ void test_ortoproj_simple_along(void**) {
     assert_float_equal(vec[3], 4, 1e-15);
 }
 
+void test_ortoproj_simple_along_float(void** data) {
+    test_ortoproj_simple_along<float>(data);
+}
+
+void test_ortoproj_simple_along_double(void** data) {
+    test_ortoproj_simple_along<double>(data);
+}
+
 template<typename T>
 void test_ortoproj_along(void**) {
     std::default_random_engine generator;
@@ -141,16 +149,24 @@ void test_ortoproj_along(void**) {
     }
 }
 
+void test_ortoproj_along_float(void** data) {
+    test_ortoproj_along<float>(data);
+}
+
+void test_ortoproj_along_double(void** data) {
+    test_ortoproj_along<double>(data);
+}
+
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_prestate(test_mgsch_double, nullptr),
         cmocka_unit_test_prestate(test_mgsch_float, nullptr),
         cmocka_unit_test_prestate(test_mgsch_cyl_double, nullptr),
         cmocka_unit_test_prestate(test_mgsch_cyl_float, nullptr),
-        cmocka_unit_test_prestate(test_ortoproj_simple_along<float>, nullptr),
-        cmocka_unit_test_prestate(test_ortoproj_simple_along<double>, nullptr),
-        cmocka_unit_test_prestate(test_ortoproj_along<float>, nullptr),
-        cmocka_unit_test_prestate(test_ortoproj_along<double>, nullptr),
+        cmocka_unit_test_prestate(test_ortoproj_simple_along_float, nullptr),
+        cmocka_unit_test_prestate(test_ortoproj_simple_along_double, nullptr),
+        cmocka_unit_test_prestate(test_ortoproj_along_float, nullptr),
+        cmocka_unit_test_prestate(test_ortoproj_along_double, nullptr),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
