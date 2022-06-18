@@ -1,7 +1,7 @@
-#include <netcdf.h>
 #include "ns_cyl.h"
 #include "arpack_solver.h"
 #include "velocity_plot.h"
+#include "eigenvectors_storage.h"
 
 using namespace std;
 using namespace fdm;
@@ -146,80 +146,11 @@ void calc(const Config& c) {
     }
 
     if (count > 0) {
-#define nc_call(expr) do { \
-            int code = expr; \
-            verify(code == 0, nc_strerror(code)); \
-        } while(0);
-
-        vector<char> mem(1024000);
-        FILE* cf = fmemopen(&mem[0], mem.size(), "wb");
-        c.print(cf);
-        fclose(cf);
-
         string filename = format(
             "eigenvectors_%f_%d_%d_%d.nc",
             ns.Re, ns.nr, ns.nz, ns.nphi);
-
-        int ncid;
-        nc_call(nc_create(filename.c_str(), NC_CLOBBER, &ncid));
-        int phi_dim, z_dim, r_dim, r0_dim;
-
-        nc_call(nc_put_att_text(ncid, NC_GLOBAL, "config", strlen(&mem[0]), &mem[0]));
-        nc_call(nc_def_dim(ncid, "phi", nphi, &phi_dim));
-        nc_call(nc_def_dim(ncid, "z", nz, &z_dim));
-        nc_call(nc_def_dim(ncid, "r", nr, &r_dim));
-        nc_call(nc_def_dim(ncid, "r0", nr-1, &r0_dim));
-
-        int type = NC_DOUBLE;
-        if constexpr(is_same<float,T>::value) {
-            type = NC_FLOAT;
-        }
-
-        vector<int> uids, vids, wids, pids;
-        for (int  i = 0; i < count; i++) {
-            int udims[] = {phi_dim, z_dim, r0_dim}; int uid;
-            nc_call(nc_def_var(ncid, format("u_%d", i).c_str(), type, 3, udims, &uid));
-            int vdims[] = {phi_dim, z_dim, r_dim}; int vid;
-            nc_call(nc_def_var(ncid, format("v_%d", i).c_str(), type, 3, vdims, &vid));
-            int wdims[] = {phi_dim, z_dim, r_dim}; int wid;
-            nc_call(nc_def_var(ncid, format("w_%d", i).c_str(), type, 3, wdims, &wid));
-            int pdims[] = {phi_dim, z_dim, r_dim}; int pid;
-            nc_call(nc_def_var(ncid, format("p_%d", i).c_str(), type, 3, pdims, &pid));
-            uids.push_back(uid);
-            vids.push_back(vid);
-            wids.push_back(wid);
-            pids.push_back(pid);
-        }
-
-        nc_call(nc_enddef(ncid));
-
-        for (int  i = 0; i < count; i++) {
-            int j = indices[i];
-            off = 0;
-            if constexpr(is_same<float,T>::value) {
-                nc_call(nc_put_var_float(ncid, uids[i], &eigenvectors[j][off]));
-                off += u.size;
-                nc_call(nc_put_var_float(ncid, vids[i], &eigenvectors[j][off]));
-                off += v.size;
-                nc_call(nc_put_var_float(ncid, wids[i], &eigenvectors[j][off]));
-                off += w.size;
-                nc_call(nc_put_var_float(ncid, pids[i], &eigenvectors[j][off]));
-                off += p.size;
-            } else {
-                nc_call(nc_put_var_double(ncid, uids[i], &eigenvectors[j][off]));
-                off += u.size;
-                nc_call(nc_put_var_double(ncid, vids[i], &eigenvectors[j][off]));
-                off += v.size;
-                nc_call(nc_put_var_double(ncid, wids[i], &eigenvectors[j][off]));
-                off += w.size;
-                nc_call(nc_put_var_double(ncid, pids[i], &eigenvectors[j][off]));
-                off += p.size;
-            }
-        }
-
-        nc_call(nc_close(ncid));
-
-#undef nc_call
+        eigenvectors_storage s(filename);
+        s.save(eigenvectors, indices, c);
     }
 }
 
