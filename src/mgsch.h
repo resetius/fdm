@@ -1,13 +1,14 @@
 #pragma once
 
 #include <cmath>
+#include <functional>
 #include "blas.h"
 
 namespace fdm {
 
 // Golub, p202, alg 5.2.5
-template<typename T, typename F>
-void mgsch(T& A, int n, int m, const F& dot = [](const T* x, const T* y, int n) {
+template<typename F, typename T>
+void mgsch(T& A, int n, int m, F (*dot)(const F*, const F*, int n) = [](const auto* x, const auto* y, int n) {
     return blas::dot(n, x, 1, y, 1);
 })
 {

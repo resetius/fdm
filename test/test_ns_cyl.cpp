@@ -3,6 +3,7 @@
 #include "umfpack_solver.h"
 #include "velocity_plot.h"
 #include "eigenvectors_storage.h"
+#include "mgsch.h"
 
 using namespace fdm;
 using namespace std;
@@ -19,14 +20,16 @@ void calc(const Config& c) {
     const int plot_interval = c.get("plot", "interval", 100);
     const int png = c.get("plot", "png", 1);
     const int vtk = c.get("plot", "vtk", 0);
-    const int stabilize = c.get("ns", "stabilize", 0);
+    const int stabilize = c.get("st", "enable", 0);
+    string fn = c.get("st", "input", "input.nc");
+    const int ststep = c.get("st", "step", 100);
     vector<vector<T>> eigenvectors;
     int i;
 
     if (stabilize) {
-        string fn = c.get("st", "input", "input.nc");
         eigenvectors_storage s(fn);
         s.load(eigenvectors, c1);
+        mgsch<T>(eigenvectors, (int) eigenvectors.size(), (int) eigenvectors[0].size());
     }
 
     velocity_plotter<T,true,typename NSCyl<T, true, zflag>::tensor_flags> plot(
@@ -66,6 +69,9 @@ void calc(const Config& c) {
                 //ns.vtk_out();
                 plot.vtk_out(format("step_%07d.vtk", ns.time_index), ns.time_index);
             }
+        }
+        if ((i+1) % ststep == 0) {
+            // prjection here
         }
     }
 
