@@ -2,6 +2,7 @@
 
 #include "umfpack_solver.h"
 #include "velocity_plot.h"
+#include "eigenvectors_storage.h"
 
 using namespace fdm;
 using namespace std;
@@ -11,13 +12,22 @@ template<typename T, bool check, tensor_flag zflag>
 void calc(const Config& c) {
     using namespace std::chrono;
 
+    Config c1;
     NSCyl<T, true, zflag> ns(c);
 
     const int steps = c.get("ns", "steps", 1);
     const int plot_interval = c.get("plot", "interval", 100);
     const int png = c.get("plot", "png", 1);
     const int vtk = c.get("plot", "vtk", 0);
+    const int stabilize = c.get("ns", "stabilize", 0);
+    vector<vector<T>> eigenvectors;
     int i;
+
+    if (stabilize) {
+        string fn = c.get("st", "input", "input.nc");
+        eigenvectors_storage s(fn);
+        s.load(eigenvectors, c1);
+    }
 
     velocity_plotter<T,true,typename NSCyl<T, true, zflag>::tensor_flags> plot(
         ns.dr, ns.dz, ns.dphi,
