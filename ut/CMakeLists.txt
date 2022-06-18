@@ -62,4 +62,12 @@ target_link_libraries(ut_lapl_cube fdm ${CMOCKA_LIBRARIES})
 add_test(NAME lapl_cube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_lapl_cube)
 set_tests_properties(lapl_cube PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=lapl_cube.xml")
 
+add_executable(ut_eig_storage ut_eigenvectors_storage.cpp)
+target_include_directories(ut_eig_storage PRIVATE ${CMOCKA_INCLUDE_DIRS})
+target_link_directories(ut_eig_storage PRIVATE ${CMOCKA_LIBRARY_DIRS})
+target_link_libraries(ut_eig_storage fdm ${CMOCKA_LIBRARIES})
+
+add_test(NAME eig_storage COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_lapl_cube)
+set_tests_properties(eig_storage PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=eig_storage.xml")
+
 endif()
