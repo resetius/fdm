@@ -6,6 +6,12 @@
 
 namespace fdm {
 
+/**
+  \param A - матрица (или вектор веторов)
+  \param n - число векторов
+  \param m - размерность вектора
+  \param dot - скалярное произведение
+ */
 // Golub, p202, alg 5.2.5
 template<typename F, typename T>
 void mgsch(T& A, int n, int m, F (*dot)(const F*, const F*, int n) = [](const auto* x, const auto* y, int n) {

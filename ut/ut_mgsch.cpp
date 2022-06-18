@@ -13,6 +13,7 @@ extern "C" {
 }
 
 #include "mgsch.h"
+#include "projection.h"
 
 using namespace std;
 using namespace fdm;
@@ -92,12 +93,27 @@ void test_mgsch_cyl_float(void** ) {
     test_mgsch<float>(false);
 }
 
+template<typename T>
+void test_ortoproj_simple_along(void**) {
+    vector<vector<T>> basis = {
+        {1,0,0,0},
+        {0,1,0,0}
+    };
+
+    vector<T> vec = {1,2,3,4};
+    ortoproj_along(&vec[0], basis, 2, 4);
+    assert_float_equal(vec[2], 3, 1e-15);
+    assert_float_equal(vec[3], 4, 1e-15);
+}
+
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_prestate(test_mgsch_double, nullptr),
         cmocka_unit_test_prestate(test_mgsch_float, nullptr),
         cmocka_unit_test_prestate(test_mgsch_cyl_double, nullptr),
         cmocka_unit_test_prestate(test_mgsch_cyl_float, nullptr),
+        cmocka_unit_test_prestate(test_ortoproj_simple_along<float>, nullptr),
+        cmocka_unit_test_prestate(test_ortoproj_simple_along<double>, nullptr),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
