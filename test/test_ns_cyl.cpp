@@ -4,6 +4,7 @@
 #include "velocity_plot.h"
 #include "eigenvectors_storage.h"
 #include "mgsch.h"
+#include "projection.h"
 
 using namespace fdm;
 using namespace std;
@@ -14,17 +15,33 @@ void calc(const Config& c) {
     using namespace std::chrono;
 
     Config c1;
-    NSCyl<T, true, zflag> ns(c);
+    using Task = NSCyl<T, true, zflag>;
+    using tensor = typename Task::tensor;
+    Task ns(c);
 
     const int steps = c.get("ns", "steps", 1);
     const int plot_interval = c.get("plot", "interval", 100);
     const int png = c.get("plot", "png", 1);
     const int vtk = c.get("plot", "vtk", 0);
-    const int stabilize = c.get("st", "enable", 0);
+    const int stabilize = c.get("st", "enable", 0) && zflag == tensor_flag::periodic;
     string fn = c.get("st", "input", "input.nc");
     const int ststep = c.get("st", "step", 100);
     vector<vector<T>> eigenvectors;
     int i;
+
+    // for stabilization
+    int nphi = ns.nphi, nz = ns.nz, nr = ns.nr;
+    tensor u{{0, nphi-1, 0, nz-1, 1, nr-1}, (T*)0xff};
+    tensor v{{0, nphi-1, 0, nz-1, 1, nr}, (T*)0xff};
+    tensor w{{0, nphi-1, 0, nz-1, 1, nr}, (T*)0xff};
+    tensor p({0, nphi-1, 0, nz-1, 1, nr}, (T*)0xff);
+    int eig_size = u.size+v.size+w.size+p.size;
+    vector<T> vec(eig_size);
+    int off = 0;
+    u.use(&vec[off]); off += u.size;
+    v.use(&vec[off]); off += v.size;
+    w.use(&vec[off]); off += w.size;
+    p.use(&vec[off]); off += p.size;
 
     if (stabilize) {
         eigenvectors_storage s(fn);
@@ -71,7 +88,9 @@ void calc(const Config& c) {
             }
         }
         if ((i+1) % ststep == 0) {
-            // prjection here
+            u = ns.u; v = ns.v; w = ns.w; p = ns.p;
+            ortoproj_along(&vec[0], eigenvectors, eigenvectors.size(), eig_size);
+            ns.u = u; ns.v = v; ns.w = w; ns.p = p;
         }
     }
 
