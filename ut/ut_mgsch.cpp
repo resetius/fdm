@@ -18,7 +18,7 @@ using namespace std;
 using namespace fdm;
 
 template<typename T>
-void test_mgsch() {
+void test_mgsch(bool euclidian) {
     std::default_random_engine generator;
     std::uniform_real_distribution<T> distribution(-10, 10);
 
@@ -27,9 +27,22 @@ void test_mgsch() {
     vector<vector<T>> vecs;
     vecs.resize(m);
 
-    auto dot =  [](const T* x, const T* y, int n) {
+    auto dot1 =  [](const T* x, const T* y, int n) {
         return blas::dot(n, x, 1, y, 1);
     };
+
+    auto dot2 =  [](const T* x, const T* y, int n) {
+        T sum = 0;
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                T r = 0.1 + 0.05*j;
+                sum += r*x[i*10+j]*y[i*10+j];
+            }
+        }
+        return sum;
+    };
+
+    auto dot = euclidian ? dot1 : dot2;
 
     for (int k = 0; k < m; k++) {
         vecs[k].resize(n);
@@ -64,17 +77,27 @@ void test_mgsch() {
 }
 
 void test_mgsch_double(void**) {
-    test_mgsch<double>();
+    test_mgsch<double>(true);
 }
 
 void test_mgsch_float(void** ) {
-    test_mgsch<float>();
+    test_mgsch<float>(true);
+}
+
+void test_mgsch_cyl_double(void**) {
+    test_mgsch<double>(false);
+}
+
+void test_mgsch_cyl_float(void** ) {
+    test_mgsch<float>(false);
 }
 
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_prestate(test_mgsch_double, nullptr),
         cmocka_unit_test_prestate(test_mgsch_float, nullptr),
+        cmocka_unit_test_prestate(test_mgsch_cyl_double, nullptr),
+        cmocka_unit_test_prestate(test_mgsch_cyl_float, nullptr),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
