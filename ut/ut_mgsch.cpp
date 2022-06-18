@@ -106,6 +106,41 @@ void test_ortoproj_simple_along(void**) {
     assert_float_equal(vec[3], 4, 1e-15);
 }
 
+template<typename T>
+void test_ortoproj_along(void**) {
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-10, 10);
+
+    int n = 20;
+    int m = 100;
+    vector<vector<T>> vecs;
+    vecs.resize(n);
+
+    for (int k = 0; k < n; k++) {
+        vecs[k].resize(m);
+        for (int i = 0; i < m; i++) {
+            vecs[k][i] = distribution(generator);
+        }
+    }
+
+    mgsch<T>(vecs, n, m);
+
+    vector<T> vec(m);
+    for (int i = 0; i < m; i++) {
+        vec[i] = distribution(generator);
+    }
+    ortoproj_along(&vec[0], vecs, n, m);
+    vector<T> t = vec;
+    ortoproj_along(&vec[0], vecs, n, m);
+    T tol = 1e-15;
+    if constexpr(is_same<T,float>::value) {
+        tol = 1e-6;
+    }
+    for (int i = 0; i < m; i++) {
+        assert_float_equal(vec[i], t[i], tol);
+    }
+}
+
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_prestate(test_mgsch_double, nullptr),
@@ -114,6 +149,8 @@ int main() {
         cmocka_unit_test_prestate(test_mgsch_cyl_float, nullptr),
         cmocka_unit_test_prestate(test_ortoproj_simple_along<float>, nullptr),
         cmocka_unit_test_prestate(test_ortoproj_simple_along<double>, nullptr),
+        cmocka_unit_test_prestate(test_ortoproj_along<float>, nullptr),
+        cmocka_unit_test_prestate(test_ortoproj_along<double>, nullptr),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
