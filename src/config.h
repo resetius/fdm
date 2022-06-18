@@ -70,6 +70,7 @@ public:
     void load(FILE * f);
     void save() const;
     void print(FILE * f) const;
+    void print(std::string& str) const;
 
     double get(const std::string & section, const std::string & name, double def) const;
     double getd(const std::string & section, const std::string & name) const;

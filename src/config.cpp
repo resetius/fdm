@@ -29,6 +29,7 @@
 #include <string.h>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 
 #include "config.h"
 
@@ -216,6 +217,19 @@ void Config::print(FILE * f) const
         fprintf(f, "\n");
     }
 }
+
+void Config::print(std::string& str) const
+{
+    std::vector<char> mem(102400);
+    FILE* f = fmemopen(&mem[0], mem.size(), "wb");
+    print(f);
+    fclose(f);
+
+    int len = strlen(&mem[0]);
+    str.clear();
+    str.insert(str.end(), mem.begin(), mem.begin() + len);
+}
+
 
 bool ConfigSkeleton::is_required(const std::string & section, const std::string & prm) const
 {
