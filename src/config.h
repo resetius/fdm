@@ -57,8 +57,6 @@ class Config
     std::string filename;
     ConfigSkeleton skeleton;
 
-    void load(FILE * f);
-
 public:
     Config();
     ~Config();
@@ -69,6 +67,7 @@ public:
     void help() const;
 
     void open(const std::string & filename);
+    void load(FILE * f);
     void save() const;
     void print(FILE * f) const;
 

@@ -94,6 +94,27 @@ void eigenvectors_storage::load_(std::vector<std::vector<T>>& eigenvectors, Conf
 {
     int ncid;
     nc_call(nc_open(filename.c_str(), NC_NOWRITE, &ncid));
+    size_t len;
+    nc_call(nc_inq_attlen(ncid, NC_GLOBAL, "config", &len));
+    vector<char> mem(len+1, 0);
+    nc_call(nc_get_att_text(ncid, NC_GLOBAL, "config", &mem[0]));
+    FILE* cf = fmemopen(&mem[0], mem.size(), "rb");
+    config.load(cf);
+    fclose(cf);
+
+    int ndims, nvars, natts, unlimdimid;
+    nc_call(nc_inq(ncid, &ndims, &nvars, &natts, &unlimdimid));
+    eigenvectors.resize(nvars);
+    for (int i = 0; i < nvars; i++) {
+        int varid, dimid;
+        size_t len;
+        nc_call(nc_inq_varid(ncid, format("vec_%d", i).c_str(), &varid));
+        nc_call(nc_inq_vardimid(ncid, varid, &dimid));
+        nc_call(nc_inq_dimlen(ncid, dimid, &len));
+        eigenvectors[i].resize(len);
+        nc_call(nc_get_var(ncid, varid, &eigenvectors[i][0]));
+    }
+
     nc_call(nc_close(ncid));
 }
 
