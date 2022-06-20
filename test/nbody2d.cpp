@@ -75,10 +75,10 @@ public:
             verify(0 <= x && x <= 1);
             verify(0 <= y && y <= 1);
 
-            f[k][j]       += m * (1-x)*(1-y);
-            f[k][j+1]     += m * (1-x)*(y);
-            f[k+1][j]     += m * (x)*(y-1);
-            f[k+1][j+1]   += m * (x)*(y);
+            f[k][j]       += m * (1-y)*(1-x);
+            f[k][j+1]     += m * (1-y)*(x);
+            f[k+1][j]     += m * (y)*(1-x);
+            f[k+1][j+1]   += m * (y)*(x);
         }
 
         // -4pi G ro
@@ -143,7 +143,7 @@ private:
             maxy = max(maxy, body.x[1]);
 
             double R = std::sqrt(blas::dot(3, body.x, 1, body.x, 1));
-            double V = sqrt(100)/sqrt(R);
+            double V = sqrt(15)/sqrt(R);
 
             body.v[0] = V*body.x[1];
             body.v[1] = -V*body.x[0];
@@ -155,11 +155,14 @@ private:
 
 template <typename T>
 void calc(const Config& c) {
-    NBody<T> task(-10, -10, 20, 127, 1000000);
+    int n = 511;
+    NBody<T> task(-10, -10, 20, n, 100000);
 
-    for (int step = 0; step < 1000; step++) {
+    for (int step = 0; step < 10000; step++) {
+        printf("step=%d\n", step);
         task.step();
 
+        if (step % 100 == 0) {
         string fname = format("step_%07d.png", step);
         matrix_plotter plotter(matrix_plotter::settings()
                                .sub(1, 2)
@@ -177,7 +180,18 @@ void calc(const Config& c) {
                      .levels(10)
                      .tlabel("Psi")
                      .bounds(-10, -10, 10, 10));
+        }
     }
+
+    FILE* f = fopen("dump.bin", "wb");
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            fprintf(f, "%.16f ", task.f[i][j]);
+        }
+        fprintf(f, "\n");
+    }
+    fclose(f);
+
 }
 
 int main(int argc, char** argv) {
