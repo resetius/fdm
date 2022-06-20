@@ -33,3 +33,9 @@ target_link_libraries(test_solver_bench fdm)
 
 add_executable(test_arpack test_arpack.cpp)
 target_link_libraries(test_arpack fdm)
+
+#add_executable(test_nbody nbody.cpp)
+#target_link_libraries(test_nbody fdm)
+
+add_executable(test_nbody2d nbody2d.cpp)
+target_link_libraries(test_nbody2d fdm)

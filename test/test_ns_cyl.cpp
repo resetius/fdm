@@ -128,7 +128,6 @@ int main(int argc, char** argv) {
     c.open(config_fn);
     c.rewrite(argc, argv);
 
-    string solver = c.get("solver", "name", "umfpack");
     string datatype = c.get("solver", "datatype", "double");
 
     if (datatype == "float") {
