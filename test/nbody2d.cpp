@@ -11,10 +11,11 @@ using namespace fdm;
 using namespace std;
 using namespace asp;
 
-template<typename T>
+template<typename T,bool check,tensor_flag flag>
 class NBody {
 public:
-    using tensor =  fdm::tensor<T,2>;
+    using flags = typename short_flags<flag,flag>::value;
+    using tensor =  fdm::tensor<T,2,check,flags>;
 
     double origin[2];
     double l;
@@ -29,21 +30,26 @@ public:
     };
 
     vector<Body> bodies;
+    int n0,n1,nn,nnn;
     tensor psi, rhs, f;
 
-    LaplRect<T,true> solver;
+    LaplRectFFT2<T,check,flags> solver;
 
     NBody(double x0, double y0, double l, int n, int N)
         : origin{x0, y0}
         , l(l)
-        , n(n) // число ячеек по осям
+        , n(n) // n+1 - число ячеек (для сдвинутых сеток n - число ячеек)
         , N(N) // число тел
-        , h(l / n)
+        , h(l / (n+1))
         , dt(0.001)
         , bodies(N)
-        , psi({1,n,1,n})
-        , rhs({1,n,1,n})
-        , f({0,n+1,0,n+1})
+        , n0(0)
+        , n1(flag==tensor_flag::periodic?0:1)
+        , nn(flag==tensor_flag::periodic?n-1:n)
+        , nnn(flag==tensor_flag::periodic?n-1:n+1)
+        , psi({n1,nn,n1,nn})
+        , rhs({n1,nn,n1,nn})
+        , f({n0,nnn,n0,nnn})
         , solver(h,h,l,l,n,n)
     {
         init_points();
@@ -52,8 +58,8 @@ public:
     void step() {
         // 1. mass to edges
 #pragma omp parallel for
-        for (int k = 0; k <= n+1; k++) {
-            for (int j = 0; j <= n+1; j++) {
+        for (int k = n0; k <= nnn; k++) {
+            for (int j = n0; j <= nnn; j++) {
                 f[k][j] = 0;
             }
         }
@@ -84,11 +90,13 @@ public:
             f[k+1][j+1]   += m * (y)*(x);
         }
 
+        const double G = 2;
+
         // -4pi G ro
 #pragma omp parallel for
-        for (int k = 1; k <= n; k++) {
-            for (int j = 1; j <= n; j++) {
-                rhs[k][j] = -4.*M_PI*f[k][j];
+        for (int k = n1; k <= nn; k++) {
+            for (int j = n1; j <= nn; j++) {
+                rhs[k][j] = -4.*G*M_PI*f[k][j];
                 // zero bound
             }
         }
@@ -107,17 +115,28 @@ public:
             j = floor(x / h);
             k = floor(y / h);
 
-            if (k == 0 || j == 0) {
-                continue;
+            if constexpr(flag == tensor_flag::none) {
+                if (k == 0 || j == 0 || k == n || j == n) {
+                    continue;
+                }
             }
 
             double a[2];
-            a[0] = (psi[k][j+1]-psi[k][j])/h;
-            a[1] = (psi[k+1][j]-psi[k][j])/h;
+            a[0] = (psi[k][j+1]-psi[k][j-1])/2/h;
+            a[1] = (psi[k+1][j]-psi[k-1][j])/2/h;
 
             for (int m = 0; m < 2; m++) {
                 body.v[m] += dt * a[m];
                 body.x[m] += dt * body.v[m];
+
+                if constexpr(flag == tensor_flag::periodic) {
+                    if (body.x[m] < origin[m]) {
+                        body.x[m] += l;
+                    }
+                    if (body.x[m] >= origin[m]+l) {
+                        body.x[m] -= l;
+                    }
+                }
             }
         }
 
@@ -147,7 +166,8 @@ private:
             maxy = max(maxy, body.x[1]);
 
             double R = std::sqrt(blas::dot(3, body.x, 1, body.x, 1));
-            double V = sqrt(15)/sqrt(R);
+            //double V = sqrt(15)/sqrt(R);
+            double V = sqrt(100)/sqrt(R);
 
             body.v[0] = V*body.x[1];
             body.v[1] = -V*body.x[0];
@@ -159,8 +179,8 @@ private:
 
 template <typename T>
 void calc(const Config& c) {
-    int n = 511;
-    NBody<T> task(-10, -10, 20, n, 100000);
+    int n = 512;
+    NBody<T,true,tensor_flag::periodic> task(-10, -10, 20, n, 100000);
 
     for (int step = 0; step < 50000; step++) {
         printf("step=%d\n", step);
