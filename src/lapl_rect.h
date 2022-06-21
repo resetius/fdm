@@ -25,11 +25,12 @@ public:
     std::vector<T> L,D,U;
 
     FFTTable<T> ft_y_table;
-    FFT<T> ft_y;
+    std::vector<FFT<T>> ft_y;
 
     std::vector<T> lm_y;
 
     std::vector<T> lm_y_scale, L_scale, U_scale;
+    std::vector<T> S,s;
 
     /**
        \param dx, dy - расстояние между точками
@@ -49,13 +50,14 @@ public:
         , yn(has_tensor_flag(F::head,tensor_flag::periodic)?ny-1:ny)
         , ypoints(has_tensor_flag(F::head,tensor_flag::periodic)?ny:ny+1)
 
-        , L(nx-1), D(nx), U(nx-1)
+        , L(ypoints*nx), D(ypoints*nx), U(ypoints*nx)
         , ft_y_table(ypoints)
-        , ft_y(ft_y_table, ypoints)
+        , ft_y(nx+1, {ft_y_table, ypoints})
 
         , lm_y_scale(nx+1, 1) // use 1/r/r for cylindrical coordinates
         , L_scale(nx+1, 1) // use (r-0.5*dr)/r for cyl...
         , U_scale(nx+1, 1) // use (r+0.5*dr)/r for cyl...
+        , S((nx+1)*(ny+1)), s((nx+1)*(ny+1))
     {
         init_lm();
     }

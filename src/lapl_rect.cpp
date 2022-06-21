@@ -45,12 +45,12 @@ void LaplRect<T,check,F>::init_Mat(int i) {
     di = li = ui = 0;
     // TODO: matrix for periodic over x
     for (int j = 1; j <= nx; j++) {
-        D[di++] = -2/dx2-lm_y[i]*lm_y_scale[j];
+        D[i*nx+di++] = -2/dx2-lm_y[i]*lm_y_scale[j];
         if (j > 1) {
-            L[li++] = L_scale[j]/dx2;
+            L[i*nx+li++] = L_scale[j]/dx2;
         }
         if (j < nx) {
-            U[ui++] = U_scale[j]/dx2;
+            U[i*nx+ui++] = U_scale[j]/dx2;
         }
     }
     verify(di == nx);
@@ -63,45 +63,47 @@ void LaplRect<T,check,F>::solve(T* ans, T* rhs) {
     matrix ANS({y1,yn,1,nx}, ans);
     matrix RHS({y1,yn,1,nx}, rhs);
     matrix RHSm({y1,yn,1,nx});
-    std::vector<T> s(ny+1), S(ny+1);
 
+#pragma omp parallel for
     for (int j = 1; j <= nx; j++) {
         for (int k = y1; k <= yn; k++) {
-            s[k] = RHS[k][j];
+            s[j*ypoints+k] = RHS[k][j];
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y.pFFT_1(&S[0], &s[0], dy*sly);
+            ft_y[j].pFFT_1(&S[j*ypoints], &s[j*ypoints], dy*sly);
         } else {
-            ft_y.sFFT(&S[0], &s[0], dy*sly);
+            ft_y[j].sFFT(&S[j*ypoints], &s[j*ypoints], dy*sly);
         }
 
         for (int k = y1; k <= yn; k++) {
-            RHSm[k][j] = S[k];
+            RHSm[k][j] = S[j*ypoints+k];
         }
     }
 
+#pragma omp parallel for
     for (int k = y1; k <= yn; k++) {
         // solver
         init_Mat(k);
         int info;
-        lapack::gtsv(nx, 1, &L[0], &D[0], &U[0], &RHSm[k][1], nx, &info);
+        lapack::gtsv(nx, 1, &L[k*nx], &D[k*nx], &U[k*nx], &RHSm[k][1], nx, &info);
         verify(info == 0);
     }
 
+#pragma omp parallel for
     for (int j = 1; j <= nx; j++) {
         for (int k = y1; k <= yn; k++) {
-            s[k] = RHSm[k][j];
+            s[j*ypoints+k] = RHSm[k][j];
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y.pFFT(&S[0], &s[0], sly);
+            ft_y[j].pFFT(&S[j*ypoints], &s[j*ypoints], sly);
         } else {
-            ft_y.sFFT(&S[0], &s[0], sly);
+            ft_y[j].sFFT(&S[j*ypoints], &s[j*ypoints], sly);
         }
 
         for (int k = y1; k <= yn; k++) {
-            ANS[k][j] = S[k];
+            ANS[k][j] = S[j*ypoints+k];
         }
     }
 }
@@ -126,9 +128,9 @@ void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y.pFFT_1(&S[0], &s[0], dy*sly);
+            ft_y[j].pFFT_1(&S[0], &s[0], dy*sly);
         } else {
-            ft_y.sFFT(&S[0], &s[0], dy*sly);
+            ft_y[j].sFFT(&S[0], &s[0], dy*sly);
         }
 
         for (int k = y1; k <= yn; k++) {
@@ -186,9 +188,9 @@ void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y.pFFT(&S[0], &s[0], sly);
+            ft_y[j].pFFT(&S[0], &s[0], sly);
         } else {
-            ft_y.sFFT(&S[0], &s[0], sly);
+            ft_y[j].sFFT(&S[0], &s[0], sly);
         }
 
         for (int k = y1; k <= yn; k++) {
