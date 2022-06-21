@@ -110,7 +110,7 @@ void LaplRect<T,check,F>::solve(T* ans, T* rhs) {
 
 template<typename T, bool check, typename F>
 void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
-    int nx = this->nx; int ny = this->ny;
+    int ypoints = this->ypoints;
     int y1 = this->y1; int yn = this->yn;
     auto dy = this->dy; auto dx = this->dx;
     auto sly = this->sly; auto slx = this->slx;
@@ -120,41 +120,45 @@ void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
     typename LaplRect<T,check>::matrix ANS({y1,yn,x1,xn}, ans);
     typename LaplRect<T,check>::matrix RHS({y1,yn,x1,xn}, rhs);
     typename LaplRect<T,check>::matrix RHSm({y1,yn,x1,xn});
-    std::vector<T> s(std::max(ny+1,nx+1)), S(std::max(ny+1,nx+1));
+    auto& s = this->s;
+    auto& S = this->S;
 
+#pragma omp parallel for
     for (int j = x1; j <= xn; j++) {
         for (int k = y1; k <= yn; k++) {
-            s[k] = RHS[k][j];
+            s[j*ypoints+k] = RHS[k][j];
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y[j].pFFT_1(&S[0], &s[0], dy*sly);
+            ft_y[j].pFFT_1(&S[j*ypoints], &s[j*ypoints], dy*sly);
         } else {
-            ft_y[j].sFFT(&S[0], &s[0], dy*sly);
+            ft_y[j].sFFT(&S[j*ypoints], &s[j*ypoints], dy*sly);
         }
 
         for (int k = y1; k <= yn; k++) {
-            RHSm[k][j] = S[k];
+            RHSm[k][j] = S[j*ypoints+k];
         }
     }
 
+#pragma omp parallel for
     for (int k = y1; k <= yn; k++) {
         for (int j = x1; j <= xn; j++) {
-            s[j] = RHSm[k][j];
+            s[k*xpoints+j] = RHSm[k][j];
         }
 
         if constexpr(has_tensor_flag(F::tail::head,tensor_flag::periodic)) {
-            ft_x.pFFT_1(&S[0], &s[0], dx*slx);
+            ft_x[k].pFFT_1(&S[k*xpoints], &s[k*xpoints], dx*slx);
         } else {
-            ft_x.sFFT(&S[0], &s[0], dx*slx);
+            ft_x[k].sFFT(&S[k*xpoints], &s[k*xpoints], dx*slx);
         }
 
         for (int j = x1; j <= xn; j++) {
-            RHSm[k][j] = S[j];
+            RHSm[k][j] = S[k*xpoints+j];
         }
     }
 
 
+#pragma omp parallel for
     for (int k = y1; k <= yn; k++) {
         for (int j = x1; j <= xn; j++) {
             RHSm[k][j] /= -lm_y[k]*lm_y_scale[j]-lm_x[j];
@@ -166,35 +170,37 @@ void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
         RHSm[y1][x1] = 1;
     }
 
+#pragma omp parallel for
     for (int k = y1; k <= yn; k++) {
         for (int j = x1; j <= xn; j++) {
-            s[j] = RHSm[k][j];
+            s[k*xpoints+j] = RHSm[k][j];
         }
 
         if constexpr(has_tensor_flag(F::tail::head,tensor_flag::periodic)) {
-            ft_x.pFFT(&S[0], &s[0], slx);
+            ft_x[k].pFFT(&S[k*xpoints], &s[k*xpoints], slx);
         } else {
-            ft_x.sFFT(&S[0], &s[0], slx);
+            ft_x[k].sFFT(&S[k*xpoints], &s[k*xpoints], slx);
         }
 
         for (int j = x1; j <= xn; j++) {
-            ANS[k][j] = S[j];
+            ANS[k][j] = S[k*xpoints+j];
         }
     }
 
+#pragma omp parallel for
     for (int j = x1; j <= xn; j++) {
         for (int k = y1; k <= yn; k++) {
-            s[k] = ANS[k][j];
+            s[j*ypoints+k] = ANS[k][j];
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y[j].pFFT(&S[0], &s[0], sly);
+            ft_y[j].pFFT(&S[j*ypoints], &s[j*ypoints], sly);
         } else {
-            ft_y[j].sFFT(&S[0], &s[0], sly);
+            ft_y[j].sFFT(&S[j*ypoints], &s[j*ypoints], sly);
         }
 
         for (int k = y1; k <= yn; k++) {
-            ANS[k][j] = S[k];
+            ANS[k][j] = S[j*ypoints+k];
         }
     }
 }

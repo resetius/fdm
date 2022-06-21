@@ -81,7 +81,7 @@ public:
 
     FFTTable<T>  ft_x_table_;
     FFTTable<T>* ft_x_table;
-    FFT<T> ft_x;
+    std::vector<FFT<T>> ft_x;
 
     std::vector<T> lm_x_;
     T* lm_x;
@@ -97,7 +97,7 @@ public:
 
         , ft_x_table_(xpoints == this->ypoints ? 1 : xpoints)
         , ft_x_table(xpoints == this->ypoints ? &this->ft_y_table: &ft_x_table_)
-        , ft_x(*ft_x_table, xpoints)
+        , ft_x(this->ypoints, {*ft_x_table, xpoints})
     {
         init_lm();
     }
