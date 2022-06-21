@@ -142,7 +142,7 @@ void test_ortoproj_along(void**) {
     ortoproj_along(&vec[0], vecs, n, m);
     T tol = 1e-15;
     if constexpr(is_same<T,float>::value) {
-        tol = 1e-6;
+        tol = 1e-4;
     }
     for (int i = 0; i < m; i++) {
         assert_float_equal(vec[i], t[i], tol);
