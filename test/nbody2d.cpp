@@ -51,11 +51,14 @@ public:
 
     void step() {
         // 1. mass to edges
+#pragma omp parallel for
         for (int k = 0; k <= n+1; k++) {
             for (int j = 0; j <= n+1; j++) {
                 f[k][j] = 0;
             }
         }
+
+#pragma omp parallel for
         for (auto& body : bodies) {
             int k,j;
 
@@ -82,6 +85,7 @@ public:
         }
 
         // -4pi G ro
+#pragma omp parallel for
         for (int k = 1; k <= n; k++) {
             for (int j = 1; j <= n; j++) {
                 rhs[k][j] = -4.*M_PI*f[k][j];
@@ -90,10 +94,10 @@ public:
         }
         solver.solve(&psi[1][1], &rhs[1][1]);
 
+#pragma omp parallel for
         for (auto& body : bodies) {
             int k,j;
 
-            double m = body.mass;
             double x = body.x[0]-origin[0];
             double y = body.x[1]-origin[1];
 
@@ -108,8 +112,8 @@ public:
             }
 
             double a[2];
-            a[0] = m*(psi[k][j+1]-psi[k][j])/h;
-            a[1] = m*(psi[k+1][j]-psi[k][j])/h;
+            a[0] = (psi[k][j+1]-psi[k][j])/h;
+            a[1] = (psi[k+1][j]-psi[k][j])/h;
 
             for (int m = 0; m < 2; m++) {
                 body.v[m] += dt * a[m];
@@ -158,7 +162,7 @@ void calc(const Config& c) {
     int n = 511;
     NBody<T> task(-10, -10, 20, n, 100000);
 
-    for (int step = 0; step < 10000; step++) {
+    for (int step = 0; step < 50000; step++) {
         printf("step=%d\n", step);
         task.step();
 
