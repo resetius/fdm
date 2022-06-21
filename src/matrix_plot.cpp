@@ -41,7 +41,7 @@ matrix_plotter::data::~data() {
 }
 
 void matrix_plotter::plot_internal(const page& p) {
-    plenv(p.y1, p.y2, p.x1, p.x2, 0, 0);
+    plenv(p.y1, p.y2, p.x1, p.x2, 1, 0);
     pllab(p.xlab.c_str(), p.ylab.c_str(), p.tlab.c_str());
     pllsty(2);
 
