@@ -117,7 +117,7 @@ public:
                 rhs[k][j] = sgn* 4.*G*M_PI*f[k][j];
             }
         }
-        solver.solve(&psi[1][1], &rhs[1][1]);
+        solver.solve(&psi[n1][n1], &rhs[n1][n1]);
 
 #pragma omp parallel for
         for (int k = n0; k <= nn; k++) {
@@ -275,8 +275,8 @@ private:
             a[1] = (psi[k+1][j]-psi[k-1][j])/2/h + body.F[1];
 
             for (int m = 0; m < 2; m++) {
-                body.v[m] += dt * a[m];
                 body.x[m] += dt * body.v[m];
+                body.v[m] += dt * a[m];
 
                 if constexpr(flag == tensor_flag::periodic) {
                     if (body.x[m] < origin[m]) {
@@ -297,8 +297,8 @@ private:
             int next_j = floor(x / h);
             int next_k = floor(y / h);
 
-            //verify(abs(body.k-next_k) <= 1, "Too fast, try decrease dt");
-            //verify(abs(body.j-next_j) <= 1, "Too fast, try decrease dt");
+            verify(abs(body.k-next_k) <= 1, "Too fast, try decrease dt");
+            verify(abs(body.j-next_j) <= 1, "Too fast, try decrease dt");
             body.k = next_k; body.j = next_j;
 
             cells[body.k][body.j].next.push_back(index);
