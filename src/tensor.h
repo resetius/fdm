@@ -206,6 +206,16 @@ public:
     {
     }
 
+    tensor(const tensor& other)
+        : offsets(other.offsets)
+        , sizes(other.sizes)
+        , size(other.size)
+        , storage(other.storage)
+        , vec(storage.empty() ? other.vec: &storage[0])
+        , acc(&vec[0], &sizes[0], &offsets[0], 0)
+    {
+    }
+
     auto operator[](int y) {
         return acc[y];
     }
