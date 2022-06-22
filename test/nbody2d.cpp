@@ -55,7 +55,7 @@ public:
     fdm::tensor<array<T,2>,2,check,flags> E;
 
     LaplRectFFT2<T,check,flags> solver;
-    jthread thread;
+    std::thread thread;
 
     struct PlotTask {
         string fname;
