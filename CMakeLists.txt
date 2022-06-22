@@ -30,7 +30,7 @@ endif ()
 
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}/lib")
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if (EXISTS ${CMAKE_SOURCE_DIR}/deps/umfpack/UFconfig/UFconfig.h)

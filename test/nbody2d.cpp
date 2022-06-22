@@ -1,4 +1,8 @@
 #include <random>
+#include <mutex>
+#include <list>
+#include <thread>
+#include <condition_variable>
 
 #include "config.h"
 #include "tensor.h"
@@ -49,6 +53,36 @@ public:
     fdm::tensor<Cell,2,check,flags> cells;
 
     LaplRectFFT2<T,check,flags> solver;
+    jthread thread;
+
+    struct PlotTask {
+        string fname;
+        tensor f,psi;
+    };
+
+    struct Queue {
+        list<PlotTask> queue;
+        mutex m;
+        condition_variable cv;
+
+        void push(PlotTask&& task) {
+            unique_lock lock(m);
+            queue.emplace_back(std::move(task));
+            cv.notify_one();
+        }
+
+        PlotTask pop() {
+            unique_lock lock(m);
+            while (queue.empty()) {
+                cv.wait(lock);
+            }
+            PlotTask ret = std::move(queue.front());
+            queue.pop_front();
+            return ret;
+        }
+    };
+
+    Queue q;
 
     NBody(double x0, double y0, double l, int n, int N, double dt, double G, double vel, int sgn)
         : origin{x0, y0}
@@ -71,8 +105,15 @@ public:
         , f({n0,nnn,n0,nnn})
         , cells({n0,nn,n0,nn})
         , solver(h,h,l,l,n,n)
+        , thread(plot_thread, l, origin, &q)
     {
         init_points();
+    }
+
+    ~NBody()
+    {
+        q.push(PlotTask{"", tensor({}), tensor({})});
+        thread.join();
     }
 
     void step() {
@@ -197,25 +238,37 @@ public:
     }
 
     void plot(int step) {
-        string fname = format("step_%07d.png", step);
-        matrix_plotter plotter(matrix_plotter::settings()
-                               .sub(1, 2)
-                               .devname("pngcairo")
-                               .fname(fname));
-
-        plotter.plot(matrix_plotter::page()
-                     .scalar(f)
-                     .levels(10)
-                     .tlabel("F")
-                     .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
-
-        plotter.plot(matrix_plotter::page()
-                     .scalar(psi)
-                     .levels(10)
-                     .tlabel("Psi")                     .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
+        PlotTask task {format("step_%07d.png", step), f, psi};
+        q.push(std::move(task));
     }
 
 private:
+    static void plot_thread(double l, double origin[2], Queue* q) {
+        while (true) {
+            PlotTask task = q->pop();
+            if (task.fname.empty()) {
+                break;
+            }
+            matrix_plotter plotter(matrix_plotter::settings()
+                                   .sub(1, 2)
+                                   .devname("pngcairo")
+                                   .fname(task.fname));
+
+            plotter.plot(matrix_plotter::page()
+                         .scalar(task.f)
+                         .levels(10)
+                         .tlabel("F")
+                         .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
+
+            plotter.plot(matrix_plotter::page()
+                         .scalar(task.psi)
+                         .levels(10)
+                         .tlabel("Psi")
+                         .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
+
+        }
+    }
+
     void apply_bi_bj(Body& bi, Body& bj, bool apply_bj) {
         double eps = 0.01;
         double R = 0;
@@ -296,26 +349,6 @@ private:
 
             int next_j = floor(x / h);
             int next_k = floor(y / h);
-
-            // hack for high speed
-            if (abs(body.k-next_k) > 1) {
-                fprintf(stderr, "warning: too fast change\n");
-                if (body.k-next_k < 0) {
-                    next_k = body.k + 1;
-                } else {
-                    next_k = body.k - 1;
-                }
-                body.x[1] = origin[1] + next_k*h+h/2;
-            }
-            if (abs(body.j-next_j) > 1) {
-                fprintf(stderr, "warning: too fast change\n");
-                if (body.j-next_j < 0) {
-                    next_j = body.j + 1;
-                } else {
-                    next_j = body.j - 1;
-                }
-                body.x[0] = origin[0] + next_j*h+h/2;
-            }
 
             //verify(abs(body.k-next_k) <= 1, "Too fast, try decrease dt");
             //verify(abs(body.j-next_j) <= 1, "Too fast, try decrease dt");
