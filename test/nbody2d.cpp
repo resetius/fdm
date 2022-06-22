@@ -299,6 +299,7 @@ private:
 
             // hack for high speed
             if (abs(body.k-next_k) > 1) {
+                fprintf(stderr, "warning: too fast change\n");
                 if (body.k-next_k < 0) {
                     next_k = body.k + 1;
                 } else {
@@ -307,12 +308,13 @@ private:
                 body.x[1] = origin[1] + next_k*h+h/2;
             }
             if (abs(body.j-next_j) > 1) {
+                fprintf(stderr, "warning: too fast change\n");
                 if (body.j-next_j < 0) {
                     next_j = body.j + 1;
                 } else {
                     next_j = body.j - 1;
                 }
-                body.x[0] = origin[0] + next_k*h+h/2;
+                body.x[0] = origin[0] + next_j*h+h/2;
             }
 
             //verify(abs(body.k-next_k) <= 1, "Too fast, try decrease dt");
