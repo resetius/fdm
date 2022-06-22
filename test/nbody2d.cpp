@@ -29,6 +29,7 @@ public:
     double G;
     double vel;
     int sgn;
+    int local;
     double rcrit;
 
     struct Body {
@@ -51,6 +52,7 @@ public:
     int n0,n1,nn,nnn;
     tensor psi, rhs, f;
     fdm::tensor<Cell,2,check,flags> cells;
+    fdm::tensor<array<T,2>,2,check,flags> E;
 
     LaplRectFFT2<T,check,flags> solver;
     jthread thread;
@@ -84,7 +86,7 @@ public:
 
     Queue q;
 
-    NBody(double x0, double y0, double l, int n, int N, double dt, double G, double vel, int sgn)
+    NBody(double x0, double y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local)
         : origin{x0, y0}
         , l(l)
         , n(n) // n+1 - число ячеек (для сдвинутых сеток n - число ячеек)
@@ -94,6 +96,7 @@ public:
         , G(G)
         , vel(vel)
         , sgn(sgn)
+        , local(local)
         , rcrit(h/4)
         , bodies(N)
         , n0(0)
@@ -104,6 +107,7 @@ public:
         , rhs({n1,nn,n1,nn})
         , f({n0,nnn,n0,nnn})
         , cells({n0,nn,n0,nn})
+        , E({n1,nn,n1,nn})
         , solver(h,h,l,l,n,n)
         , thread(plot_thread, l, origin, &q)
     {
@@ -160,6 +164,14 @@ public:
         }
         solver.solve(&psi[n1][n1], &rhs[n1][n1]);
 
+        for (int k = n1; k <= nn; k++) {
+            for (int j = n1; j <= nn; j++){
+                // TODO: non periodic
+                E[k][j][0] = (psi[k][j+1]-psi[k][j-1])/2/h;
+                E[k][j][1] = (psi[k+1][j]-psi[k-1][j])/2/h;
+            }
+        }
+
 #pragma omp parallel for
         for (int k = n0; k <= nn; k++) {
             for (int j = n0; j <= nn; j++) {
@@ -174,23 +186,25 @@ public:
             }
         }
 
+        if (local) {
 #pragma omp parallel for
-        for (int k = n0; k <= nn; k++) {
-            for (int j = n0; j <= nn; j++) {
-                auto& cell = cells[k][j];
+            for (int k = n0; k <= nn; k++) {
+                for (int j = n0; j <= nn; j++) {
+                    auto& cell = cells[k][j];
 
-                // local forces
-                calc_local_forces(cell);
+                    // local forces
+                    calc_local_forces(cell);
 
-                for (int k0 = -1; k0 <= 1; k0++) {
-                    for (int j0 = -1; j0 <= 1; j0++) {
-                        if (k0 == 0 && j0 == 0) continue;
+                    for (int k0 = -1; k0 <= 1; k0++) {
+                        for (int j0 = -1; j0 <= 1; j0++) {
+                            if (k0 == 0 && j0 == 0) continue;
 
-                        if constexpr(flag == tensor_flag::periodic) {
-                            calc_local_forces(cell, cells[k+k0][j+j0]);
-                        } else {
-                            if (k+k0 >= 0 && k+k0 <= nn && j+j0 >=0 && j+j0 <= nn) {
+                            if constexpr(flag == tensor_flag::periodic) {
                                 calc_local_forces(cell, cells[k+k0][j+j0]);
+                            } else {
+                                if (k+k0 >= 0 && k+k0 <= nnn && j+j0 >=0 && j+j0 <= nnn) {
+                                    calc_local_forces(cell, cells[k+k0][j+j0]);
+                                }
                             }
                         }
                     }
@@ -270,7 +284,7 @@ private:
     }
 
     void apply_bi_bj(Body& bi, Body& bj, bool apply_bj) {
-        double eps = 0.01;
+        double eps = 0.001;
         double R = 0;
         for (int k = 0; k < 2; k++) {
             R += sq(bi.x[k]-bj.x[k]);
@@ -321,11 +335,23 @@ private:
             }
 
             int k = body.k; int j = body.j;
-            double a[2];
+            double a[2] = {0};
 
-            // TODO: better interpolate force
-            a[0] = (psi[k][j+1]-psi[k][j-1])/2/h + body.F[0];
-            a[1] = (psi[k+1][j]-psi[k-1][j])/2/h + body.F[1];
+            T x = (body.x[0]-origin[0]-body.j*h)/h;
+            T y = (body.x[1]-origin[1]-body.k*h)/h;
+            verify(0 <= x && x <= 1);
+            verify(0 <= y && y <= 1);
+
+            for (int m = 0; m < 2; m++) {
+                a[m] += E[k][j][m]     *(1-y)*(1-x);
+                a[m] += E[k][j+1][m]   *(1-y)*(x);
+                a[m] += E[k+1][j][m]   *(y)*(1-x);
+                a[m] += E[k+1][j+1][m] *(y)*(x);
+            }
+
+            for (int m = 0; m < 2; m++) {
+                a[m] += body.F[m];
+            }
 
             for (int m = 0; m < 2; m++) {
                 body.x[m] += dt * body.v[m];
@@ -341,8 +367,8 @@ private:
                 }
             }
 
-            double x = body.x[0]-origin[0];
-            double y = body.x[1]-origin[1];
+            x = body.x[0]-origin[0];
+            y = body.x[1]-origin[1];
 
             if (x < 0 || x > l) continue;
             if (y < 0 || y > l) continue;
@@ -407,8 +433,9 @@ void calc(const Config& c) {
     double vel = c.get("nbody", "vel", 4);
     int sgn = c.get("nbody", "sign", -1);
     int interval = c.get("plot","interval",100);
+    int local = c.get("nbody", "local", 0); // need to check
 
-    NBody<T,true,flag> task(x0, y0, l, n, N, dt, G, vel, sgn);
+    NBody<T,true,flag> task(x0, y0, l, n, N, dt, G, vel, sgn, local);
 
     task.plot(0);
 
