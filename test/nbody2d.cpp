@@ -297,8 +297,26 @@ private:
             int next_j = floor(x / h);
             int next_k = floor(y / h);
 
-            verify(abs(body.k-next_k) <= 1, "Too fast, try decrease dt");
-            verify(abs(body.j-next_j) <= 1, "Too fast, try decrease dt");
+            // hack for high speed
+            if (abs(body.k-next_k) > 1) {
+                if (body.k-next_k < 0) {
+                    next_k = body.k + 1;
+                } else {
+                    next_k = body.k - 1;
+                }
+                body.x[1] = origin[1] + next_k*h+h/2;
+            }
+            if (abs(body.j-next_j) > 1) {
+                if (body.j-next_j < 0) {
+                    next_j = body.j + 1;
+                } else {
+                    next_j = body.j - 1;
+                }
+                body.x[0] = origin[0] + next_k*h+h/2;
+            }
+
+            //verify(abs(body.k-next_k) <= 1, "Too fast, try decrease dt");
+            //verify(abs(body.j-next_j) <= 1, "Too fast, try decrease dt");
             body.k = next_k; body.j = next_j;
 
             cells[body.k][body.j].next.push_back(index);
