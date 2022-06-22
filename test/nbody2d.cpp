@@ -22,6 +22,9 @@ public:
     int n, N;
     double h;
     double dt;
+    double G;
+    double vel;
+    int sgn;
 
     struct Body {
         T x[2];
@@ -35,13 +38,16 @@ public:
 
     LaplRectFFT2<T,check,flags> solver;
 
-    NBody(double x0, double y0, double l, int n, int N)
+    NBody(double x0, double y0, double l, int n, int N, double dt, double G, double vel, int sgn)
         : origin{x0, y0}
         , l(l)
         , n(n) // n+1 - число ячеек (для сдвинутых сеток n - число ячеек)
         , N(N) // число тел
         , h(l / (n+1))
-        , dt(0.001)
+        , dt(dt)
+        , G(G)
+        , vel(vel)
+        , sgn(sgn)
         , bodies(N)
         , n0(0)
         , n1(flag==tensor_flag::periodic?0:1)
@@ -90,14 +96,11 @@ public:
             f[k+1][j+1]   += m * (y)*(x);
         }
 
-        const double G = 2;
-
         // -4pi G ro
 #pragma omp parallel for
         for (int k = n1; k <= nn; k++) {
             for (int j = n1; j <= nn; j++) {
-                rhs[k][j] = -4.*G*M_PI*f[k][j];
-                // zero bound
+                rhs[k][j] = sgn*4.*G*M_PI*f[k][j];
             }
         }
         solver.solve(&psi[1][1], &rhs[1][1]);
@@ -144,6 +147,26 @@ public:
         printf("%e %e \n", bodies[k].x[0],bodies[k].x[1]);
     }
 
+    void plot(int step) {
+        string fname = format("step_%07d.png", step);
+        matrix_plotter plotter(matrix_plotter::settings()
+                               .sub(1, 2)
+                               .devname("pngcairo")
+                               .fname(fname));
+
+        plotter.plot(matrix_plotter::page()
+                     .scalar(f)
+                     .levels(10)
+                     .tlabel("F")
+                     .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
+
+        plotter.plot(matrix_plotter::page()
+                     .scalar(psi)
+                     .levels(10)
+                     .tlabel("Psi")
+                     .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
+    }
+
 private:
     void init_points() {
         std::default_random_engine generator;
@@ -166,8 +189,7 @@ private:
             maxy = max(maxy, body.x[1]);
 
             double R = std::sqrt(blas::dot(3, body.x, 1, body.x, 1));
-            //double V = sqrt(15)/sqrt(R);
-            double V = sqrt(100)/sqrt(R);
+            double V = vel/sqrt(R);
 
             body.v[0] = V*body.x[1];
             body.v[1] = -V*body.x[0];
@@ -177,45 +199,32 @@ private:
     }
 };
 
-template <typename T>
+template <typename T,tensor_flag flag>
 void calc(const Config& c) {
-    int n = 512;
-    NBody<T,true,tensor_flag::periodic> task(-10, -10, 20, n, 100000);
+    int n = c.get("nbody", "n", 512);
+    int N = c.get("nbody", "N", 100000);
+    int steps = c.get("nbody", "steps", 50000);
+    double x0 = c.get("nbody", "x0", -10);
+    double y0 = c.get("nbody", "y0", -10);
+    double l = c.get("nbody", "l", 20);
+    double dt = c.get("nbody", "dt", 0.001);
+    double G = c.get("nbody", "G", 1);
+    double vel = c.get("nbody", "vel", 4);
+    int sgn = c.get("nbody", "sign", -1);
+    int interval = c.get("plot","interval",100);
 
-    for (int step = 0; step < 50000; step++) {
+    NBody<T,true,flag> task(x0, y0, l, n, N, dt, G, vel, sgn);
+
+    task.plot(0);
+
+    for (int step = 0; step < steps; step++) {
         printf("step=%d\n", step);
         task.step();
 
-        if (step % 100 == 0) {
-        string fname = format("step_%07d.png", step);
-        matrix_plotter plotter(matrix_plotter::settings()
-                               .sub(1, 2)
-                               .devname("pngcairo")
-                               .fname(fname));
-
-        plotter.plot(matrix_plotter::page()
-                     .scalar(task.f)
-                     .levels(10)
-                     .tlabel("F")
-                     .bounds(-10, -10, 10, 10));
-
-        plotter.plot(matrix_plotter::page()
-                     .scalar(task.psi)
-                     .levels(10)
-                     .tlabel("Psi")
-                     .bounds(-10, -10, 10, 10));
+        if ((step+1) % interval == 0) {
+            task.plot(step);
         }
     }
-
-    FILE* f = fopen("dump.bin", "wb");
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            fprintf(f, "%.16f ", task.f[i][j]);
-        }
-        fprintf(f, "\n");
-    }
-    fclose(f);
-
 }
 
 int main(int argc, char** argv) {
@@ -227,11 +236,20 @@ int main(int argc, char** argv) {
     c.rewrite(argc, argv);
 
     string datatype = c.get("solver", "datatype", "double");
+    int periodic = c.get("nbody", "periodic", 1);
 
     if (datatype == "float") {
-        calc<float>(c);
+        if (periodic) {
+            calc<float,tensor_flag::periodic>(c);
+        } else {
+            calc<float,tensor_flag::none>(c);
+        }
     } else {
-        calc<double>(c);
+        if (periodic) {
+            calc<double,tensor_flag::periodic>(c);
+        } else {
+            calc<double,tensor_flag::none>(c);
+        }
     }
 
     return 0;
