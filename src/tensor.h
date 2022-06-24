@@ -48,6 +48,11 @@ struct short_flags<tensor_flag::none, tensor_flag::none> {
 };
 
 template<>
+struct short_flags<tensor_flag::none, tensor_flag::none, tensor_flag::none> {
+    using value = tensor_flags<>;
+};
+
+template<>
 struct short_flags<tensor_flag::none> {
     using value = tensor_flags<>;
 };

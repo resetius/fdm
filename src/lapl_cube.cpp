@@ -21,7 +21,7 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
                 ft_z[k].sFFT(&S[k*(nz+1)], &s[k*(nz+1)], dz*slz);
             }
 
-            for (int i = 1; i <= nz; i++) {
+            for (int i = z1; i <= zn; i++) {
                 RHSm[i][k][j] = S[k*(nz+1)+i];
             }
         }
@@ -40,7 +40,7 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
                 ft_y[i].sFFT(&S[i*(ny+1)], &s[i*(ny+1)], dy*sly);
             }
 
-            for (int k = 1; k <= ny; k++) {
+            for (int k = y1; k <= yn; k++) {
                 RHSm[i][k][j] = S[i*(ny+1)+k];
             }
         }
@@ -59,29 +59,29 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
                 ft_x[i].sFFT(&S[i*(nx+1)], &s[i*(nx+1)], dx*slx);
             }
 
-            for (int j = 1; j <= nx; j++) {
+            for (int j = x1; j <= xn; j++) {
                 RHSm[i][k][j] = S[i*(nx+1)+j];
             }
         }
     }
 
 #pragma omp parallel for
-    for (int i = 1; i <= nz; i++) {
-        for (int k = 1; k <= ny; k++) {
-            for (int j = 1; j <= nx; j++) {
+    for (int i = z1; i <= zn; i++) {
+        for (int k = y1; k <= yn; k++) {
+            for (int j = x1; j <= xn; j++) {
                 RHSm[i][k][j] /= -lm_z[i]-lm_y[k]-lm_x[j];
             }
         }
     }
 
-    if (0) {
+    if (x1 == 0 && y1 == 0 && z1 == 0) {
         RHSm[0][0][0] = 1;
     }
 
 #pragma omp parallel for
-    for (int i = 1; i <= nz; i++) {
-        for (int k = 1; k <= ny; k++) {
-            for (int j = 1; j <= nx; j++) {
+    for (int i = z1; i <= zn; i++) {
+        for (int k = y1; k <= yn; k++) {
+            for (int j = x1; j <= xn; j++) {
                 s[i*(nx+1)+j] = RHSm[i][k][j];
             }
 
@@ -91,16 +91,16 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
                 ft_x[i].sFFT(&S[i*(nx+1)], &s[i*(nx+1)], slx);
             }
 
-            for (int j = 1; j <= nx; j++) {
+            for (int j = x1; j <= xn; j++) {
                 ANS[i][k][j] = S[i*(nx+1)+j];
             }
         }
     }
 
 #pragma omp parallel for
-    for (int i = 1; i <= nz; i++) {
-        for (int j = 1; j <= nx; j++) {
-            for (int k = 1; k <= ny; k++) {
+    for (int i = z1; i <= zn; i++) {
+        for (int j = x1; j <= xn; j++) {
+            for (int k = y1; k <= yn; k++) {
                 s[i*(ny+1)+k] = ANS[i][k][j];
             }
 
@@ -110,16 +110,16 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
                 ft_y[i].sFFT(&S[i*(ny+1)], &s[i*(ny+1)], sly);
             }
 
-            for (int k = 1; k <= ny; k++) {
+            for (int k = y1; k <= yn; k++) {
                 ANS[i][k][j] = S[i*(ny+1)+k];
             }
         }
     }
 
 #pragma omp parallel for
-    for (int k = 1; k <= ny; k++) {
-        for (int j = 1; j <= nx; j++) {
-            for (int i = 1; i <= nz; i++) {
+    for (int k = y1; k <= yn; k++) {
+        for (int j = x1; j <= xn; j++) {
+            for (int i = z1; i <= zn; i++) {
                 s[k*(nz+1)+i] = ANS[i][k][j];
             }
 
@@ -129,7 +129,7 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
                 ft_z[k].sFFT(&S[k*(nz+1)], &s[k*(nz+1)], slz);
             }
 
-            for (int i = 1; i <= nz; i++) {
+            for (int i = z1; i <= zn; i++) {
                 ANS[i][k][j] = S[k*(nz+1)+i];
             }
         }
@@ -170,5 +170,10 @@ template class LaplCube<double,true,tensor_flags<>>;
 template class LaplCube<double,false,tensor_flags<>>;
 template class LaplCube<float,true,tensor_flags<>>;
 template class LaplCube<float,false,tensor_flags<>>;
+
+template class LaplCube<double,true,tensor_flags<tensor_flag::periodic,tensor_flag::periodic,tensor_flag::periodic>>;
+template class LaplCube<double,false,tensor_flags<tensor_flag::periodic,tensor_flag::periodic,tensor_flag::periodic>>;
+template class LaplCube<float,true,tensor_flags<tensor_flag::periodic,tensor_flag::periodic,tensor_flag::periodic>>;
+template class LaplCube<float,false,tensor_flags<tensor_flag::periodic,tensor_flag::periodic,tensor_flag::periodic>>;
 
 } // namespace fdm
