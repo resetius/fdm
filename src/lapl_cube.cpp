@@ -3,8 +3,8 @@
 
 namespace fdm {
 
-template<typename T, bool check>
-void LaplCube<T,check>::solve(T* ans, T* rhs) {
+template<typename T, bool check, typename F>
+void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
     tensor ANS(indices, ans);
     tensor RHS(indices, rhs);
 
@@ -108,8 +108,8 @@ void LaplCube<T,check>::solve(T* ans, T* rhs) {
     }
 }
 
-template<typename T, bool check>
-void LaplCube<T,check>::init_lm() {
+template<typename T, bool check,typename F>
+void LaplCube<T,check,F>::init_lm() {
     lm_y.resize(ny+1);
     for (int k = 1; k <= ny; k++) {
         lm_y[k] = 4./dy2*asp::sq(sin(k*M_PI*0.5/(ny+1)));
@@ -126,9 +126,9 @@ void LaplCube<T,check>::init_lm() {
     lm_z = nz == ny ? &lm_y[0] : &lm_z_[0];
 }
 
-template class LaplCube<double,true>;
-template class LaplCube<double,false>;
-template class LaplCube<float,true>;
-template class LaplCube<float,false>;
+template class LaplCube<double,true,tensor_flags<>>;
+template class LaplCube<double,false,tensor_flags<>>;
+template class LaplCube<float,true,tensor_flags<>>;
+template class LaplCube<float,false,tensor_flags<>>;
 
 } // namespace fdm

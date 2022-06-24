@@ -6,16 +6,22 @@
 
 namespace fdm {
 
-template<typename T, bool check>
+template<typename T, bool check, typename F=tensor_flags<>>
 class LaplCube {
 public:
-    using tensor = fdm::tensor<T,3,check>;
+    using tensor = fdm::tensor<T,3,check,F>;
+
+    static constexpr tensor_flag zflag = F::head;
+    static constexpr tensor_flag yflag = F::tail::head;
+    static constexpr tensor_flag xflag = F::tail::tail::head;
 
     const double dx, dy, dz;
     const double dx2, dy2, dz2;
 
     const double lx, ly, lz;
     const double slx, sly, slz;
+
+    const int zpoints, ypoints, xpoints;
 
     const int nx, ny, nz;
     const int mxdim;
@@ -48,6 +54,11 @@ public:
         , dx2(dx*dx), dy2(dy*dy), dz2(dz*dz)
         , lx(lx), ly(ly), lz(lz)
         , slx(sqrt(2./lx)), sly(sqrt(2./ly)), slz(sqrt(2./lz))
+
+        , zpoints(has_tensor_flag(zflag,tensor_flag::periodic)?nz:nz+1)
+        , ypoints(has_tensor_flag(yflag,tensor_flag::periodic)?ny:ny+1)
+        , xpoints(has_tensor_flag(zflag,tensor_flag::periodic)?nx:nx+1)
+
         , nx(nx), ny(ny), nz(nz)
         , mxdim(std::max({nx+1,ny+1,nz+1}))
         , indices({1,nz,1,ny,1,nx})
