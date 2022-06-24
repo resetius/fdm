@@ -21,6 +21,8 @@ public:
     const double lx, ly, lz;
     const double slx, sly, slz;
 
+    const int z1, y1, x1;
+    const int zn, yn, xn;
     const int zpoints, ypoints, xpoints;
 
     const int nx, ny, nz;
@@ -55,6 +57,14 @@ public:
         , lx(lx), ly(ly), lz(lz)
         , slx(sqrt(2./lx)), sly(sqrt(2./ly)), slz(sqrt(2./lz))
 
+        , z1(has_tensor_flag(zflag,tensor_flag::periodic)?0:1)
+        , y1(has_tensor_flag(yflag,tensor_flag::periodic)?0:1)
+        , x1(has_tensor_flag(zflag,tensor_flag::periodic)?0:1)
+
+        , zn(has_tensor_flag(zflag,tensor_flag::periodic)?nz-1:nz)
+        , yn(has_tensor_flag(yflag,tensor_flag::periodic)?ny-1:ny)
+        , xn(has_tensor_flag(zflag,tensor_flag::periodic)?nx-1:nx)
+
         , zpoints(has_tensor_flag(zflag,tensor_flag::periodic)?nz:nz+1)
         , ypoints(has_tensor_flag(yflag,tensor_flag::periodic)?ny:ny+1)
         , xpoints(has_tensor_flag(zflag,tensor_flag::periodic)?nx:nx+1)
@@ -63,20 +73,20 @@ public:
         , mxdim(std::max({nx+1,ny+1,nz+1}))
         , indices({1,nz,1,ny,1,nx})
 
-        , ft_x_table(nx+1)
-        , ft_y_table((nx==ny&&nx==nz)?1:ny+1)
-        , ft_z_table((nx==ny&&nx==nz)?1:nz+1)
+        , ft_x_table(xpoints)
+        , ft_y_table((xpoints==ypoints&&xpoints==zpoints)?1:ypoints)
+        , ft_z_table((xpoints==ypoints&&xpoints==zpoints)?1:zpoints)
 
-        , ft_x(mxdim, {ft_x_table, nx+1})
-        , ft_y_((nx==ny&&nx==nz)?
+        , ft_x(mxdim, {ft_x_table, xpoints})
+        , ft_y_((xpoints==ypoints&&xpoints==zpoints)?
                 0:mxdim,
-                {ft_y_table, ny+1})
-        , ft_z_((nx==ny&&nx==nz)?
+                {ft_y_table, ypoints})
+        , ft_z_((xpoints==ypoints&&xpoints==zpoints)?
                 0:mxdim,
-                {ft_z_table, nz+1})
+                {ft_z_table, zpoints})
 
-        , ft_y((nx==ny&&nx==nz)?ft_x:ft_y_)
-        , ft_z((nx==ny&&nx==nz)?ft_x:ft_z_)
+        , ft_y((xpoints==ypoints&&xpoints==zpoints)?ft_x:ft_y_)
+        , ft_z((xpoints==ypoints&&xpoints==zpoints)?ft_x:ft_z_)
         , RHSm(indices)
         , S(mxdim*mxdim), s(mxdim*mxdim)
     {
