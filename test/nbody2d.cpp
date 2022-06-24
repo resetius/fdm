@@ -56,14 +56,13 @@ public:
 
     LaplRectFFT2<T,check,flags> solver;
 
-    std::thread thread;
-
     struct PlotTask {
         string fname;
         tensor f,psi;
     };
 
     concurrent_queue<PlotTask> q;
+    std::thread thread;
 
     NBody(double x0, double y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local)
         : origin{x0, y0}
