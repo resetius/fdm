@@ -262,7 +262,7 @@ private:
                             if constexpr(flag == tensor_flag::periodic) {
                                 calc_local_forces(cell, cells[k+k0][j+j0]);
                             } else {
-                                if (k+k0 >= 0 && k+k0 <= nnn && j+j0 >=0 && j+j0 <= nnn) {
+                                if (k+k0 >= 0 && k+k0 <= nn && j+j0 >=0 && j+j0 <= nn) {
                                     calc_local_forces(cell, cells[k+k0][j+j0]);
                                 }
                             }
