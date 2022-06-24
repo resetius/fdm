@@ -35,6 +35,7 @@ public:
     struct Body {
         T x[2];
         T v[2];
+        T a[2];
         T mass;
 
         int k;
@@ -55,6 +56,7 @@ public:
     fdm::tensor<array<T,2>,2,check,flags> E;
 
     LaplRectFFT2<T,check,flags> solver;
+
     std::thread thread;
 
     struct PlotTask {
@@ -97,7 +99,7 @@ public:
         , vel(vel)
         , sgn(sgn)
         , local(local)
-        , rcrit(h/4)
+        , rcrit(h/2)
         , bodies(N)
         , n0(0)
         , n1(flag==tensor_flag::periodic?0:1)
@@ -121,6 +123,82 @@ public:
     }
 
     void step() {
+        calc_a();
+        move();
+    }
+
+    void calc_error() {
+        int n = static_cast<int>(bodies.size());
+
+        calc_a();
+
+        for (int i = 0; i < n; i++) {
+            bodies[i].F[0] = 0;
+            bodies[i].F[1] = 0;
+        }
+
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                if (i == j) continue;
+                auto& bi = bodies[i];
+                auto& bj = bodies[j];
+                double eps = 0.00001;
+                double R = 0;
+                for (int k = 0; k < 2; k++) {
+                    R += sq(bi.x[k]-bj.x[k]);
+                }
+                R = std::sqrt(R)+eps;
+                for (int k = 0; k < 2; k++) {
+                    bi.F[k] +=  sgn* bj.mass * G * (bi.x[k] - bj.x[k]) /R/R/R;
+                }
+            }
+        }
+
+        for (int i = 0; i < n; i++) {
+            auto& bi = bodies[i];
+            double R = 0;
+            for (int k = 0; k < 2; k++) {
+                R += sq(bi.a[k]-bi.F[k]);
+            }
+            R= std::sqrt(R);
+            //printf("< %e %e %e\n", bi.mass, bi.x[0], bi.x[1]);
+            printf("> %e %+e %+e %+e %+e\n", R, bi.a[0], bi.F[0], bi.a[1], bi.F[1]);
+        }
+    }
+
+    void plot(int step) {
+        PlotTask task {format("step_%07d.png", step), f, psi};
+        q.push(std::move(task));
+    }
+
+private:
+    static void plot_thread(double l, double origin[2], Queue* q) {
+        while (true) {
+            PlotTask task = q->pop();
+            if (task.fname.empty()) {
+                break;
+            }
+            matrix_plotter plotter(matrix_plotter::settings()
+                                   .sub(1, 2)
+                                   .devname("pngcairo")
+                                   .fname(task.fname));
+
+            plotter.plot(matrix_plotter::page()
+                         .scalar(task.f)
+                         .levels(10)
+                         .tlabel("F")
+                         .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
+
+            plotter.plot(matrix_plotter::page()
+                         .scalar(task.psi)
+                         .levels(10)
+                         .tlabel("Psi")
+                         .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
+
+        }
+    }
+
+    void calc_a() {
         // 1. mass to edges
 #pragma omp parallel for
         for (int k = n0; k <= nnn; k++) {
@@ -159,7 +237,7 @@ public:
 #pragma omp parallel for
         for (int k = n1; k <= nn; k++) {
             for (int j = n1; j <= nn; j++) {
-                rhs[k][j] = sgn* 4.*G*M_PI*f[k][j];
+                rhs[k][j] = sgn*4*G*M_PI*f[k][j]/h/h;
             }
         }
         solver.solve(&psi[n1][n1], &rhs[n1][n1]);
@@ -239,52 +317,10 @@ public:
                 calc_cell(cells[k][j]);
             }
         }
-
-#pragma omp parallel for
-        for (int k = n0; k <= nn; k++) {
-            for (int j = n0; j <= nn; j++) {
-                cells[k][j].next.swap(cells[k][j].bodies);
-            }
-        }
-
-        int k = 10;
-        printf("%e %e \n", bodies[k].x[0],bodies[k].x[1]);
-    }
-
-    void plot(int step) {
-        PlotTask task {format("step_%07d.png", step), f, psi};
-        q.push(std::move(task));
-    }
-
-private:
-    static void plot_thread(double l, double origin[2], Queue* q) {
-        while (true) {
-            PlotTask task = q->pop();
-            if (task.fname.empty()) {
-                break;
-            }
-            matrix_plotter plotter(matrix_plotter::settings()
-                                   .sub(1, 2)
-                                   .devname("pngcairo")
-                                   .fname(task.fname));
-
-            plotter.plot(matrix_plotter::page()
-                         .scalar(task.f)
-                         .levels(10)
-                         .tlabel("F")
-                         .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
-
-            plotter.plot(matrix_plotter::page()
-                         .scalar(task.psi)
-                         .levels(10)
-                         .tlabel("Psi")
-                         .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
-
-        }
     }
 
     void apply_bi_bj(Body& bi, Body& bj, bool apply_bj) {
-        double eps = 0.001;
+        double eps = 0.00001;
         double R = 0;
         for (int k = 0; k < 2; k++) {
             R += sq(bi.x[k]-bj.x[k]);
@@ -293,12 +329,16 @@ private:
 
         if (R < rcrit) {
             for (int k = 0; k < 2; k++) {
-                bi.F[k] += sgn * bj.mass * G * (bi.x[k] - bj.x[k]) /R/R/R;
+                bi.F[k] +=  bj.mass * G * (bi.x[k] - bj.x[k]) /R/R/R
+                    * (erfc( R/2/rcrit )
+                       + R/rcrit/sqrt(M_PI)*exp(-R*R/4/rcrit/rcrit));
             }
 
             if (apply_bj) {
                 for (int k = 0; k < 2; k++) {
-                    bj.F[k] += sgn * bi.mass * G * (bj.x[k] - bi.x[k]) /R/R/R;
+                    bj.F[k] +=  -bi.mass * G * (bj.x[k] - bi.x[k]) /R/R/R
+                    * (erfc( -(bj.x[k] - bi.x[k])/2/rcrit )
+                       + (bj.x[k] - bi.x[k])/rcrit/sqrt(M_PI)*exp(-R*R/4/rcrit/rcrit));
                 }
             }
         }
@@ -308,11 +348,13 @@ private:
         int nbodies = static_cast<int>(cell.bodies.size());
 
         for (int i = 0; i < nbodies; i++) {
-            for (int j = i+1; j < nbodies; j++) {
+            for (int j = 0; j < nbodies; j++) {
                 auto& bi = bodies[cell.bodies[i]];
                 auto& bj = bodies[cell.bodies[j]];
 
-                apply_bi_bj(bi, bj, true);
+                if (i!=j) {
+                    apply_bi_bj(bi, bj, false);
+                }
             }
         }
     }
@@ -354,8 +396,17 @@ private:
             }
 
             for (int m = 0; m < 2; m++) {
+                body.a[m] = a[m];
+            }
+        }
+    }
+
+    void move() {
+        for (int index = 0; index < static_cast<int>(bodies.size()); index++) {
+            auto& body =  bodies[index];
+            for (int m = 0; m < 2; m++) {
                 body.x[m] += dt * body.v[m];
-                body.v[m] += dt * a[m];
+                body.v[m] += dt * body.a[m];
 
                 if constexpr(flag == tensor_flag::periodic) {
                     if (body.x[m] < origin[m]) {
@@ -367,8 +418,8 @@ private:
                 }
             }
 
-            x = body.x[0]-origin[0];
-            y = body.x[1]-origin[1];
+            T x = body.x[0]-origin[0];
+            T y = body.x[1]-origin[1];
 
             if (x < 0 || x > l) continue;
             if (y < 0 || y > l) continue;
@@ -382,6 +433,16 @@ private:
 
             cells[body.k][body.j].next.push_back(index);
         }
+
+#pragma omp parallel for
+        for (int k = n0; k <= nn; k++) {
+            for (int j = n0; j <= nn; j++) {
+                cells[k][j].next.swap(cells[k][j].bodies);
+            }
+        }
+
+        int k = 10;
+        printf("%e %e \n", bodies[k].x[0],bodies[k].x[1]);
     }
 
     void init_points() {
@@ -434,8 +495,14 @@ void calc(const Config& c) {
     int sgn = c.get("nbody", "sign", -1);
     int interval = c.get("plot","interval",100);
     int local = c.get("nbody", "local", 0); // need to check
+    int error = c.get("nbody", "error", 0);
 
     NBody<T,true,flag> task(x0, y0, l, n, N, dt, G, vel, sgn, local);
+
+    if (error) {
+        task.calc_error();
+        return;
+    }
 
     task.plot(0);
 
