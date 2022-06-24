@@ -50,7 +50,7 @@ public:
 
     vector<Body> bodies;
     int n0,n1,nn,nnn;
-    tensor psi, rhs, f;
+    tensor psi0,psi, rhs, f;
     fdm::tensor<Cell,2,check,flags> cells;
     fdm::tensor<array<T,2>,2,check,flags> E;
 
@@ -81,7 +81,8 @@ public:
         , n1(flag==tensor_flag::periodic?0:1)
         , nn(flag==tensor_flag::periodic?n-1:n)
         , nnn(flag==tensor_flag::periodic?n-1:n+1)
-        , psi({n1,nn,n1,nn})
+        , psi0({n1,nn,n1,nn})
+        , psi({n0,nnn,n0,nnn})
         , rhs({n1,nn,n1,nn})
         , f({n0,nnn,n0,nnn})
         , cells({n0,nn,n0,nn})
@@ -216,11 +217,16 @@ private:
                 rhs[k][j] = sgn*4*G*M_PI*f[k][j]/h/h;
             }
         }
-        solver.solve(&psi[n1][n1], &rhs[n1][n1]);
+
+        if constexpr(flag == tensor_flag::periodic) {
+            solver.solve(&psi[n1][n1], &rhs[n1][n1]);
+        } else {
+            solver.solve(&psi0[n1][n1], &rhs[n1][n1]);
+            psi = psi0;
+        }
 
         for (int k = n1; k <= nn; k++) {
             for (int j = n1; j <= nn; j++){
-                // TODO: non periodic
                 E[k][j][0] = (psi[k][j+1]-psi[k][j-1])/2/h;
                 E[k][j][1] = (psi[k+1][j]-psi[k-1][j])/2/h;
             }
