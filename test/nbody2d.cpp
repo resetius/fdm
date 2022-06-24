@@ -1,8 +1,6 @@
 #include <random>
-#include <mutex>
 #include <list>
 #include <thread>
-#include <condition_variable>
 
 #include "config.h"
 #include "tensor.h"
@@ -10,6 +8,7 @@
 #include "lapl_rect.h"
 #include "matrix_plot.h"
 #include "asp_misc.h"
+#include "concurrent_queue.h"
 
 using namespace fdm;
 using namespace std;
@@ -64,29 +63,7 @@ public:
         tensor f,psi;
     };
 
-    struct Queue {
-        list<PlotTask> queue;
-        mutex m;
-        condition_variable cv;
-
-        void push(PlotTask&& task) {
-            unique_lock lock(m);
-            queue.emplace_back(std::move(task));
-            cv.notify_one();
-        }
-
-        PlotTask pop() {
-            unique_lock lock(m);
-            while (queue.empty()) {
-                cv.wait(lock);
-            }
-            PlotTask ret = std::move(queue.front());
-            queue.pop_front();
-            return ret;
-        }
-    };
-
-    Queue q;
+    concurrent_queue<PlotTask> q;
 
     NBody(double x0, double y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local)
         : origin{x0, y0}
@@ -172,7 +149,7 @@ public:
     }
 
 private:
-    static void plot_thread(double l, double origin[2], Queue* q) {
+    static void plot_thread(double l, double origin[2], concurrent_queue<PlotTask>* q) {
         while (true) {
             PlotTask task = q->pop();
             if (task.fname.empty()) {
