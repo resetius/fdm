@@ -64,6 +64,7 @@ public:
     struct PlotTask {
         string fname;
         tensor f,psi;
+        vector<Body> bodies;
     };
 
     concurrent_queue<PlotTask> q;
@@ -154,7 +155,7 @@ public:
     }
 
     void plot(int step) {
-        PlotTask task {format("step_%07d.png", step), f, psi};
+        PlotTask task {format("step_%07d.png", step), f, psi, bodies};
         q.push(std::move(task));
     }
 
@@ -170,12 +171,20 @@ private:
                                    .devname("pngcairo")
                                    .fname(task.fname));
 
+            plenv(origin[1], origin[1]+l, origin[0], origin[0]+l, 1, 0);
+            pllab("Y", "X", "");
+
+            double r = 2*l / 2000.0;
+            for (auto& body: task.bodies) {
+                plarc(body.x[1], body.x[0], r, r, 0, 360, 0, 1);
+            }
+            /*
             plotter.plot(matrix_plotter::page()
                          .scalar(task.f)
                          .levels(10)
                          .tlabel("F")
                          .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
-
+            */
             plotter.plot(matrix_plotter::page()
                          .scalar(task.psi)
                          .levels(10)
@@ -363,7 +372,7 @@ private:
         for (auto& index : cell.bodies) {
             auto& body = bodies[index];
             if constexpr(flag == tensor_flag::none) {
-                if (body.k == 0 || body.j == 0 || body.k == n+1 || body.j == n+1) {
+                if (body.k == 0 || body.j == 0 || body.k == n || body.j == n) {
                     continue;
                 }
             }
