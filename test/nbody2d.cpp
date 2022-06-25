@@ -141,11 +141,13 @@ public:
 
         for (int i = 0; i < n; i++) {
             auto& bi = bodies[i];
-            double R = 0;
+            double R = 0, RR = 0;
             for (int k = 0; k < 2; k++) {
                 R += sq(bi.a[k]-bi.F[k]);
+                RR += sq(bi.F[k]);
             }
-            R= std::sqrt(R);
+            R= std::sqrt(R); RR=std::sqrt(RR);
+            R /= RR;
             //printf("< %e %e %e\n", bi.mass, bi.x[0], bi.x[1]);
             printf("> %e %+e %+e %+e %+e\n", R, bi.a[0], bi.F[0], bi.a[1], bi.F[1]);
         }
