@@ -6,6 +6,7 @@
 #include "tensor.h"
 #include "blas.h"
 #include "lapl_rect.h"
+#include "lapl_cube.h"
 #include "matrix_plot.h"
 #include "asp_misc.h"
 #include "concurrent_queue.h"
@@ -18,7 +19,9 @@ template<typename T,bool check,tensor_flag flag>
 class NBody {
 public:
     using flags = typename short_flags<flag,flag>::value;
+    using flags3 = typename short_flags<flag,flag,flag>::value;
     using tensor =  fdm::tensor<T,2,check,flags>;
+    using tensor3 =  fdm::tensor<T,3,check,flags3>;
 
     double origin[2];
     double l;
@@ -50,11 +53,13 @@ public:
 
     vector<Body> bodies;
     int n0,n1,nn,nnn;
-    tensor psi0,psi, rhs, f;
+    tensor3 psi0,rhs;
+    tensor psi,f;
     fdm::tensor<Cell,2,check,flags> cells;
     fdm::tensor<array<T,2>,2,check,flags> E;
 
     LaplRectFFT2<T,check,flags> solver;
+    LaplCube<T,check,flags3> solver3;
 
     struct PlotTask {
         string fname;
@@ -81,13 +86,16 @@ public:
         , n1(flag==tensor_flag::periodic?0:1)
         , nn(flag==tensor_flag::periodic?n-1:n)
         , nnn(flag==tensor_flag::periodic?n-1:n+1)
-        , psi0({n1,nn,n1,nn})
+
+        , psi0({n1,nn,n1,nn,n1,nn})
+        , rhs({n1,nn,n1,nn,n1,nn})
+
         , psi({n0,nnn,n0,nnn})
-        , rhs({n1,nn,n1,nn})
         , f({n0,nnn,n0,nnn})
         , cells({n0,nn,n0,nn})
         , E({n1,nn,n1,nn})
         , solver(h,h,l,l,n,n)
+        , solver3(h,h,h,l,l,l,n,n,n)
         , thread(plot_thread, l, origin, &q)
     {
         init_points();
@@ -214,21 +222,21 @@ private:
 #pragma omp parallel for
         for (int k = n1; k <= nn; k++) {
             for (int j = n1; j <= nn; j++) {
-                rhs[k][j] = sgn*4*G*M_PI*f[k][j]/h/h;
+                rhs[n/2][k][j] = 4*M_PI*f[k][j]/h/h/h;
             }
         }
 
-        if constexpr(flag == tensor_flag::periodic) {
-            solver.solve(&psi[n1][n1], &rhs[n1][n1]);
-        } else {
-            solver.solve(&psi0[n1][n1], &rhs[n1][n1]);
-            psi = psi0;
+        solver3.solve(&psi0[n1][n1][n1], &rhs[n1][n1][n1]);
+        for (int k = n1; k <= nn; k++) {
+            for (int j = n1; j <= nn; j++) {
+                psi[k][j] = psi0[n/2][k][j];
+            }
         }
 
         for (int k = n1; k <= nn; k++) {
             for (int j = n1; j <= nn; j++){
-                E[k][j][0] = (psi[k][j+1]-psi[k][j-1])/2/h;
-                E[k][j][1] = (psi[k+1][j]-psi[k-1][j])/2/h;
+                E[k][j][0] = -(psi[k][j+1]-psi[k][j-1])/2/h;
+                E[k][j][1] = -(psi[k+1][j]-psi[k-1][j])/2/h;
             }
         }
 
@@ -302,7 +310,7 @@ private:
     }
 
     void apply_bi_bj(Body& bi, Body& bj, bool apply_bj) {
-        double eps = 0.00001;
+        double eps = 0.0001;
         double R = 0;
         for (int k = 0; k < 2; k++) {
             R += sq(bi.x[k]-bj.x[k]);
@@ -311,7 +319,7 @@ private:
 
         if (R < rcrit) {
             for (int k = 0; k < 2; k++) {
-                bi.F[k] +=  bj.mass * G * (bi.x[k] - bj.x[k]) /R/R/R
+                bi.F[k] +=  -bj.mass * G * (bi.x[k] - bj.x[k]) /R/R/R
                     * (erfc( R/2/rcrit )
                        + R/rcrit/sqrt(M_PI)*exp(-R*R/4/rcrit/rcrit));
             }
