@@ -1,6 +1,8 @@
 #include <cmath>
 #include "lapl_cube.h"
 
+using namespace asp;
+
 namespace fdm {
 
 template<typename T, bool check, typename F>
@@ -141,26 +143,26 @@ void LaplCube<T,check,F>::init_lm() {
     lm_y.resize(ny+1);
     for (int k = y1; k <= yn; k++) {
         if constexpr(has_tensor_flag(yflag,tensor_flag::periodic)) {
-            lm_y[k] = 4./dy2*asp::sq(sin(k*M_PI/(ny)));
+            lm_y[k] = 4./dy2*sq(sin(k*M_PI/(ny)));
         } else {
-            lm_y[k] = 4./dy2*asp::sq(sin(k*M_PI*0.5/(ny+1)));
+            lm_y[k] = 4./dy2*sq(sin(k*M_PI*0.5/(ny+1)));
         }
     }
     lm_x_.resize(nx+1);
     for (int j = x1; j <= xn; j++) {
         if constexpr(has_tensor_flag(xflag,tensor_flag::periodic)) {
-            lm_x_[j] = 4./dx2*asp::sq(sin(j*M_PI/(nx)));
+            lm_x_[j] = 4./dx2*sq(sin(j*M_PI/(nx)));
         } else {
-            lm_x_[j] = 4./dx2*asp::sq(sin(j*M_PI*0.5/(nx+1)));
+            lm_x_[j] = 4./dx2*sq(sin(j*M_PI*0.5/(nx+1)));
         }
     }
     lm_x = xpoints == ypoints ? &lm_y[0] : &lm_x_[0];
     lm_z_.resize(nz+1);
     for (int i = z1; i <= zn; i++) {
         if constexpr(has_tensor_flag(zflag,tensor_flag::periodic)) {
-            lm_z_[i] = 4./dz2*asp::sq(sin(i*M_PI/(nz)));
+            lm_z_[i] = 4./dz2*sq(sin(i*M_PI/(nz)));
         } else {
-            lm_z_[i] = 4./dz2*asp::sq(sin(i*M_PI*0.5/(nz+1)));
+            lm_z_[i] = 4./dz2*sq(sin(i*M_PI*0.5/(nz+1)));
         }
     }
     lm_z = zpoints == ypoints ? &lm_y[0] : &lm_z_[0];
