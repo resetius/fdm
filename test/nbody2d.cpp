@@ -10,12 +10,13 @@
 #include "matrix_plot.h"
 #include "asp_misc.h"
 #include "concurrent_queue.h"
+#include "interpolate.h"
 
 using namespace fdm;
 using namespace std;
 using namespace asp;
 
-template<typename T,bool check,tensor_flag flag>
+template<typename T,bool check,tensor_flag flag,typename I=CIC2<T>>
 class NBody {
 public:
     using flags = typename short_flags<flag,flag>::value;
@@ -23,7 +24,7 @@ public:
     using tensor =  fdm::tensor<T,2,check,flags>;
     using tensor3 =  fdm::tensor<T,3,check,flags3>;
 
-    double origin[2];
+    T origin[2];
     double l;
     int n, N;
     double h;
@@ -70,7 +71,7 @@ public:
     concurrent_queue<PlotTask> q;
     std::thread thread;
 
-    NBody(double x0, double y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local)
+    NBody(T x0, T y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local)
         : origin{x0, y0}
         , l(l)
         , n(n) // n+1 - число ячеек (для сдвинутых сеток n - число ячеек)
@@ -160,7 +161,7 @@ public:
     }
 
 private:
-    static void plot_thread(double l, double origin[2], concurrent_queue<PlotTask>* q) {
+    static void plot_thread(double l, T origin[2], concurrent_queue<PlotTask>* q) {
         while (true) {
             PlotTask task = q->pop();
             if (task.fname.empty()) {
@@ -203,30 +204,34 @@ private:
             }
         }
 
-#pragma omp parallel for
+        I interpolator;
+
+//#pragma omp parallel for // TODO: adjacent points edit
         for (auto& body : bodies) {
-            int k,j;
-
             double m = body.mass;
-            double x = body.x[0]-origin[0];
-            double y = body.x[1]-origin[1];
 
-            if (x < 0 || x > l) continue;
-            if (y < 0 || y > l) continue;
+            int k0, j0;
+            typename I::matrix M;
 
-            j = floor(x / h);
-            k = floor(y / h);
+            interpolator.distribute(
+                M,
+                body.x[0]-origin[0],
+                body.x[1]-origin[1],
+                &j0, &k0, h);
 
-            x = (x-j*h)/h;
-            y = (y-k*h)/h;
-
-            verify(0 <= x && x <= 1);
-            verify(0 <= y && y <= 1);
-
-            f[k][j]       += m * (1-y)*(1-x);
-            f[k][j+1]     += m * (1-y)*(x);
-            f[k+1][j]     += m * (y)*(1-x);
-            f[k+1][j+1]   += m * (y)*(x);
+            for (int k = 0; k < I::n; k++) {
+                for (int j = 0; j < I::n; j++) {
+                    if constexpr(flag == tensor_flag::periodic) {
+                        f[k+k0][j+j0] += m * M[k][j];
+                    } else {
+                        if (k0+k >= n0 && k0+k <= nnn
+                            && j0+j >= n0 && j0+j <= nnn)
+                        {
+                            f[k+k0][j+j0] += m * M[k][j];
+                        }
+                    }
+                }
+            }
         }
 
         // -4pi G ro
@@ -369,27 +374,35 @@ private:
     }
 
     void calc_cell(Cell& cell) {
+        I interpolator;
+
         for (auto& index : cell.bodies) {
             auto& body = bodies[index];
-            if constexpr(flag == tensor_flag::none) {
-                if (body.k == 0 || body.j == 0 || body.k == n || body.j == n) {
-                    continue;
-                }
-            }
 
-            int k = body.k; int j = body.j;
             double a[2] = {0};
+            int k0, j0;
+            typename I::matrix M;
+            interpolator.distribute(
+                M,
+                body.x[0]-origin[0],
+                body.x[1]-origin[1],
+                &j0, &k0, h);
 
-            T x = (body.x[0]-origin[0]-body.j*h)/h;
-            T y = (body.x[1]-origin[1]-body.k*h)/h;
-            verify(0 <= x && x <= 1);
-            verify(0 <= y && y <= 1);
 
             for (int m = 0; m < 2; m++) {
-                a[m] += E[k][j][m]     *(1-y)*(1-x);
-                a[m] += E[k][j+1][m]   *(1-y)*(x);
-                a[m] += E[k+1][j][m]   *(y)*(1-x);
-                a[m] += E[k+1][j+1][m] *(y)*(x);
+                for (int k = 0; k < I::n; k++) {
+                    for (int j = 0; j < I::n; j++) {
+                        if constexpr(flag == tensor_flag::periodic) {
+                            a[m] += E[k0+k][j0+j][m] * M[k][j];
+                        } else {
+                            if (k0+k >= n0 && k0+k <= nnn
+                                && j0+j >= n0 && j0+j <= nnn)
+                            {
+                                a[m] += E[k0+k][j0+j][m] * M[k][j];
+                            }
+                        }
+                    }
+                }
             }
 
             for (int m = 0; m < 2; m++) {
