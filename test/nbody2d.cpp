@@ -16,7 +16,7 @@ using namespace fdm;
 using namespace std;
 using namespace asp;
 
-template<typename T,bool check,tensor_flag flag,typename I=CIC2<T>>
+template<typename T,bool check,tensor_flag flag,typename I=TSC2<T>>
 class NBody {
 public:
     using flags = typename short_flags<flag,flag>::value;
@@ -495,7 +495,7 @@ private:
     }
 };
 
-template <typename T,tensor_flag flag>
+template <typename T,tensor_flag flag, typename I>
 void calc(const Config& c) {
     int n = c.get("nbody", "n", 512);
     int N = c.get("nbody", "N", 100000);
@@ -511,7 +511,7 @@ void calc(const Config& c) {
     int local = c.get("nbody", "local", 0); // need to check
     int error = c.get("nbody", "error", 0);
 
-    NBody<T,true,flag> task(x0, y0, l, n, N, dt, G, vel, sgn, local);
+    NBody<T,true,flag,I> task(x0, y0, l, n, N, dt, G, vel, sgn, local);
 
     if (error) {
         task.calc_error();
@@ -530,6 +530,16 @@ void calc(const Config& c) {
     }
 }
 
+template<typename T,tensor_flag flag>
+void calc1(const Config& c) {
+    string interpolate = c.get("nbody", "interpolate", "tsc");
+    if (interpolate == "tsc") {
+        calc<T,flag,TSC2<T>>(c);
+    } else {
+        calc<T,flag,CIC2<T>>(c);
+    }
+}
+
 int main(int argc, char** argv) {
     string config_fn = "ns_rect.ini";
 
@@ -543,15 +553,15 @@ int main(int argc, char** argv) {
 
     if (datatype == "float") {
         if (periodic) {
-            calc<float,tensor_flag::periodic>(c);
+            calc1<float,tensor_flag::periodic>(c);
         } else {
-            calc<float,tensor_flag::none>(c);
+            calc1<float,tensor_flag::none>(c);
         }
     } else {
         if (periodic) {
-            calc<double,tensor_flag::periodic>(c);
+            calc1<double,tensor_flag::periodic>(c);
         } else {
-            calc<double,tensor_flag::none>(c);
+            calc1<double,tensor_flag::none>(c);
         }
     }
 
