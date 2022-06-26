@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "asp_misc.h"
 #include "tensor.h"
 #include "verify.h"
 
@@ -59,6 +60,46 @@ struct CIC2 {
         M[0][1] = (1-y)*(x);
         M[1][0] = (y)*(1-x);
         M[1][1] = (y)*(x);
+    }
+};
+
+template<typename T>
+struct TSC2 {
+    using matrix = T[3][3];
+    static constexpr int order = 2;
+    static constexpr int n = 3;
+
+    // TSC 2d simple code
+    void distribute(matrix M, T x, T y, int* x0, int* y0, T h) {
+        using asp::sq;
+
+        // nearest point
+        int j = round(x / h);
+        int k = round(y / h);
+        x /= h;
+        y /= h;
+
+        *x0 = j-1;
+        *y0 = k-1;
+
+        // center
+        double c[2] = {0.75 - sq(j - x), 0.75 - sq(k - y)};
+        // right
+        double r[2] = {0.5*sq(1.5 - (j+1) + x), 0.5*sq(1.5 - (k+1) + y)};
+        // left
+        double l[2] = {0.5*sq(1.5 - x + (j-1)), 0.5*sq(1.5 - y + (k-1))};
+
+        M[0][0] = l[1]*l[0];
+        M[0][1] = l[1]*c[0];
+        M[0][2] = l[1]*r[0];
+
+        M[1][0] = c[1]*l[0];
+        M[1][1] = c[1]*c[0];
+        M[1][2] = c[1]*r[0];
+
+        M[2][0] = r[1]*l[0];
+        M[2][1] = r[1]*c[0];
+        M[2][2] = r[1]*r[0];
     }
 };
 
