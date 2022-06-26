@@ -78,4 +78,12 @@ target_link_libraries(ut_mgsch fdm ${CMOCKA_LIBRARIES})
 add_test(NAME mgsch COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_mgsch)
 set_tests_properties(mgsch PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=mgsch.xml")
 
+add_executable(ut_interpolate ut_interpolate.cpp)
+target_include_directories(ut_interpolate PRIVATE ${CMOCKA_INCLUDE_DIRS})
+target_link_directories(ut_interpolate PRIVATE ${CMOCKA_LIBRARY_DIRS})
+target_link_libraries(ut_interpolate fdm ${CMOCKA_LIBRARIES})
+
+add_test(NAME interpolate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_interpolate)
+set_tests_properties(interpolate PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=interpolate.xml")
+
 endif()

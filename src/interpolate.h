@@ -9,9 +9,10 @@ namespace fdm {
 
 template<typename T, int dim>
 struct CIC {
-    // cloud in cell
+    // cloud in cell generic n-dimentional code
     using tensor = fdm::tensor<T, dim, false>;
     static constexpr int order = 1;
+    static constexpr int n = 2;
 
     template<int index, typename A>
     void distribute_(A acc, int* x0, const T* x, T h, T mult) {
@@ -32,6 +33,32 @@ struct CIC {
         tensor M({0,1,0,1});
         distribute_<dim-1>(M.acc, x0, x, h, 1.0);
         return M;
+    }
+};
+
+template<typename T>
+struct CIC2 {
+    using matrix = T[2][2];
+    static constexpr int order = 1;
+    static constexpr int n = 2;
+
+    // cloud in cell 2d simple code
+    void distribute(matrix M, T x, T y, int* x0, int* y0, T h) {
+        int j = floor(x / h);
+        int k = floor(y / h);
+        *x0 = j;
+        *y0 = k;
+
+        x = (x-j*h)/h;
+        y = (y-k*h)/h;
+
+        verify(0 <= x && x <= 1);
+        verify(0 <= y && y <= 1);
+
+        M[0][0] = (1-y)*(1-x);
+        M[0][1] = (1-y)*(x);
+        M[1][0] = (y)*(1-x);
+        M[1][1] = (y)*(x);
     }
 };
 
