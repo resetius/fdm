@@ -249,10 +249,26 @@ private:
             }
         }
 
+        T beta=4./3.;
         for (int k = n1; k <= nn; k++) {
             for (int j = n1; j <= nn; j++){
-                E[k][j][0] = -(psi[k][j+1]-psi[k][j-1])/2/h;
-                E[k][j][1] = -(psi[k+1][j]-psi[k-1][j])/2/h;
+                // 5.137, pp184, Hockney
+                if constexpr(flag == tensor_flag::periodic) {
+                    E[k][j][0] = -beta*(psi[k][j+1]-psi[k][j-1])/2/h
+                        - (1-beta)*(psi[k][j+2]-psi[k][j-2])/4/h;
+                    E[k][j][1] = -beta*(psi[k+1][j]-psi[k-1][j])/2/h
+                        - (1-beta)*(psi[k+2][j]-psi[k-2][j])/4/h;
+                } else {
+                    if (j-2 >= n1 && j+2 <= nn && k-2 >= n1 && k+2 <= nn) {
+                        E[k][j][0] = -beta*(psi[k][j+1]-psi[k][j-1])/2/h
+                            - (1-beta)*(psi[k][j+2]-psi[k][j-2])/4/h;
+                        E[k][j][1] = -beta*(psi[k+1][j]-psi[k-1][j])/2/h
+                            - (1-beta)*(psi[k+2][j]-psi[k-2][j])/4/h;
+                    } else {
+                        E[k][j][0] = -(psi[k][j+1]-psi[k][j-1])/2/h;
+                        E[k][j][1] = -(psi[k+1][j]-psi[k-1][j])/2/h;
+                    }
+                }
             }
         }
 
