@@ -535,7 +535,9 @@ void calc1(const Config& c) {
     string interpolate = c.get("nbody", "interpolate", "tsc");
     if (interpolate == "tsc") {
         calc<T,flag,TSC2<T>>(c);
-    } else {
+    } else if (interpolate == "pcs") {
+        calc<T,flag,PCS2<T>>(c);
+    }  else {
         calc<T,flag,CIC2<T>>(c);
     }
 }

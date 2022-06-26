@@ -295,6 +295,9 @@ std::string FDM_API format(const char* format, ...);
 inline double sq(double x) {
     return x*x;
 }
+inline double tr(double x) {
+    return x*x*x;
+}
 
 } /*namespace asp*/
 #endif
