@@ -36,7 +36,7 @@ void test_poor_man_poisson(void** ) {
     using tensor4 = fdm::tensor<T,4,true,flags3>;
 
     T l = 2*M_PI;
-    int n = 64;
+    int n = 128;
     tensor rhs({0,n-1,0,n-1,0,n-1});
     tensor psi({0,n-1,0,n-1,0,n-1});
     tensor4 E({0,n-1,0,n-1,0,n-1,0,3});
@@ -47,7 +47,7 @@ void test_poor_man_poisson(void** ) {
     T h = l/n;
 
     std::default_random_engine generator;
-    std::uniform_real_distribution<T> distribution(0, l/2);
+    std::uniform_real_distribution<T> distribution(0, l/8);
 
     for (int index = 0; index < N; index++) {
         auto& body = bodies[index];
@@ -78,7 +78,7 @@ void test_poor_man_poisson(void** ) {
         for (int i = 0; i < CIC3<T>::n; i++) {
             for (int k = 0; k < CIC3<T>::n; k++) {
                 for (int j = 0; j < CIC3<T>::n; j++) {
-                    rhs[i+i0][k+k0][j+j0] += body.mass*M[i][k][j]/h/h/h;
+                    rhs[i+i0][k+k0][j+j0] += -4*M_PI*body.mass*M[i][k][j]/h/h/h;
                 }
             }
         }
@@ -134,16 +134,29 @@ void test_poor_man_poisson(void** ) {
     /// -4piG ro /k/k exp (-k^2 r^2)
     ///
 
+    vector<T> lm(n);
+    for (int k = 0; k < n; k++) {
+        lm[k] = 4./h/h*sq(sin(k*M_PI/(n)));
+    }
+
     for (int i = 0; i < n; i++) {
         for (int k = 0; k < n; k++) {
             for (int j = 0; j < n; j++) {
-                T kk[3] = {(T)i,(T)k,(T)j}; // TODO
-                rhs[i][k][j] *= -4*M_PI / (sq(kk[0])+sq(kk[1])+sq(kk[2]));
+                /*T kk[3];
+                kk[0] = j<n/2?(T)j/n:- (T)(n-(j-n/2.))/n;
+                kk[1] = k<n/2?(T)k/n:- (T)(n-(k-n/2.))/n;
+                kk[2] = i<n/2?(T)i/n:- (T)(n-(i-n/2.))/n;
+                for (int q = 0; q < 3; q++) {
+                    kk[q] *= 4/h/h;
+                }
+                rhs[i][k][j] *= 4*M_PI / (sq(kk[0])+sq(kk[1])+sq(kk[2]));
+                */
+                rhs[i][k][j] /= -(lm[i]+lm[k]+lm[j]);
             }
         }
     }
 
-    rhs[0][0][0] = 0;
+    rhs[0][0][0] = 1;
 
     for (int i = 0; i < n; i++) {
         for (int k = 0; k < n; k++) {
