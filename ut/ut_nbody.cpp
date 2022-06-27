@@ -45,6 +45,7 @@ void test_poor_man_poisson(void** ) {
     int N = 20;
     vector<Body> bodies(N);
     T h = l/n;
+    T rcrit = h/2;
 
     std::default_random_engine generator;
     std::uniform_real_distribution<T> distribution(0, l/8);
@@ -149,9 +150,12 @@ void test_poor_man_poisson(void** ) {
                 for (int q = 0; q < 3; q++) {
                     kk[q] *= 4/h/h;
                 }
-                rhs[i][k][j] *= 4*M_PI / (sq(kk[0])+sq(kk[1])+sq(kk[2]));
                 */
-                rhs[i][k][j] /= -(lm[i]+lm[k]+lm[j]);
+                //T kk[3] = {sqrt(lm[i]), sqrt(lm[k]), sqrt(lm[j])};
+                //rhs[i][k][j] *= -(sq(kk[0])+sq(kk[1])+sq(kk[2]));
+                //rhs[i][k][j] /= -(lm[i]+lm[k]+lm[j]);
+                T k2 = lm[i]+lm[k]+lm[j];
+                rhs[i][k][j] /= -k2 * exp (-k2*rcrit*rcrit);
             }
         }
     }
