@@ -26,5 +26,6 @@ ut(lapl_cube ut_lapl_cube.cpp)
 ut(eig_storage ut_eigenvectors_storage.cpp)
 ut(mgsch ut_mgsch.cpp)
 ut(interpolate ut_interpolate.cpp)
+ut(nbody ut_nbody.cpp)
 
 endif()
