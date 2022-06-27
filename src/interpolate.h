@@ -64,6 +64,41 @@ struct CIC2 {
 };
 
 template<typename T>
+struct CIC3 {
+    using matrix = T[2][2][2];
+    static constexpr int order = 1;
+    static constexpr int n = 2;
+
+    // cloud in cell
+    void distribute(matrix M, T x, T y, T z, int* x0, int* y0, int* z0, T h) {
+        int j = floor(x / h);
+        int k = floor(y / h);
+        int i = floor(z / h);
+        *x0 = j;
+        *y0 = k;
+        *z0 = i;
+
+        x = (x-j*h)/h;
+        y = (y-k*h)/h;
+        z = (z-i*h)/h;
+
+        verify(0 <= x && x <= 1);
+        verify(0 <= y && y <= 1);
+        verify(0 <= z && z <= 1);
+
+        M[0][0][0] = (1-z)*(1-y)*(1-x);
+        M[0][0][1] = (1-z)*(1-y)*(x);
+        M[0][1][0] = (1-z)*(y)*(1-x);
+        M[0][1][1] = (1-z)*(y)*(x);
+
+        M[1][0][0] = (z)*(1-y)*(1-x);
+        M[1][0][1] = (z)*(1-y)*(x);
+        M[1][1][0] = (z)*(y)*(1-x);
+        M[1][1][1] = (z)*(y)*(x);
+    }
+};
+
+template<typename T>
 struct TSC2 {
     using matrix = T[3][3];
     static constexpr int order = 2;
