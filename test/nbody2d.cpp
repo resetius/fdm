@@ -33,6 +33,8 @@ public:
     double vel;
     int sgn;
     int local;
+    int pponly;
+    int solar;
     double rcrit;
 
     struct Body {
@@ -71,7 +73,7 @@ public:
     concurrent_queue<PlotTask> q;
     std::thread thread;
 
-    NBody(T x0, T y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local)
+    NBody(T x0, T y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int pponly, int solar)
         : origin{x0, y0}
         , l(l)
         , n(n) // n+1 - число ячеек (для сдвинутых сеток n - число ячеек)
@@ -82,7 +84,9 @@ public:
         , vel(vel)
         , sgn(sgn)
         , local(local)
-        , rcrit(h/2)
+        , pponly(pponly)
+        , solar(solar)
+        , rcrit(2*h)
         , bodies(N)
         , n0(0)
         , n1(flag==tensor_flag::periodic?0:1)
@@ -110,14 +114,22 @@ public:
     }
 
     void step() {
-        calc_a();
+        if (pponly) {
+            calc_a_pp();
+        } else {
+            calc_a_pm();
+        }
         move();
     }
 
     void calc_error() {
         int n = static_cast<int>(bodies.size());
 
-        calc_a();
+        if (pponly) {
+            calc_a_pp();
+        } else {
+            calc_a_pm();
+        }
 
         for (int i = 0; i < n; i++) {
             bodies[i].F[0] = 0;
@@ -167,6 +179,7 @@ private:
             if (task.fname.empty()) {
                 break;
             }
+
             matrix_plotter plotter(matrix_plotter::settings()
                                    .sub(1, 2)
                                    .devname("pngcairo")
@@ -192,10 +205,35 @@ private:
                          .tlabel("Psi")
                          .bounds(origin[0], origin[1], origin[0]+l, origin[1]+l));
 
+//            plflush();
+//            plreplot();
+//            printf("1\n");
         }
     }
 
-    void calc_a() {
+    void calc_a_pp() {
+        for (int i = 0; i < N; i++) {
+            auto& bi = bodies[i];
+            bi.a[0] = bi.a[1] = 0;
+
+            for (int j = 0; j < N; j++) {
+                if (i == j) continue;
+                auto& bj = bodies[j];
+                double eps = 0.00001;
+                double R = 0;
+                for (int k = 0; k < 2; k++) {
+                    R += sq(bi.x[k]-bj.x[k]);
+                }
+                R = std::sqrt(R);
+                if (R < eps) continue;
+                for (int k = 0; k < 2; k++) {
+                    bi.a[k] +=  -bj.mass * G * (bi.x[k] - bj.x[k]) /R/R/R;
+                }
+            }
+        }
+    }
+
+    void calc_a_pm() {
         // 1. mass to edges
 #pragma omp parallel for
         for (int k = n0; k <= nnn; k++) {
@@ -238,7 +276,7 @@ private:
 #pragma omp parallel for
         for (int k = n1; k <= nn; k++) {
             for (int j = n1; j <= nn; j++) {
-                rhs[n/2][k][j] = 4*M_PI*f[k][j]/h/h/h;
+                rhs[n/2][k][j] = 4*G*M_PI*f[k][j]/h/h/h;
             }
         }
 
@@ -295,6 +333,7 @@ private:
                     // local forces
                     calc_local_forces(cell);
 
+
                     for (int k0 = -1; k0 <= 1; k0++) {
                         for (int j0 = -1; j0 <= 1; j0++) {
                             if (k0 == 0 && j0 == 0) continue;
@@ -308,6 +347,7 @@ private:
                             }
                         }
                     }
+
                 }
             }
         }
@@ -347,9 +387,9 @@ private:
         for (int k = 0; k < 2; k++) {
             R += sq(bi.x[k]-bj.x[k]);
         }
-        R = std::sqrt(R)+eps;
+        R = std::sqrt(R); // +eps;
 
-        if (R < rcrit) {
+        if (R > eps && R < rcrit) {
             for (int k = 0; k < 2; k++) {
                 bi.F[k] +=  -bj.mass * G * (bi.x[k] - bj.x[k]) /R/R/R
                     * (erfc( R/2/rcrit )
@@ -471,43 +511,78 @@ private:
             }
         }
 
-        int k = 10;
-        printf("%e %e \n", bodies[k].x[0],bodies[k].x[1]);
+        int k = 2;
+        printf("%e %e %e %e \n", bodies[k].a[0],bodies[k].a[1], bodies[k].x[0],bodies[k].x[1]);
     }
 
     void init_points() {
         std::default_random_engine generator;
         std::uniform_real_distribution<T> distribution(0, l/2);
 
+
         T minx = 10000;
         T maxx = -10000;
         T miny = 10000;
         T maxy = -10000;
 
-        for (int index = 0; index < static_cast<int>(bodies.size()); index++) {
-            auto& body = bodies[index];
-            for (int i = 0; i < 2; i++) {
-                body.x[i] = distribution(generator) + origin[i] + l/4;
+        if (solar) {
+            struct Abc {
+                T x[3];
+                T v[3];
+                T mass;
+                int fixed;
+                const char* name;
+            } abc[] = {
+                {{0, 0, 0}, {0, 0, 0}, 333333, 1, "Sun"},
+                {{0, 0.39, 0}, {1.58, 0, 0}, 0.038, 0, "Mercury"},
+                {{0, 0.72, 0}, {1.17, 0, 0}, 0.82, 0, "Venus"},
+                {{0, 1, 0}, {1, 0, 0}, 1, 0, "Earth"},
+                {{0, 1.00256, 0}, {1.03, 0, 0}, 0.012, 0, "Moon"},
+                {{0, 1.51, 0}, {0.8, 0, 0}, 0.1, 0, "Mars"},
+                {{0, 5.2, 0}, {0.43, 0, 0}, 317, 0, "Jupiter"},
+                {{0, 9.3, 0}, {0.32, 0, 0}, 95, 0, "Saturn"},
+                {{0, 19.3, 0}, {0.23, 0, 0}, 14.5, 0, "Uranus"},
+                {{0, 30, 0}, {0.18, 0, 0}, 16.7, 0, "Neptune"}
+            };
+
+            bodies.resize(10);
+            N = bodies.size();
+            for (int index = 0; index < static_cast<int>(bodies.size()); index++) {
+                auto& body = bodies[index];
+                body.x[0] = abc[index].x[0];
+                body.x[1] = abc[index].x[1];
+                body.v[0] = abc[index].v[0];
+                body.v[1] = abc[index].v[1];
+                body.mass = abc[index].mass;
             }
-            body.mass = 0.2 + 1.5 * distribution(generator) / l;
+        } else {
 
-            body.j = floor((body.x[0]-origin[0]) / h);
-            body.k = floor((body.x[1]-origin[1]) / h);
-            cells[body.k][body.j].bodies.push_back(index);
+            for (int index = 0; index < static_cast<int>(bodies.size()); index++) {
+                auto& body = bodies[index];
+                for (int i = 0; i < 2; i++) {
+                    body.x[i] = distribution(generator) + origin[i] + l/4;
+                }
+                body.mass = 0.2 + 1.5 * distribution(generator) / l;
 
-            minx = min(minx, body.x[0]);
-            maxx = max(maxx, body.x[0]);
-            miny = min(miny, body.x[1]);
-            maxy = max(maxy, body.x[1]);
+                body.j = floor((body.x[0]-origin[0]) / h);
+                body.k = floor((body.x[1]-origin[1]) / h);
+                cells[body.k][body.j].bodies.push_back(index);
 
-            double R = std::sqrt(blas::dot(3, body.x, 1, body.x, 1));
-            double V = vel/sqrt(R);
+                minx = min(minx, body.x[0]);
+                maxx = max(maxx, body.x[0]);
+                miny = min(miny, body.x[1]);
+                maxy = max(maxy, body.x[1]);
 
-            body.v[0] = V*body.x[1];
-            body.v[1] = -V*body.x[0];
+                double R = std::sqrt(blas::dot(3, body.x, 1, body.x, 1));
+                double V = vel/sqrt(R);
+
+                body.v[0] = V*body.x[1];
+                body.v[1] = -V*body.x[0];
+            }
+
+            printf("min/max %.1f %.1f %.1f %.1f\n", minx, maxx, miny, maxy);
         }
 
-        printf("min/max %.1f %.1f %.1f %.1f\n", minx, maxx, miny, maxy);
     }
 };
 
@@ -516,18 +591,20 @@ void calc(const Config& c) {
     int n = c.get("nbody", "n", 512);
     int N = c.get("nbody", "N", 100000);
     int steps = c.get("nbody", "steps", 50000);
-    double x0 = c.get("nbody", "x0", -10);
-    double y0 = c.get("nbody", "y0", -10);
-    double l = c.get("nbody", "l", 20);
+    double x0 = c.get("nbody", "x0", -10.0);
+    double y0 = c.get("nbody", "y0", -10.0);
+    double l = c.get("nbody", "l", 20.0);
     double dt = c.get("nbody", "dt", 0.001);
-    double G = c.get("nbody", "G", 1);
-    double vel = c.get("nbody", "vel", 4);
+    double G = c.get("nbody", "G", 1.0);
+    double vel = c.get("nbody", "vel", 4.0);
     int sgn = c.get("nbody", "sign", -1);
     int interval = c.get("plot","interval",100);
     int local = c.get("nbody", "local", 0); // need to check
+    int pponly = c.get("nbody", "pponly", 0);
+    int solar = c.get("nbody", "solar", 0);
     int error = c.get("nbody", "error", 0);
 
-    NBody<T,true,flag,I> task(x0, y0, l, n, N, dt, G, vel, sgn, local);
+    NBody<T,true,flag,I> task(x0, y0, l, n, N, dt, G, vel, sgn, local, pponly, solar);
 
     if (error) {
         task.calc_error();
