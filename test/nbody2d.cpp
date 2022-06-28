@@ -41,12 +41,20 @@ public:
         T x[2];
         T v[2];
         T a[2];
+        T aprev[2];
         T mass;
 
         int k;
         int j;
 
         T F[2]; // Local force
+
+        Body()
+            : x{0}
+            , v{0}
+            , a{0}
+            , aprev{0}
+        { }
     };
 
     struct Cell {
@@ -472,11 +480,12 @@ private:
     }
 
     void move() {
-        for (int index = 0; index < static_cast<int>(bodies.size()); index++) {
+        for (int index = 0; index < N; index++) {
             auto& body =  bodies[index];
+            // verlet integration
+            // positions
             for (int m = 0; m < 2; m++) {
-                body.x[m] += dt * body.v[m];
-                body.v[m] += dt * body.a[m];
+                body.x[m] += dt * body.v[m] + 0.5 * dt * dt * body.aprev[m];
 
                 if constexpr(flag == tensor_flag::periodic) {
                     if (body.x[m] < origin[m]) {
@@ -486,6 +495,12 @@ private:
                         body.x[m] -= l;
                     }
                 }
+            }
+            for (int m = 0; m < 2; m++) {
+                // velocity
+                body.v[m] += 0.5 * dt * (body.a[m]+body.aprev[m]);
+                // acceleration
+                body.aprev[m] = body.a[m];
             }
 
             T x = body.x[0]-origin[0];
@@ -526,6 +541,7 @@ private:
         T maxy = -10000;
 
         if (solar) {
+            G = 2.96e-6;
             struct Abc {
                 T x[3];
                 T v[3];
