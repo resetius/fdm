@@ -81,7 +81,7 @@ public:
     concurrent_queue<PlotTask> q;
     std::thread thread;
 
-    NBody(T x0, T y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int pponly, int solar)
+    NBody(T x0, T y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int pponly, int solar, T crit)
         : origin{x0, y0}
         , l(l)
         , n(n) // n+1 - число ячеек (для сдвинутых сеток n - число ячеек)
@@ -94,7 +94,7 @@ public:
         , local(local)
         , pponly(pponly)
         , solar(solar)
-        , rcrit(2*h)
+        , rcrit(h*crit)
         , bodies(N)
         , n0(0)
         , n1(flag==tensor_flag::periodic?0:1)
@@ -531,15 +531,6 @@ private:
     }
 
     void init_points() {
-        std::default_random_engine generator;
-        std::uniform_real_distribution<T> distribution(0, l/2);
-
-
-        T minx = 10000;
-        T maxx = -10000;
-        T miny = 10000;
-        T maxy = -10000;
-
         if (solar) {
             G = 2.96e-6;
             struct Abc {
@@ -572,13 +563,20 @@ private:
                 body.mass = abc[index].mass;
             }
         } else {
+            std::default_random_engine generator;
+            std::uniform_real_distribution<T> distribution(0.0, 1.0);
+
+            T minx = 10000;
+            T maxx = -10000;
+            T miny = 10000;
+            T maxy = -10000;
 
             for (int index = 0; index < static_cast<int>(bodies.size()); index++) {
                 auto& body = bodies[index];
                 for (int i = 0; i < 2; i++) {
-                    body.x[i] = distribution(generator) + origin[i] + l/4;
+                    body.x[i] = l*distribution(generator)/11 + origin[i] + 5*l/11;
                 }
-                body.mass = 0.2 + 1.5 * distribution(generator) / l;
+                body.mass = 0.2 + 1.5 * distribution(generator);
 
                 body.j = floor((body.x[0]-origin[0]) / h);
                 body.k = floor((body.x[1]-origin[1]) / h);
@@ -619,8 +617,9 @@ void calc(const Config& c) {
     int pponly = c.get("nbody", "pponly", 0);
     int solar = c.get("nbody", "solar", 0);
     int error = c.get("nbody", "error", 0);
+    double crit = c.get("nbody", "rcrit", 2.0);
 
-    NBody<T,true,flag,I> task(x0, y0, l, n, N, dt, G, vel, sgn, local, pponly, solar);
+    NBody<T,true,flag,I> task(x0, y0, l, n, N, dt, G, vel, sgn, local, pponly, solar, crit);
 
     if (error) {
         task.calc_error();
