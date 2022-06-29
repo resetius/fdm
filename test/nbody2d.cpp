@@ -60,6 +60,7 @@ public:
     struct Cell {
         vector<int> bodies;
         vector<int> next;
+        bool done = false;
     };
 
     vector<Body> bodies;
@@ -477,6 +478,8 @@ private:
                 body.a[m] = a[m];
             }
         }
+
+        cell.done = true;
     }
 
     void move() {
@@ -523,6 +526,9 @@ private:
         for (int k = n0; k <= nn; k++) {
             for (int j = n0; j <= nn; j++) {
                 cells[k][j].next.swap(cells[k][j].bodies);
+
+                verify(cells[k][j].done);
+                cells[k][j].done = false;
             }
         }
 
