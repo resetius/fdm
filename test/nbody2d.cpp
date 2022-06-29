@@ -60,6 +60,7 @@ public:
     struct Cell {
         vector<int> bodies;
         vector<int> next;
+        bool distributed = false;
         bool done = false;
     };
 
@@ -242,6 +243,63 @@ private:
         }
     }
 
+    void distribute_mass(Body& body) {
+        int k0, j0;
+        I interpolator;
+        auto m = body.mass;
+        typename I::matrix M;
+
+        interpolator.distribute(
+            M,
+            body.x[0]-origin[0],
+            body.x[1]-origin[1],
+            &j0, &k0, h);
+
+        for (int k = 0; k < I::n; k++) {
+            for (int j = 0; j < I::n; j++) {
+                if constexpr(flag == tensor_flag::periodic) {
+                    f[k+k0][j+j0] += m * M[k][j];
+                } else {
+                    if (k0+k >= n0 && k0+k <= nnn
+                        && j0+j >= n0 && j0+j <= nnn)
+                    {
+                        f[k+k0][j+j0] += m * M[k][j];
+                    }
+                }
+            }
+        }
+    }
+
+    void distribute_masses() {
+        // per cell
+        for (int k = n0; k <= nn; k ++) {
+            for (int j = n0; j <= nn; j ++) {
+                cells[k][j].distributed = false;
+            }
+        }
+
+        for (int off = 0; off < I::n; off++) {
+#pragma omp parallel for
+            for (int k = n0+off; k <= nn; k += I::n) {
+                for (int j = n0+off; j <= nn; j += I::n) {
+                    verify(!cells[k][j].distributed);
+
+                    for (int index : cells[k][j].bodies) {
+                        distribute_mass(bodies[index]);
+                    }
+
+                    cells[k][j].distributed = true;
+                }
+            }
+        }
+
+        for (int k = n0; k <= nn; k += I::n) {
+            for (int j = n0; j <= nn; j += I::n) {
+                verify(cells[k][j].distributed);
+            }
+        }
+    }
+
     void calc_a_pm() {
         // 1. mass to edges
 #pragma omp parallel for
@@ -251,35 +309,7 @@ private:
             }
         }
 
-        I interpolator;
-
-//#pragma omp parallel for // TODO: adjacent points edit
-        for (auto& body : bodies) {
-            double m = body.mass;
-
-            int k0, j0;
-            typename I::matrix M;
-
-            interpolator.distribute(
-                M,
-                body.x[0]-origin[0],
-                body.x[1]-origin[1],
-                &j0, &k0, h);
-
-            for (int k = 0; k < I::n; k++) {
-                for (int j = 0; j < I::n; j++) {
-                    if constexpr(flag == tensor_flag::periodic) {
-                        f[k+k0][j+j0] += m * M[k][j];
-                    } else {
-                        if (k0+k >= n0 && k0+k <= nnn
-                            && j0+j >= n0 && j0+j <= nnn)
-                        {
-                            f[k+k0][j+j0] += m * M[k][j];
-                        }
-                    }
-                }
-            }
-        }
+        distribute_masses();
 
         // -4pi G ro
 #pragma omp parallel for
