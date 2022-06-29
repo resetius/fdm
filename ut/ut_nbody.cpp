@@ -11,6 +11,7 @@
 #include "asp_misc.h"
 #include "tensor.h"
 #include "interpolate.h"
+#include "config.h"
 
 extern "C" {
 #include <cmocka.h>
@@ -268,9 +269,95 @@ void test_poor_man_poisson(void** ) {
     }
 }
 
+double potential(double x) {
+    return sq(sin(x)) - sq(cos(x));
+}
+
+double density(double x) {
+    return 4*sq(cos(x))-4*sq(sin(x));
+}
+
+double field(double x) {
+    return 4*cos(x)*sin(x);
+}
+
+void test_spectral_field(void** data) {
+    Config* c = (Config*)(*data);
+    int verbose = c->get("test", "verbose", 0);
+
+    double l = 2*M_PI;
+    using T = double;
+
+    int n = 64;
+    FFTTable<T> ft_table(n);
+    FFT<T> ft(ft_table, n);
+    double h = l/n;
+    T slh = sqrt(2./l);
+    vector<double> F(n), S(n), s(n);
+    for (int i = 0; i < n; i++) {
+        F[i] = density(i*h);
+    }
+    ft.pFFT_1(&S[0], &F[0], h*slh);
+
+    for (int i = 0; i < n; i++) {
+        double w = 2*i*M_PI/l;
+        S[i] /= -w*w;
+    }
+    S[0] = 0;
+
+    ft.pFFT(&s[0], &S[0], slh);
+
+    T mx = 0;
+    for (int i = 0; i < n; i++) {
+        mx = max(mx, std::abs(s[i]-potential(i*h)));
+    }
+    if (verbose) {
+        printf("%e\n", mx);
+    }
+
+
+    ft.pFFT_1(&S[0], &F[0], h*slh);
+    for (int i = 0; i < n; i++) {
+        double w = 2*i*M_PI/l;
+        S[i] /= -w*w;
+    }
+    S[0] = 0;
+
+    for (int k = 0; k <= n/2; k++) {
+        S[k] *= -2*M_PI*k/l;
+    }
+    S[n/2] = 0;
+
+    for (int k = 1; k <= n/2-1; k++) {
+        S[n-k] *= 2*M_PI*k/l;
+    }
+
+    for (int k = 1; k <= n/2-1; k++) {
+        std::swap(S[n-k],S[k]);
+    }
+
+    ft.pFFT(&s[0], &S[0], slh);
+
+    mx = 0;
+    for (int i = 0; i < n; i++) {
+        if (verbose > 1) {
+            printf("%e %e\n", s[i], field(i*h));
+        }
+        mx = max(mx, std::abs(s[i]-field(i*h)));
+    }
+    if (verbose) {
+        printf("%e\n", mx);
+    }
+}
+
 int main(int argc, char** argv) {
+    Config c;
+    c.open("ut_nbody.ini");
+    c.rewrite(argc, argv);
+
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_prestate(test_poor_man_poisson, nullptr),
+        cmocka_unit_test_prestate(test_spectral_field, &c),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
