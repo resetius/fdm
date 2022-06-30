@@ -64,7 +64,6 @@ public:
         vector<int> bodies;
         vector<int> next;
         bool distributed = false;
-        bool done = false;
     };
 
     vector<Body> bodies;
@@ -351,6 +350,7 @@ private:
         }
 
         T beta=4./3.;
+#pragma omp parallel for
         for (int k = n1; k <= nn; k++) {
             for (int j = n1; j <= nn; j++){
                 // 5.137, pp184, Hockney
@@ -419,33 +419,7 @@ private:
             }
         }
 
-#pragma omp parallel for
-        for (int k = n0; k <= nn; k += 2) {
-            for (int j = n0; j <= nn; j += 2) {
-                calc_cell(cells[k][j]);
-            }
-        }
-
-#pragma omp parallel for
-        for (int k = n0+1; k <= nn; k += 2) {
-            for (int j = n0; j <= nn; j += 2) {
-                calc_cell(cells[k][j]);
-            }
-        }
-
-#pragma omp parallel for
-        for (int k = n0; k <= nn; k += 2) {
-            for (int j = n0+1; j <= nn; j += 2) {
-                calc_cell(cells[k][j]);
-            }
-        }
-
-#pragma omp parallel for
-        for (int k = n0+1; k <= nn; k += 2) {
-            for (int j = n0+1; j <= nn; j += 2) {
-                calc_cell(cells[k][j]);
-            }
-        }
+        calc_accelerations();
     }
 
     void apply_bi_bj(Body& bi, Body& bj, T off[2], bool apply_bj) {
@@ -504,12 +478,11 @@ private:
         }
     }
 
-    void calc_cell(Cell& cell) {
+    void calc_accelerations() {
         I interpolator;
 
-        for (auto& index : cell.bodies) {
-            auto& body = bodies[index];
-
+#pragma omp parallel for
+        for (auto& body : bodies) {
             double a[2] = {0};
             int k0, j0;
             typename I::matrix M;
@@ -544,13 +517,11 @@ private:
                 body.a[m] = a[m];
             }
         }
-
-        cell.done = true;
     }
 
     void move() {
-        for (int index = 0; index < N; index++) {
-            auto& body =  bodies[index];
+#pragma omp parallel for
+        for (auto& body : bodies) {
             if (!body.enabled) continue;
 
             // verlet integration
@@ -586,7 +557,11 @@ private:
             //verify(abs(body.k-next_k) <= 1, "Too fast, try decrease dt");
             //verify(abs(body.j-next_j) <= 1, "Too fast, try decrease dt");
             body.k = next_k; body.j = next_j;
+        }
 
+        for (int index = 0; index < N; index++) {
+            auto& body = bodies[index];
+            if (!body.enabled) continue;
             cells[body.k][body.j].next.push_back(index);
         }
 
@@ -594,9 +569,6 @@ private:
         for (int k = n0; k <= nn; k++) {
             for (int j = n0; j <= nn; j++) {
                 cells[k][j].next.swap(cells[k][j].bodies);
-
-                //verify(cells[k][j].done);
-                cells[k][j].done = false;
             }
         }
 
