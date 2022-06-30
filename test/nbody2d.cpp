@@ -36,6 +36,7 @@ public:
     int pponly;
     int solar;
     double rcrit;
+    double rsoft;
 
     struct Body {
         T x[2];
@@ -87,7 +88,7 @@ public:
 
     int collisions = 0;
 
-    NBody(T x0, T y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int pponly, int solar, T crit)
+    NBody(T x0, T y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int pponly, int solar, T crit, T rsoft)
         : origin{x0, y0}
         , l(l)
         , n(n) // n+1 - число ячеек (для сдвинутых сеток n - число ячеек)
@@ -101,6 +102,7 @@ public:
         , pponly(pponly)
         , solar(solar)
         , rcrit(h*crit)
+        , rsoft(h*rsoft)
         , bodies(N)
         , n0(0)
         , n1(flag==tensor_flag::periodic?0:1)
@@ -249,13 +251,12 @@ private:
                 auto& bj = bodies[j];
                 if (!bj.enabled) continue;
 
-                double eps = h/100; // 0.01;
                 double R = 0;
                 for (int k = 0; k < 2; k++) {
                     R += sq(bi.x[k]-bj.x[k]);
                 }
                 R = std::sqrt(R);
-                if (R < eps) {
+                if (R < rsoft) {
                     join_bodies(bi, bj);
                     continue;
                 }
@@ -450,7 +451,6 @@ private:
     void apply_bi_bj(Body& bi, Body& bj, T off[2], bool apply_bj) {
         if (!bi.enabled || !bj.enabled) return;
 
-        double eps = h/100; // 0.001;
         double R = 0;
         for (int k = 0; k < 2; k++) {
             R += sq(bi.x[k]-(bj.x[k]+off[k]));
@@ -458,7 +458,7 @@ private:
         R = std::sqrt(R); // +eps;
 
         if (R < rcrit) {
-            if (R < eps) {
+            if (R < rsoft) {
                 join_bodies(bi, bj);
                 return;
             }
@@ -694,8 +694,9 @@ void calc(const Config& c) {
     int solar = c.get("nbody", "solar", 0);
     int error = c.get("nbody", "error", 0);
     double crit = c.get("nbody", "rcrit", 2.0);
+    double rsoft = c.get("nbody", "rsoft", 0.01);
 
-    NBody<T,true,flag,I> task(x0, y0, l, n, N, dt, G, vel, sgn, local, pponly, solar, crit);
+    NBody<T,true,flag,I> task(x0, y0, l, n, N, dt, G, vel, sgn, local, pponly, solar, crit, rsoft);
 
     if (error) {
         task.calc_error();
