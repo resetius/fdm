@@ -43,6 +43,7 @@ public:
         T a[2];
         T aprev[2];
         T mass;
+        int enabled;
 
         int k;
         int j;
@@ -54,6 +55,7 @@ public:
             , v{0}
             , a{0}
             , aprev{0}
+            , enabled(true)
         { }
     };
 
@@ -202,8 +204,9 @@ private:
 
             double r = 2*l / 2000.0;
             for (auto& body: task.bodies) {
-                if (body.mass < 1e-5) continue;
-                plarc(body.x[1], body.x[0], sqrt(body.mass)*r, sqrt(body.mass)*r, 0, 360, 0, 1);
+                if (body.enabled) {
+                    plarc(body.x[1], body.x[0], sqrt(body.mass)*r, sqrt(body.mass)*r, 0, 360, 0, 1);
+                }
             }
             /*
             plotter.plot(matrix_plotter::page()
@@ -231,6 +234,7 @@ private:
         }
         bi.mass = (bi.mass + bj.mass);
         bj.mass = 0;
+        bj.enabled = false;
     }
 
     void calc_a_pp() {
@@ -238,12 +242,12 @@ private:
             auto& bi = bodies[i];
             bi.a[0] = bi.a[1] = 0;
 
-            if (bi.mass < 1e-5) continue;
+            if (!bi.enabled) continue;
 
             for (int j = 0; j < N; j++) {
                 if (i == j) continue;
                 auto& bj = bodies[j];
-                if (bj.mass < 1e-5) continue;
+                if (!bj.enabled) continue;
 
                 double eps = h/100; // 0.01;
                 double R = 0;
@@ -444,7 +448,7 @@ private:
     }
 
     void apply_bi_bj(Body& bi, Body& bj, T off[2], bool apply_bj) {
-        if (bi.mass < 1e-5 || bj.mass < 1e-5) return;
+        if (!bi.enabled || !bj.enabled) return;
 
         double eps = h/100; // 0.001;
         double R = 0;
@@ -547,6 +551,8 @@ private:
     void move() {
         for (int index = 0; index < N; index++) {
             auto& body =  bodies[index];
+            if (!body.enabled) continue;
+
             // verlet integration
             // positions
             for (int m = 0; m < 2; m++) {
