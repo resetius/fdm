@@ -316,9 +316,11 @@ private:
             }
         }
 
-        for (int k = n0; k <= nn; k += I::n) {
-            for (int j = n0; j <= nn; j += I::n) {
-                verify(cells[k][j].distributed);
+        if constexpr(check==true) {
+            for (int k = n0; k <= nn; k += I::n) {
+                for (int j = n0; j <= nn; j += I::n) {
+                    verify(cells[k][j].distributed);
+                }
             }
         }
     }
@@ -648,7 +650,7 @@ private:
     }
 };
 
-template <typename T,tensor_flag flag, typename I>
+template <typename T,tensor_flag flag, bool check, typename I>
 void calc(const Config& c) {
     int n = c.get("nbody", "n", 512);
     int N = c.get("nbody", "N", 100000);
@@ -668,7 +670,7 @@ void calc(const Config& c) {
     double crit = c.get("nbody", "rcrit", 2.0);
     double rsoft = c.get("nbody", "rsoft", 0.01);
 
-    NBody<T,true,flag,I> task(x0, y0, l, n, N, dt, G, vel, sgn, local, pponly, solar, crit, rsoft);
+    NBody<T,check,flag,I> task(x0, y0, l, n, N, dt, G, vel, sgn, local, pponly, solar, crit, rsoft);
 
     if (error) {
         task.calc_error();
@@ -687,15 +689,25 @@ void calc(const Config& c) {
     }
 }
 
+template<typename T,tensor_flag flag, typename I>
+void calc2(const Config& c) {
+    bool check = c.get("nbody", "check", 1);
+    if (check) {
+        calc<T,flag,true,I>(c);
+    } else {
+        calc<T,flag,false,I>(c);
+    }
+}
+
 template<typename T,tensor_flag flag>
 void calc1(const Config& c) {
     string interpolate = c.get("nbody", "interpolate", "tsc");
     if (interpolate == "tsc") {
-        calc<T,flag,TSC2<T>>(c);
+        calc2<T,flag,TSC2<T>>(c);
     } else if (interpolate == "pcs") {
-        calc<T,flag,PCS2<T>>(c);
+        calc2<T,flag,PCS2<T>>(c);
     }  else {
-        calc<T,flag,CIC2<T>>(c);
+        calc2<T,flag,CIC2<T>>(c);
     }
 }
 
