@@ -485,7 +485,6 @@ private:
 
 #pragma omp parallel for
         for (auto& body : bodies) {
-            double a[2] = {0};
             int k0, j0;
             typename I::matrix M;
             interpolator.distribute(
@@ -494,29 +493,30 @@ private:
                 body.x[1]-origin[1],
                 &j0, &k0, h);
 
-
             for (int m = 0; m < 2; m++) {
-                for (int k = 0; k < I::n; k++) {
-                    for (int j = 0; j < I::n; j++) {
+                body.a[m] = 0;
+            }
+
+            // local pp-force
+            for (int m = 0; m < 2; m++) {
+                body.a[m] += body.F[m];
+            }
+
+            // pm-force
+            for (int k = 0; k < I::n; k++) {
+                for (int j = 0; j < I::n; j++) {
+                    for (int m = 0; m < 2; m++) {
                         if constexpr(flag == tensor_flag::periodic) {
-                            a[m] += E[k0+k][j0+j][m] * M[k][j];
+                            body.a[m] += E[k0+k][j0+j][m] * M[k][j];
                         } else {
                             if (k0+k >= n0 && k0+k <= nnn
                                 && j0+j >= n0 && j0+j <= nnn)
                             {
-                                a[m] += E[k0+k][j0+j][m] * M[k][j];
+                                body.a[m] += E[k0+k][j0+j][m] * M[k][j];
                             }
                         }
                     }
                 }
-            }
-
-            for (int m = 0; m < 2; m++) {
-                a[m] += body.F[m];
-            }
-
-            for (int m = 0; m < 2; m++) {
-                body.a[m] = a[m];
             }
         }
     }
@@ -550,8 +550,10 @@ private:
             T x = body.x[0]-origin[0];
             T y = body.x[1]-origin[1];
 
-            if (x < 0 || x > l) continue;
-            if (y < 0 || y > l) continue;
+            if constexpr(flag == tensor_flag::none) {
+                if (x < 0 || x > l) continue;
+                if (y < 0 || y > l) continue;
+            }
 
             int next_j = floor(x / h);
             int next_k = floor(y / h);
@@ -561,6 +563,7 @@ private:
             body.k = next_k; body.j = next_j;
         }
 
+        // TODO
         for (int index = 0; index < N; index++) {
             auto& body = bodies[index];
             if (!body.enabled) continue;
