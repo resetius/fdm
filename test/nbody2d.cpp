@@ -83,6 +83,8 @@ public:
     concurrent_queue<PlotTask> q;
     std::thread thread;
 
+    int collisions = 0;
+
     NBody(T x0, T y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int pponly, int solar, T crit)
         : origin{x0, y0}
         , l(l)
@@ -200,7 +202,8 @@ private:
 
             double r = 2*l / 2000.0;
             for (auto& body: task.bodies) {
-                plarc(body.x[1], body.x[0], r, r, 0, 360, 0, 1);
+                if (body.mass < 1e-5) continue;
+                plarc(body.x[1], body.x[0], sqrt(body.mass)*r, sqrt(body.mass)*r, 0, 360, 0, 1);
             }
             /*
             plotter.plot(matrix_plotter::page()
@@ -221,21 +224,37 @@ private:
         }
     }
 
+    void join_bodies(Body& bi, Body& bj) {
+        collisions ++;
+        for (int k = 0; k < 2; k++) {
+            bi.v[k] = (bi.mass*bi.v[k]+bj.mass*bj.v[k]) / (bi.mass + bj.mass);
+        }
+        bi.mass = (bi.mass + bj.mass);
+        bj.mass = 0;
+    }
+
     void calc_a_pp() {
         for (int i = 0; i < N; i++) {
             auto& bi = bodies[i];
             bi.a[0] = bi.a[1] = 0;
 
+            if (bi.mass < 1e-5) continue;
+
             for (int j = 0; j < N; j++) {
                 if (i == j) continue;
                 auto& bj = bodies[j];
-                double eps = 0.00001;
+                if (bj.mass < 1e-5) continue;
+
+                double eps = h/100; // 0.01;
                 double R = 0;
                 for (int k = 0; k < 2; k++) {
                     R += sq(bi.x[k]-bj.x[k]);
                 }
                 R = std::sqrt(R);
-                if (R < eps) continue;
+                if (R < eps) {
+                    join_bodies(bi, bj);
+                    continue;
+                }
                 for (int k = 0; k < 2; k++) {
                     bi.a[k] +=  -bj.mass * G * (bi.x[k] - bj.x[k]) /R/R/R;
                 }
@@ -368,20 +387,24 @@ private:
             for (int k = n0; k <= nn; k++) {
                 for (int j = n0; j <= nn; j++) {
                     auto& cell = cells[k][j];
+                    T off[] = {0.0,0.0};
 
                     // local forces
                     calc_local_forces(cell);
-
 
                     for (int k0 = -1; k0 <= 1; k0++) {
                         for (int j0 = -1; j0 <= 1; j0++) {
                             if (k0 == 0 && j0 == 0) continue;
 
                             if constexpr(flag == tensor_flag::periodic) {
-                                calc_local_forces(cell, cells[k+k0][j+j0]);
+                                if (k+k0 < 0)  off[0] = -h;
+                                if (k+k0 > nn) off[0] =  h;
+                                if (j+j0 < 0)  off[1] = -h;
+                                if (j+j0 > nn) off[1] =  h;
+                                calc_local_forces(cell, cells[k+k0][j+j0], off);
                             } else {
                                 if (k+k0 >= 0 && k+k0 <= nn && j+j0 >=0 && j+j0 <= nn) {
-                                    calc_local_forces(cell, cells[k+k0][j+j0]);
+                                    calc_local_forces(cell, cells[k+k0][j+j0], off);
                                 }
                             }
                         }
@@ -420,24 +443,32 @@ private:
         }
     }
 
-    void apply_bi_bj(Body& bi, Body& bj, bool apply_bj) {
-        double eps = 0.0001;
+    void apply_bi_bj(Body& bi, Body& bj, T off[2], bool apply_bj) {
+        if (bi.mass < 1e-5 || bj.mass < 1e-5) return;
+
+        double eps = h/100; // 0.001;
         double R = 0;
         for (int k = 0; k < 2; k++) {
-            R += sq(bi.x[k]-bj.x[k]);
+            R += sq(bi.x[k]-(bj.x[k]+off[k]));
         }
         R = std::sqrt(R); // +eps;
 
-        if (R > eps && R < rcrit) {
+        if (R < rcrit) {
+            if (R < eps) {
+                join_bodies(bi, bj);
+                return;
+            }
+
             for (int k = 0; k < 2; k++) {
-                bi.F[k] +=  -bj.mass * G * (bi.x[k] - bj.x[k]) /R/R/R
+                bi.F[k] +=  -bj.mass * G * (bi.x[k] - (bj.x[k]+off[k])) /R/R/R
                     * (erfc( R/2/rcrit )
                        + R/rcrit/sqrt(M_PI)*exp(-R*R/4/rcrit/rcrit));
             }
 
             if (apply_bj) {
+                verify(0);
                 for (int k = 0; k < 2; k++) {
-                    bj.F[k] +=  -bi.mass * G * (bj.x[k] - bi.x[k]) /R/R/R
+                    bj.F[k] +=  -bi.mass * G * (bj.x[k] - (bi.x[k]+off[k])) /R/R/R
                     * (erfc( -(bj.x[k] - bi.x[k])/2/rcrit )
                        + (bj.x[k] - bi.x[k])/rcrit/sqrt(M_PI)*exp(-R*R/4/rcrit/rcrit));
                 }
@@ -447,6 +478,7 @@ private:
 
     void calc_local_forces(Cell& cell) {
         int nbodies = static_cast<int>(cell.bodies.size());
+        T off[] = {0.0,0.0};
 
         for (int i = 0; i < nbodies; i++) {
             for (int j = 0; j < nbodies; j++) {
@@ -454,16 +486,16 @@ private:
                 auto& bj = bodies[cell.bodies[j]];
 
                 if (i!=j) {
-                    apply_bi_bj(bi, bj, false);
+                    apply_bi_bj(bi, bj, off, false);
                 }
             }
         }
     }
 
-    void calc_local_forces(Cell& cell, Cell& other) {
+    void calc_local_forces(Cell& cell, Cell& other, T off[2]) {
         for (auto& bi : cell.bodies) {
             for (auto& bj : other.bodies) {
-                apply_bi_bj(bodies[bi], bodies[bj], false);
+                apply_bi_bj(bodies[bi], bodies[bj], off, false);
             }
         }
     }
@@ -557,13 +589,15 @@ private:
             for (int j = n0; j <= nn; j++) {
                 cells[k][j].next.swap(cells[k][j].bodies);
 
-                verify(cells[k][j].done);
+                //verify(cells[k][j].done);
                 cells[k][j].done = false;
             }
         }
 
         int k = 2;
-        printf("%e %e %e %e \n", bodies[k].a[0],bodies[k].a[1], bodies[k].x[0],bodies[k].x[1]);
+        printf("%e %e %e %e %d \n",
+               bodies[k].a[0],bodies[k].a[1], bodies[k].x[0],bodies[k].x[1],
+               collisions);
     }
 
     void init_points() {
