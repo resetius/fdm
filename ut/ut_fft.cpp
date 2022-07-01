@@ -61,7 +61,8 @@ void test_periodic_new(void**) {
         s[i] = distribution(generator);
     }
 
-    ft.pFFT(&S[0], &s[0], 1.0);
+    s1 = s; // s1 will be utilized by pFFT
+    ft.pFFT(&S[0], &s1[0], 1.0);
     ft.pFFT_1(&s1[0], &S[0], 2.0/N);
     for (int i = 0; i < N; i++) {
         assert_float_equal(s1[i], s[i], tol);
@@ -181,6 +182,7 @@ void test_periodic_new_old_cmp(void**) {
 
     vector<double> S(N);
     vector<double> s(N);
+    vector<double> s1(N);
     vector<double> S1(N);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
@@ -190,7 +192,8 @@ void test_periodic_new_old_cmp(void**) {
         s[i] = distribution(generator);
     }
 
-    ft.pFFT(&S[0], &s[0], 1.0);
+    s1 = s;
+    ft.pFFT(&S[0], &s1[0], 1.0);
     pFFT_2(&S1[0], &s[0], 1.0, ft1);
     for (int i = 0; i < N; i++) {
         assert_float_equal(S1[i], S[i], 1e-15);
