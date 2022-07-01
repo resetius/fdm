@@ -28,10 +28,6 @@ class FFT {
     int n; // N = 2^n
 
     std::vector<T> a;
-    std::vector<T> y;
-    std::vector<T> _y;
-
-    std::vector<T> ss;
 
 public:
     FFT(const FFTTable<T>& table, int N)

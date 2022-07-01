@@ -30,9 +30,6 @@ void FFT<T>::init() {
     verify((1<<n) == N);
 
     a.resize((n+1)*N);
-    y.resize((N/2+1));
-    _y.resize((N/2+1));
-    ss.resize((N/2+1));
 }
 
 template<typename T>
@@ -111,15 +108,16 @@ void FFT<T>::pFFT(T *S, T* s, T dx) {
     int N_2 = N/2;
     int k;
 
-    memcpy(&ss[0], &s[0], (N_2+1) * sizeof(T));
+    cFFT(&S[0], &s[0], dx, N_2,n-1,2);
 
-    cFFT(&S[0], &ss[0], dx, N_2,n-1,2);
-
-    for (k = 1; k <= N_2-1; k++) {
-        ss[k] = s[N-k];
+    for (int k = 1; k < N_2/2; k++) {
+        T tmp = s[N_2 + k];
+        s[N_2 + k] = s[N-k];
+        s[N-k] = tmp;
     }
+
     // S[N_2] not filled, N_2+1 first non empty
-    sFFT(&S[N_2], &ss[0], dx, N_2,n-1,2);
+    sFFT(&S[N_2], &s[N_2], dx, N_2,n-1,2);
 
     for (k = 1; k <= N_2 - 1; k ++) {
         T S_k   = (S[k] + S[N_2+k]);
