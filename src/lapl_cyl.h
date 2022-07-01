@@ -166,9 +166,9 @@ public:
     FFTTable<T> ft_phi_table;
     FFTTable<T> ft_z_table_;
     FFTTable<T>* ft_z_table;
-    std::vector<FFT<T>> ft_phi;
-    std::vector<FFT<T>> ft_z_;
-    std::vector<FFT<T>>& ft_z;
+    FFT<T> ft_phi;
+    FFT<T> ft_z_;
+    FFT<T>& ft_z;
     std::vector<T> lm_phi, lm_z;
 
     fdm::tensor<T,3,check> matrices;
@@ -195,6 +195,9 @@ public:
         , ft_phi_table(nphi)
         , ft_z_table_(nphi == zpoints ? 1 : zpoints)
         , ft_z_table(nphi == zpoints ? &ft_phi_table : &ft_z_table_)
+
+        , ft_phi(ft_phi_table, nphi)
+        , ft_z_(*ft_z_table, zpoints)
 
         , ft_z(nphi == zpoints ? ft_phi : ft_z_)
 

@@ -17,7 +17,7 @@ void LaplCyl3FFT2<T,check,zflag>::solve(T* ans, T* rhs) {
                 s[k*nphi+i] = RHS[i][k][j];
             }
 
-            ft_phi[k].pFFT_1(&S[k*nphi], &s[k*nphi], dphi*SQRT_M_1_PI);
+            ft_phi.pFFT_1(&S[k*nphi], &s[k*nphi], dphi*SQRT_M_1_PI);
 
             for (int i = 0; i < nphi; i++) {
                 RHSm[i][k][j] = S[k*nphi+i];
@@ -33,9 +33,9 @@ void LaplCyl3FFT2<T,check,zflag>::solve(T* ans, T* rhs) {
             }
 
             if constexpr(zflag==tensor_flag::none) {
-                ft_z[i].sFFT(&S[i*zpoints], &s[i*zpoints], dz*slz);
+                ft_z.sFFT(&S[i*zpoints], &s[i*zpoints], dz*slz);
             } else {
-                ft_z[i].pFFT_1(&S[i*zpoints], &s[i*zpoints], dz*slz);
+                ft_z.pFFT_1(&S[i*zpoints], &s[i*zpoints], dz*slz);
             }
 
             for (int k = z1; k <= zn; k++) {
@@ -68,9 +68,9 @@ void LaplCyl3FFT2<T,check,zflag>::solve(T* ans, T* rhs) {
             }
 
             if constexpr(zflag==tensor_flag::none) {
-                ft_z[i].sFFT(&S[i*zpoints], &s[i*zpoints], slz);
+                ft_z.sFFT(&S[i*zpoints], &s[i*zpoints], slz);
             } else {
-                ft_z[i].pFFT(&S[i*zpoints], &s[i*zpoints], slz);
+                ft_z.pFFT(&S[i*zpoints], &s[i*zpoints], slz);
             }
 
             for (int k = z1; k <= zn; k++) {
@@ -86,7 +86,7 @@ void LaplCyl3FFT2<T,check,zflag>::solve(T* ans, T* rhs) {
                 s[k*nphi+i] = ANS[i][k][j];
             }
 
-            ft_phi[k].pFFT(&S[k*nphi], &s[k*nphi], SQRT_M_1_PI);
+            ft_phi.pFFT(&S[k*nphi], &s[k*nphi], SQRT_M_1_PI);
 
             for (int i = 0; i < nphi; i++) {
                 ANS[i][k][j] = S[k*nphi+i];
@@ -134,20 +134,6 @@ void LaplCyl3FFT2<T,check,zflag>::init_solver() {
             lapack::gttrf(nr, L, D, U, U2, ipiv, &info);
             verify(info == 0);
         }
-    }
-
-    ft_phi.reserve(zpoints);
-    for (int k = 0; k < zpoints; k++) {
-        ft_phi.emplace_back(ft_phi_table, nphi);
-    }
-
-    if (nphi == zpoints) {
-        return;
-    }
-
-    ft_z.reserve(nphi);
-    for (int k = 0; k < nphi; k++) {
-        ft_z.emplace_back(*ft_z_table, zpoints);
     }
 }
 
