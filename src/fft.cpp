@@ -45,6 +45,8 @@ void FFT<T>::pFFT_1(T *S, const T *s1, T dx) {
     int p, s, j, idx, idx2, vm, k;
     int sz = static_cast<int>(t.ffSIN.size());
     int N_2 = N/2;
+    int yoff = 0;
+    int _yoff = N_2;
 
     memcpy(&a[0], s1, N * sizeof(T));
 
@@ -71,22 +73,28 @@ void FFT<T>::pFFT_1(T *S, const T *s1, T dx) {
                     ffSIN[((2 * k - 1) * vm * j) % sz];
             }
             idx2 = (1 << (s - 1)) * (2 * k - 1);
-            y[idx2]  = s1;
-            _y[idx2] = s2;
+            S[yoff + idx2]  = s1;
+            S[_yoff + idx2] = s2;
         }
     }
 
-    y[N_2]           = a[n * N + 1];
-    y[1 << (n - 2)]  = a[(n - 1) * N + 2];
+    S[yoff + N_2]           = a[n * N + 1];
+    S[yoff+(1 << (n - 2))]  = a[(n - 1) * N + 2];
 
-    y[0]             = a[n * N + 0];
-    _y[1 << (n - 2)] = a[(n - 1) * N + 3];
+    S[yoff + 0]             = a[n * N + 0];
+    S[_yoff+(1 << (n - 2))] = a[(n - 1) * N + 3];
 
     for (k = 0; k <= N_2; k++) {
-        S[k]     = y[k] * dx;
+        S[yoff + k]  = S[yoff + k] * dx;
     }
-    for (k = 1; k <= N_2 - 1; k++) {
-        S[N - k] = _y[k] * dx;
+
+    for (int k = 1; k <= N_2-1; k++) {
+        S[_yoff + k] = S[_yoff + k] * dx;
+    }
+    for (int k = 1; k < N_2/2; k++) {
+        T tmp = S[_yoff + k];
+        S[_yoff + k] = S[_yoff+N_2-k];
+        S[_yoff+N_2-k] = tmp;
     }
 }
 
