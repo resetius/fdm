@@ -31,8 +31,6 @@ class FFT {
     std::vector<T> y;
     std::vector<T> _y;
 
-    std::vector<T> y1;
-    std::vector<T> y2;
     std::vector<T> ss;
 
 public:
