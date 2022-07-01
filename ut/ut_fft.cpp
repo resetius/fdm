@@ -91,6 +91,7 @@ void test_sin(void**) {
     vector<T> s(N);
     vector<T> s1(N);
     vector<T> s2(N);
+    vector<T> s3(N);
 
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
@@ -99,8 +100,10 @@ void test_sin(void**) {
         s[i] = distribution(generator);
     }
 
-    ft.sFFT(&S[0], &s[0], 1.0);
-    ft.sFFT(&s1[0], &S[0], 2.0/N);
+    s3 = s;
+    ft.sFFT(&S[0], &s3[0], 1.0);
+    s3 = S;
+    ft.sFFT(&s1[0], &s3[0], 2.0/N);
 
     for (int i = 1; i < N-1; i++) {
         assert_float_equal(s1[i], s[i], tol);

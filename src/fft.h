@@ -27,8 +27,6 @@ class FFT {
     int N;
     int n; // N = 2^n
 
-    std::vector<T> a;
-
 public:
     FFT(const FFTTable<T>& table, int N)
         : t(table)
@@ -76,6 +74,8 @@ private:
     void cFFT(T *S, T *s, T dx, int N, int n,int nr);
 
     inline void padvance(T*a, int idx);
+    inline void cadvance(T*a, int idx);
+    inline void sadvance(T*a, int idx);
 };
 
 } // namespace fdm

@@ -28,8 +28,6 @@ void FFT<T>::init() {
     }
 
     verify((1<<n) == N);
-
-    a.resize((n+1)*N);
 }
 
 template<typename T>
@@ -138,28 +136,31 @@ void FFT<T>::sFFT(T *S,T *s,T dx) {
 }
 
 template<typename T>
+inline void FFT<T>::sadvance(T*a, int idx) {
+    for (int j = 1; j <= idx - 1; j ++) {
+        T a1 = a[j] - a[2 * idx - j];
+        T a2 = a[j] + a[2 * idx - j];
+        a[j]           = a1;
+        a[2 * idx - j] = a2;
+    }
+}
+
+template<typename T>
 void FFT<T>::sFFT(T *S,T *s,T dx,int N,int n,int nr) {
     const T* ffSIN = &t.ffSIN[0];
     int sz = static_cast<int>(t.ffSIN.size());
 
-    memcpy(&a[1], &s[1], (N - 1) * sizeof(T));
-
-    for (int p = 1; p <= n - 1; p++) {
-        int idx = 1 << (n - p);
-        for (int j = 1; j <= idx - 1; j ++) {
-            a[p * N + j]           = a[(p - 1) * N + j] - a[(p - 1) * N + 2 * idx - j];
-            a[p * N + 2 * idx - j] = a[(p - 1) * N + j] + a[(p - 1) * N + 2 * idx - j];
-            a[p * N + idx]         = a[(p - 1) * N + idx];
-        }
-    }
+    T*a = s;
 
     for (int s = 1; s <= n - 1; s++) {
         int idx = 1 << (n - s);
         int vm  = 1 << (s - 1);
+        sadvance(a,idx);
+
         for (int k = 1; k <= idx; k++) {
             T y = 0;
             for (int j = 1; j <= idx; j++) {
-                y += a[s * N + idx * 2 - j] *
+                y += a[idx * 2 - j] *
                     ffSIN[((2 * k - 1) * vm * nr * j) % sz];
 
             }
@@ -167,7 +168,7 @@ void FFT<T>::sFFT(T *S,T *s,T dx,int N,int n,int nr) {
         }
     }
     int idx = 1 << (n - 1);
-    S[idx] = a[(n - 1) * N + 1] * dx;
+    S[idx] = a[1] * dx;
 }
 
 template<typename T>
@@ -176,37 +177,40 @@ void FFT<T>::cFFT(T *S,T *s,T dx) {
 }
 
 template<typename T>
+inline void FFT<T>::cadvance(T*a, int idx) {
+    for (int j = 0; j <= idx - 1; j ++) {
+        T a1 = a[j] + a[2 * idx - j];
+        T a2 = a[j] - a[2 * idx - j];
+        a[j]           = a1;
+        a[2 * idx - j] = a2;
+    }
+}
+
+template<typename T>
 void FFT<T>::cFFT(T *S,T *s,T dx,int N,int n,int nr) {
     const T* ffCOS = &t.ffCOS[0];
     int sz = static_cast<int>(t.ffSIN.size());
-    int M = N + 1;
-    memcpy(&a[0], &s[0], M * sizeof(T));
+    T*a = s;
     a[0] *= 0.5; a[N] *= 0.5; // samarskii, (15)-(16) p 66
-
-    for (int p = 1; p <= n; p++) {
-        int idx = 1 << (n - p);
-        for (int j = 0; j <= idx - 1; j ++) {
-            a[p * M + j]           = a[(p - 1) * M + j] + a[(p - 1) * M + 2 * idx - j];
-            a[p * M + 2 * idx - j] = a[(p - 1) * M + j] - a[(p - 1) * M + 2 * idx - j];
-            a[p * M + idx]         = a[(p - 1) * M + idx];
-        }
-    }
 
     for (int s = 1; s <= n - 1; s++) {
         int idx = 1 << (n - s);
         int vm  = 1 << (s - 1);
+        cadvance(a, idx);
+
         for (int k = 1; k <= idx; k++) {
             T y = 0;
             for (int j = 0; j <= idx - 1; j++) {
-                y += a[s * M + idx * 2 - j] *
+                y += a[idx * 2 - j] *
                     ffCOS[((2 * k - 1) * vm * nr * j) % sz];
             }
             S[(2 * k - 1) * vm] = y * dx;
         }
     }
-    S[0]   = (a[n * M + 0] + a[n * M + 1]) * dx;
-    S[N]   = (a[n * M + 0] - a[n * M + 1]) * dx;
-    S[N/2] =  a[n * M + 2] * dx;
+    cadvance(a, 1 << (n-n));
+    S[0]   = (a[0] + a[1]) * dx;
+    S[N]   = (a[0] - a[1]) * dx;
+    S[N/2] =  a[2] * dx;
 }
 
 template class FFT<double>;
