@@ -49,7 +49,7 @@ public:
       \param s  - начальное условие
       \param dx - множитель перед суммой
 	*/
-    void pFFT(T *S, const T* s, T dx);
+    void pFFT(T *S, T* s, T dx);
 
 	/*!быстрое преобразование Фурье периодической функции.
       по значениям функции находим коэфф Фурье.
@@ -59,7 +59,7 @@ public:
       \param s  - начальное условие
       \param dx - множитель перед суммой
 	*/
-	void pFFT_1(T *S, const T *s1, T dx);
+	void pFFT_1(T *S, T *s1, T dx);
 	/*! быстрое косинусное преобразование.
 	   Самарский-Николаев, страница 176, формулы 46-47
        fftw: REDFT00
@@ -78,6 +78,8 @@ private:
 
     void sFFT(T *S, T *s, T dx, int N, int n,int nr);
     void cFFT(T *S, T *s, T dx, int N, int n,int nr);
+
+    inline void padvance(T*a, int idx);
 };
 
 } // namespace fdm

@@ -36,38 +36,45 @@ void FFT<T>::init() {
 }
 
 template<typename T>
-void FFT<T>::pFFT_1(T *S, const T *s1, T dx) {
+inline void FFT<T>::padvance(T* a, int idx)
+{
+    for (int j = 0; j <= idx - 1; j++) {
+        T a1, a2;
+        a1 = a[j] + a[idx + j];
+        a2 = a[j] - a[idx + j];
+        a[j]         = a1;
+        a[idx + j] = a2;
+    }
+}
+
+template<typename T>
+void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
     const T* ffSIN = &t.ffSIN[0];
     const T* ffCOS = &t.ffCOS[0];
 
-    int p, s, j, idx, idx2, vm, k;
+    int s, j, idx, idx2, vm, k;
     int sz = static_cast<int>(t.ffSIN.size());
     int N_2 = N/2;
     int yoff = 0;
     int _yoff = N_2;
 
-    memcpy(&a[0], s1, N * sizeof(T));
-
-    for (p = 1; p <= n; p++) {
-        idx = 1 << (n - p);
-        for (j = 0; j <= idx - 1; j++) {
-            a[p * N + j]       = a[(p - 1) * N + j] + a[(p - 1) * N + idx + j];
-            a[p * N + idx + j] = a[(p - 1) * N + j] - a[(p - 1) * N + idx + j];
-        }
-    }
+    T* a = s1;
 
     for (s = 1; s <= n - 2; s++) {
         idx = 1 << (n - s - 1);
         vm  = 1 << s;
+
+        padvance(a, 2*idx);
+
         for (k = 1; k <= idx; k++) {
             T s1 = 0.0;
             T s2 = 0.0;
             for (j = 0; j <= 2 * idx - 1; j++) {
-                s1 += a[s * N + 2 * idx + j] *
+                s1 += a[2 * idx + j] *
                     ffCOS[((2 * k - 1) * vm * j) % sz];
             }
             for (j = 1; j <= 2 * idx - 1; j++) {
-                s2 += a[s * N + 2 * idx + j] *
+                s2 += a[2 * idx + j] *
                     ffSIN[((2 * k - 1) * vm * j) % sz];
             }
             idx2 = (1 << (s - 1)) * (2 * k - 1);
@@ -76,11 +83,14 @@ void FFT<T>::pFFT_1(T *S, const T *s1, T dx) {
         }
     }
 
-    S[yoff + N_2]           = a[n * N + 1];
-    S[yoff+(1 << (n - 2))]  = a[(n - 1) * N + 2];
 
-    S[yoff + 0]             = a[n * N + 0];
-    S[_yoff+(1 << (n - 2))] = a[(n - 1) * N + 3];
+    padvance(a, 1 << (n - (n-1)));
+    S[yoff +(1 << (n - 2))] = a[2];
+    S[_yoff+(1 << (n - 2))] = a[3];
+
+    padvance(a, 1 << (n - n));
+    S[yoff + 0]             = a[0];
+    S[yoff + N_2]           = a[1];
 
     for (k = 0; k <= N_2; k++) {
         S[yoff + k]  = S[yoff + k] * dx;
@@ -97,7 +107,7 @@ void FFT<T>::pFFT_1(T *S, const T *s1, T dx) {
 }
 
 template<typename T>
-void FFT<T>::pFFT(T *S, const T* s, T dx) {
+void FFT<T>::pFFT(T *S, T* s, T dx) {
     int N_2 = N/2;
     int k;
 
