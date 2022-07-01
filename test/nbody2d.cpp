@@ -1,6 +1,7 @@
 #include <random>
 #include <list>
 #include <thread>
+#include <chrono>
 
 #include "config.h"
 #include "tensor.h"
@@ -14,6 +15,7 @@
 
 using namespace fdm;
 using namespace std;
+using namespace std::chrono;
 using namespace asp;
 
 template<typename T,bool check,tensor_flag flag,typename I=TSC2<T>>
@@ -86,6 +88,12 @@ public:
     std::thread thread;
 
     int collisions = 0;
+    double distribute_time = 0;
+    double poisson_time = 0;
+    double diff_time = 0; // E time
+    double local_p_time = 0;
+    double accel_time = 0;
+    double move_time = 0;
 
     NBody(T x0, T y0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int pponly, int solar, T crit, T rsoft)
         : origin{x0, y0}
@@ -134,7 +142,11 @@ public:
         } else {
             calc_a_pm();
         }
+
+        auto t1 = steady_clock::now();
         move();
+        auto t2 = steady_clock::now();
+        move_time += duration_cast<duration<double>>(t2 - t1).count();
     }
 
     void calc_error() {
@@ -326,6 +338,8 @@ private:
     }
 
     void calc_a_pm() {
+        auto t1 = steady_clock::now();
+
         // 1. mass to edges
 #pragma omp parallel for
         for (int k = n0; k <= nnn; k++) {
@@ -335,6 +349,10 @@ private:
         }
 
         distribute_masses();
+
+        auto t2 = steady_clock::now();
+
+        distribute_time += duration_cast<duration<double>>(t2 - t1).count();
 
         // -4pi G ro
 #pragma omp parallel for
@@ -350,6 +368,9 @@ private:
                 psi[k][j] = psi0[n/2][k][j];
             }
         }
+
+        auto t3 = steady_clock::now();
+        poisson_time += duration_cast<duration<double>>(t3 - t2).count();
 
         T beta=4./3.;
 #pragma omp parallel for
@@ -374,6 +395,9 @@ private:
                 }
             }
         }
+
+        auto t4 = steady_clock::now();
+        diff_time += duration_cast<duration<double>>(t4 - t3).count();
 
 #pragma omp parallel for
         for (int k = n0; k <= nn; k++) {
@@ -421,7 +445,13 @@ private:
             }
         }
 
+        auto t5 = steady_clock::now();
+        local_p_time += duration_cast<duration<double>>(t5 - t4).count();
+
         calc_accelerations();
+
+        auto t6 = steady_clock::now();
+        accel_time += duration_cast<duration<double>>(t6 - t5).count();
     }
 
     void apply_bi_bj(Body& bi, Body& bj, T off[2], bool apply_bj) {
@@ -690,6 +720,14 @@ void calc(const Config& c) {
             task.plot(step+1);
         }
     }
+
+    printf("Stat:\n");
+    printf("distribute_time: %e\n", task.distribute_time);
+    printf("poisson_time: %e\n", task.poisson_time);
+    printf("diff_time: %e\n", task.diff_time);
+    printf("local_p_time: %e\n", task.local_p_time);
+    printf("accel_time: %e\n", task.accel_time);
+    printf("move_time: %e\n", task.move_time);
 }
 
 template<typename T,tensor_flag flag, typename I>
