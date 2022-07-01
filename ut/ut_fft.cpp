@@ -143,7 +143,8 @@ void test_cos(void**) {
         s[i] = distribution(generator);
     }
 
-    ft.cFFT(&S[0], &s[0], 1.0);
+    s1 = s;
+    ft.cFFT(&S[0], &s1[0], 1.0);
 
     if constexpr(is_same<T,double>::value) {
         cFT(&s2[0], &s[0], 1.0, N);
@@ -152,7 +153,8 @@ void test_cos(void**) {
         }
     }
 
-    ft.cFFT(&s1[0], &S[0], 2.0/N);
+    s2 = S;
+    ft.cFFT(&s1[0], &s2[0], 2.0/N);
 
     for (int i = 0; i <= N; i++) {
         assert_float_equal(s1[i], s[i], tol);
