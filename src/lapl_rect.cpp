@@ -23,13 +23,14 @@ void LaplRect<T,check,F>::init_lm() {
 
 template<typename T, bool check, typename F>
 void LaplRectFFT2<T,check,F>::init_lm() {
+    auto dx2 = this->dx2;
     base::init_lm();
     lm_x_.resize(xpoints);
     for (int j = x1; j <= xn; j++) {
         if constexpr(has_tensor_flag(F::tail::head,tensor_flag::periodic)) {
-            lm_x_[j] = 4./this->dx2*sq(sin(j*M_PI/xpoints));
+            lm_x_[j] = 4./dx2*sq(sin(j*M_PI/xpoints));
         } else {
-            lm_x_[j] = 4./this->dx2*sq(sin(j*M_PI*0.5/xpoints));
+            lm_x_[j] = 4./dx2*sq(sin(j*M_PI*0.5/xpoints));
         }
     }
     if constexpr(is_same<F,tensor_flags<>>::value) {
@@ -71,9 +72,9 @@ void LaplRect<T,check,F>::solve(T* ans, T* rhs) {
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y[j].pFFT_1(&S[j*ypoints], &s[j*ypoints], dy*sly);
+            ft_y.pFFT_1(&S[j*ypoints], &s[j*ypoints], dy*sly);
         } else {
-            ft_y[j].sFFT(&S[j*ypoints], &s[j*ypoints], dy*sly);
+            ft_y.sFFT(&S[j*ypoints], &s[j*ypoints], dy*sly);
         }
 
         for (int k = y1; k <= yn; k++) {
@@ -97,9 +98,9 @@ void LaplRect<T,check,F>::solve(T* ans, T* rhs) {
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y[j].pFFT(&S[j*ypoints], &s[j*ypoints], sly);
+            ft_y.pFFT(&S[j*ypoints], &s[j*ypoints], sly);
         } else {
-            ft_y[j].sFFT(&S[j*ypoints], &s[j*ypoints], sly);
+            ft_y.sFFT(&S[j*ypoints], &s[j*ypoints], sly);
         }
 
         for (int k = y1; k <= yn; k++) {
@@ -130,9 +131,9 @@ void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y[j].pFFT_1(&S[j*ypoints], &s[j*ypoints], dy*sly);
+            ft_y.pFFT_1(&S[j*ypoints], &s[j*ypoints], dy*sly);
         } else {
-            ft_y[j].sFFT(&S[j*ypoints], &s[j*ypoints], dy*sly);
+            ft_y.sFFT(&S[j*ypoints], &s[j*ypoints], dy*sly);
         }
 
         for (int k = y1; k <= yn; k++) {
@@ -147,9 +148,9 @@ void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
         }
 
         if constexpr(has_tensor_flag(F::tail::head,tensor_flag::periodic)) {
-            ft_x[k].pFFT_1(&S[k*xpoints], &s[k*xpoints], dx*slx);
+            ft_x.pFFT_1(&S[k*xpoints], &s[k*xpoints], dx*slx);
         } else {
-            ft_x[k].sFFT(&S[k*xpoints], &s[k*xpoints], dx*slx);
+            ft_x.sFFT(&S[k*xpoints], &s[k*xpoints], dx*slx);
         }
 
         for (int j = x1; j <= xn; j++) {
@@ -177,9 +178,9 @@ void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
         }
 
         if constexpr(has_tensor_flag(F::tail::head,tensor_flag::periodic)) {
-            ft_x[k].pFFT(&S[k*xpoints], &s[k*xpoints], slx);
+            ft_x.pFFT(&S[k*xpoints], &s[k*xpoints], slx);
         } else {
-            ft_x[k].sFFT(&S[k*xpoints], &s[k*xpoints], slx);
+            ft_x.sFFT(&S[k*xpoints], &s[k*xpoints], slx);
         }
 
         for (int j = x1; j <= xn; j++) {
@@ -194,9 +195,9 @@ void LaplRectFFT2<T,check,F>::solve(T* ans, T* rhs) {
         }
 
         if constexpr(has_tensor_flag(F::head,tensor_flag::periodic)) {
-            ft_y[j].pFFT(&S[j*ypoints], &s[j*ypoints], sly);
+            ft_y.pFFT(&S[j*ypoints], &s[j*ypoints], sly);
         } else {
-            ft_y[j].sFFT(&S[j*ypoints], &s[j*ypoints], sly);
+            ft_y.sFFT(&S[j*ypoints], &s[j*ypoints], sly);
         }
 
         for (int k = y1; k <= yn; k++) {

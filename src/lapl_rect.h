@@ -25,7 +25,7 @@ public:
     std::vector<T> L,D,U;
 
     FFTTable<T> ft_y_table;
-    std::vector<FFT<T>> ft_y;
+    FFT<T> ft_y;
 
     std::vector<T> lm_y;
 
@@ -52,7 +52,7 @@ public:
 
         , L(ypoints*nx), D(ypoints*nx), U(ypoints*nx)
         , ft_y_table(ypoints)
-        , ft_y(nx+1, {ft_y_table, ypoints})
+        , ft_y(ft_y_table, ypoints)
 
         , lm_y_scale(nx+1, 1) // use 1/r/r for cylindrical coordinates
         , L_scale(nx+1, 1) // use (r-0.5*dr)/r for cyl...
@@ -81,7 +81,7 @@ public:
 
     FFTTable<T>  ft_x_table_;
     FFTTable<T>* ft_x_table;
-    std::vector<FFT<T>> ft_x;
+    FFT<T> ft_x;
 
     std::vector<T> lm_x_;
     T* lm_x;
@@ -97,7 +97,7 @@ public:
 
         , ft_x_table_(xpoints == this->ypoints ? 1 : xpoints)
         , ft_x_table(xpoints == this->ypoints ? &this->ft_y_table: &ft_x_table_)
-        , ft_x(this->ypoints, {*ft_x_table, xpoints})
+        , ft_x(*ft_x_table, xpoints)
     {
         init_lm();
     }

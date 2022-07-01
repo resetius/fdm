@@ -47,7 +47,7 @@ public:
     // strange
     std::vector<Solver<T>> solver;
     FFTTable<T> ft_table;
-    std::vector<FFT<T>> ft;
+    FFT<T> ft;
 
     LaplCyl3FFT1(double dr, double dz,
              double r0, double lr, double lz,
@@ -58,6 +58,7 @@ public:
         , s((nz+1)*nphi), S((nz+1)*nphi)
         , solver(nphi)
         , ft_table(nphi)
+        , ft(ft_table, nphi)
     {
         init_solver();
     }
@@ -76,7 +77,7 @@ public:
                     s[k*nphi+i] = RHS[i][k][j];
                 }
 
-                ft[k].pFFT_1(&S[k*nphi], &s[k*nphi], dphi*SQRT_M_1_PI);
+                ft.pFFT_1(&S[k*nphi], &s[k*nphi], dphi*SQRT_M_1_PI);
 
                 for (int i = 0; i < nphi; i++) {
                     RHSm[i][k][j] = S[k*nphi+i];
@@ -96,7 +97,7 @@ public:
                     s[k*nphi+i] = RHSx[i][k][j];
                 }
 
-                ft[k].pFFT(&S[k*nphi], &s[k*nphi], SQRT_M_1_PI);
+                ft.pFFT(&S[k*nphi], &s[k*nphi], SQRT_M_1_PI);
 
                 for (int i = 0; i < nphi; i++) {
                     ANS[i][k][j] = S[k*nphi+i];
@@ -107,12 +108,8 @@ public:
 
 private:
     void init_solver() {
-        ft.reserve(nz+1);
         for (int i = 0; i < nphi; i++) {
             init_solver(i);
-        }
-        for (int k = 0; k <= nz; k++) {
-            ft.emplace_back(ft_table, nphi);
         }
     }
 

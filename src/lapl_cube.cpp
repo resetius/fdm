@@ -18,9 +18,9 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
             }
 
             if constexpr(has_tensor_flag(zflag,tensor_flag::periodic)) {
-                ft_z[k].pFFT_1(&S[k*(nz+1)], &s[k*(nz+1)], dz*slz);
+                ft_z.pFFT_1(&S[k*(nz+1)], &s[k*(nz+1)], dz*slz);
             } else {
-                ft_z[k].sFFT(&S[k*(nz+1)], &s[k*(nz+1)], dz*slz);
+                ft_z.sFFT(&S[k*(nz+1)], &s[k*(nz+1)], dz*slz);
             }
 
             for (int i = z1; i <= zn; i++) {
@@ -37,9 +37,9 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
             }
 
             if constexpr(has_tensor_flag(yflag,tensor_flag::periodic)) {
-                ft_y[i].pFFT_1(&S[i*(ny+1)], &s[i*(ny+1)], dy*sly);
+                ft_y.pFFT_1(&S[i*(ny+1)], &s[i*(ny+1)], dy*sly);
             } else {
-                ft_y[i].sFFT(&S[i*(ny+1)], &s[i*(ny+1)], dy*sly);
+                ft_y.sFFT(&S[i*(ny+1)], &s[i*(ny+1)], dy*sly);
             }
 
             for (int k = y1; k <= yn; k++) {
@@ -56,9 +56,9 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
             }
 
             if constexpr(has_tensor_flag(xflag,tensor_flag::periodic)) {
-                ft_x[i].pFFT_1(&S[i*(nx+1)], &s[i*(nx+1)], dx*slx);
+                ft_x.pFFT_1(&S[i*(nx+1)], &s[i*(nx+1)], dx*slx);
             } else {
-                ft_x[i].sFFT(&S[i*(nx+1)], &s[i*(nx+1)], dx*slx);
+                ft_x.sFFT(&S[i*(nx+1)], &s[i*(nx+1)], dx*slx);
             }
 
             for (int j = x1; j <= xn; j++) {
@@ -71,7 +71,10 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
     for (int i = z1; i <= zn; i++) {
         for (int k = y1; k <= yn; k++) {
             for (int j = x1; j <= xn; j++) {
-                RHSm[i][k][j] /= -lm_z[i]-lm_y[k]-lm_x[j];
+                T k2 = lm_z[i]+lm_y[k]+lm_x[j];
+                //T rcrit = 1.5625; //0.15625;
+                //RHSm[i][k][j] /= -k2 * exp (-k2*rcrit*rcrit);
+                RHSm[i][k][j] /= -k2;
             }
         }
     }
@@ -88,9 +91,9 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
             }
 
             if constexpr(has_tensor_flag(xflag,tensor_flag::periodic)) {
-                ft_x[i].pFFT(&S[i*(nx+1)], &s[i*(nx+1)], slx);
+                ft_x.pFFT(&S[i*(nx+1)], &s[i*(nx+1)], slx);
             } else {
-                ft_x[i].sFFT(&S[i*(nx+1)], &s[i*(nx+1)], slx);
+                ft_x.sFFT(&S[i*(nx+1)], &s[i*(nx+1)], slx);
             }
 
             for (int j = x1; j <= xn; j++) {
@@ -107,9 +110,9 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
             }
 
             if constexpr(has_tensor_flag(yflag,tensor_flag::periodic)) {
-                ft_y[i].pFFT(&S[i*(ny+1)], &s[i*(ny+1)], sly);
+                ft_y.pFFT(&S[i*(ny+1)], &s[i*(ny+1)], sly);
             } else {
-                ft_y[i].sFFT(&S[i*(ny+1)], &s[i*(ny+1)], sly);
+                ft_y.sFFT(&S[i*(ny+1)], &s[i*(ny+1)], sly);
             }
 
             for (int k = y1; k <= yn; k++) {
@@ -126,9 +129,9 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
             }
 
             if constexpr(has_tensor_flag(zflag,tensor_flag::periodic)) {
-                ft_z[k].pFFT(&S[k*(nz+1)], &s[k*(nz+1)], slz);
+                ft_z.pFFT(&S[k*(nz+1)], &s[k*(nz+1)], slz);
             } else {
-                ft_z[k].sFFT(&S[k*(nz+1)], &s[k*(nz+1)], slz);
+                ft_z.sFFT(&S[k*(nz+1)], &s[k*(nz+1)], slz);
             }
 
             for (int i = z1; i <= zn; i++) {

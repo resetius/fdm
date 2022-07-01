@@ -33,12 +33,12 @@ public:
     FFTTable<T> ft_x_table;
     FFTTable<T> ft_y_table;
     FFTTable<T> ft_z_table;
-    std::vector<FFT<T>> ft_x;
-    std::vector<FFT<T>> ft_y_;
-    std::vector<FFT<T>> ft_z_;
+    FFT<T> ft_x;
+    FFT<T> ft_y_;
+    FFT<T> ft_z_;
 
-    std::vector<FFT<T>>& ft_y;
-    std::vector<FFT<T>>& ft_z;
+    FFT<T>& ft_y;
+    FFT<T>& ft_z;
 
     std::vector<T> lm_y;
     std::vector<T> lm_x_;
@@ -77,13 +77,9 @@ public:
         , ft_y_table((xpoints==ypoints&&xpoints==zpoints)?1:ypoints)
         , ft_z_table((xpoints==ypoints&&xpoints==zpoints)?1:zpoints)
 
-        , ft_x(mxdim, {ft_x_table, xpoints})
-        , ft_y_((xpoints==ypoints&&xpoints==zpoints)?
-                0:mxdim,
-                {ft_y_table, ypoints})
-        , ft_z_((xpoints==ypoints&&xpoints==zpoints)?
-                0:mxdim,
-                {ft_z_table, zpoints})
+        , ft_x(ft_x_table, xpoints)
+        , ft_y_(ft_y_table, ypoints)
+        , ft_z_(ft_z_table, zpoints)
 
         , ft_y((xpoints==ypoints&&xpoints==zpoints)?ft_x:ft_y_)
         , ft_z((xpoints==ypoints&&xpoints==zpoints)?ft_x:ft_z_)
