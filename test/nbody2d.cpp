@@ -418,7 +418,6 @@ private:
             for (int k = n0; k <= nn; k++) {
                 for (int j = n0; j <= nn; j++) {
                     auto& cell = cells[k][j];
-                    T off[] = {0.0,0.0};
 
                     // local forces
                     calc_local_forces(cell);
@@ -426,12 +425,13 @@ private:
                     for (int k0 = -1; k0 <= 1; k0++) {
                         for (int j0 = -1; j0 <= 1; j0++) {
                             if (k0 == 0 && j0 == 0) continue;
+                            T off[] = {0.0,0.0};
 
                             if constexpr(flag == tensor_flag::periodic) {
-                                if (k+k0 < 0)  off[0] = -h;
-                                if (k+k0 > nn) off[0] =  h;
-                                if (j+j0 < 0)  off[1] = -h;
-                                if (j+j0 > nn) off[1] =  h;
+                                if (k+k0 < 0)   off[0] = -l;
+                                if (k+k0 >= nn) off[0] =  l;
+                                if (j+j0 < 0)   off[1] = -l;
+                                if (j+j0 >= nn) off[1] =  l;
                                 calc_local_forces(cell, cells[k+k0][j+j0], off);
                             } else {
                                 if (k+k0 >= 0 && k+k0 <= nn && j+j0 >=0 && j+j0 <= nn) {
