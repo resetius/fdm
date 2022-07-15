@@ -64,7 +64,6 @@ public:
 
     struct Cell {
         vector<int> bodies;
-        vector<int> next;
         bool distributed = false;
     };
 
@@ -402,7 +401,7 @@ private:
 #pragma omp parallel for
         for (int k = n0; k <= nn; k++) {
             for (int j = n0; j <= nn; j++) {
-                cells[k][j].next.clear();
+                cells[k][j].bodies.clear();
             }
         }
 
@@ -419,12 +418,8 @@ private:
                 for (int j = n0; j <= nn; j++) {
                     auto& cell = cells[k][j];
 
-                    // local forces
-                    calc_local_forces(cell);
-
                     for (int k0 = -1; k0 <= 1; k0++) {
                         for (int j0 = -1; j0 <= 1; j0++) {
-                            if (k0 == 0 && j0 == 0) continue;
                             T off[] = {0.0,0.0};
 
                             if constexpr(flag == tensor_flag::periodic) {
@@ -454,7 +449,7 @@ private:
         accel_time += duration_cast<duration<double>>(t6 - t5).count();
     }
 
-    void apply_bi_bj(Body& bi, Body& bj, T off[2], bool apply_bj) {
+    void apply_bi_bj(Body& bi, Body& bj, T off[2]) {
         if (!bi.enabled || !bj.enabled) return;
 
         double R = 0;
@@ -474,38 +469,15 @@ private:
                     * (erfc( R/2/rcrit )
                        + R/rcrit/sqrt(M_PI)*exp(-R*R/4/rcrit/rcrit));
             }
-
-            if (apply_bj) {
-                verify(0);
-                for (int k = 0; k < 2; k++) {
-                    bj.F[k] +=  -bi.mass * G * (bj.x[k] - (bi.x[k]+off[k])) /R/R/R
-                    * (erfc( -(bj.x[k] - bi.x[k])/2/rcrit )
-                       + (bj.x[k] - bi.x[k])/rcrit/sqrt(M_PI)*exp(-R*R/4/rcrit/rcrit));
-                }
-            }
-        }
-    }
-
-    void calc_local_forces(Cell& cell) {
-        int nbodies = static_cast<int>(cell.bodies.size());
-        T off[] = {0.0,0.0};
-
-        for (int i = 0; i < nbodies; i++) {
-            for (int j = 0; j < nbodies; j++) {
-                auto& bi = bodies[cell.bodies[i]];
-                auto& bj = bodies[cell.bodies[j]];
-
-                if (i!=j) {
-                    apply_bi_bj(bi, bj, off, false);
-                }
-            }
         }
     }
 
     void calc_local_forces(Cell& cell, Cell& other, T off[2]) {
         for (auto& bi : cell.bodies) {
             for (auto& bj : other.bodies) {
-                apply_bi_bj(bodies[bi], bodies[bj], off, false);
+                if (bi != bj) {
+                    apply_bi_bj(bodies[bi], bodies[bj], off);
+                }
             }
         }
     }
@@ -597,14 +569,7 @@ private:
         for (int index = 0; index < N; index++) {
             auto& body = bodies[index];
             if (!body.enabled) continue;
-            cells[body.k][body.j].next.push_back(index);
-        }
-
-#pragma omp parallel for
-        for (int k = n0; k <= nn; k++) {
-            for (int j = n0; j <= nn; j++) {
-                cells[k][j].next.swap(cells[k][j].bodies);
-            }
+            cells[body.k][body.j].bodies.push_back(index);
         }
 
         int k = 2;
@@ -657,7 +622,8 @@ private:
             for (int index = 0; index < static_cast<int>(bodies.size()); index++) {
                 auto& body = bodies[index];
                 for (int i = 0; i < 2; i++) {
-                    body.x[i] = l*distribution(generator)/11 + origin[i] + 5*l/11;
+                    //body.x[i] = l*distribution(generator)/11 + origin[i] + 5*l/11;
+                    body.x[i] = l*distribution(generator) + origin[i];
                 }
                 body.mass = 0.2 + 1.5 * distribution(generator);
 
