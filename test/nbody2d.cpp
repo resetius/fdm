@@ -39,6 +39,7 @@ public:
     int solar;
     double rcrit;
     double rsoft;
+    double mass;
 
     struct Body {
         T x[2];
@@ -343,7 +344,11 @@ private:
 #pragma omp parallel for
         for (int k = n0; k <= nnn; k++) {
             for (int j = n0; j <= nnn; j++) {
-                f[k][j] = 0;
+                if constexpr(flag == tensor_flag::periodic) {
+                    f[k][j] = - 4*G*M_PI*mass/l/l/l;
+                } else {
+                    f[k][j] = 0;
+                }
             }
         }
 
@@ -579,6 +584,7 @@ private:
     }
 
     void init_points() {
+        mass = 0;
         if (solar) {
             G = 2.96e-6;
             struct Abc {
@@ -609,6 +615,8 @@ private:
                 body.v[0] = abc[index].v[0];
                 body.v[1] = abc[index].v[1];
                 body.mass = abc[index].mass;
+
+                mass += body.mass;
             }
         } else {
             std::default_random_engine generator;
@@ -641,6 +649,8 @@ private:
 
                 body.v[0] = V*body.x[1];
                 body.v[1] = -V*body.x[0];
+
+                mass += body.mass;
             }
 
             printf("min/max %.1f %.1f %.1f %.1f\n", minx, maxx, miny, maxy);
@@ -687,13 +697,21 @@ void calc(const Config& c) {
         }
     }
 
-    printf("Stat:\n");
+    printf("Stat Total:\n");
     printf("distribute_time: %e\n", task.distribute_time);
     printf("poisson_time: %e\n", task.poisson_time);
     printf("diff_time: %e\n", task.diff_time);
     printf("local_p_time: %e\n", task.local_p_time);
     printf("accel_time: %e\n", task.accel_time);
     printf("move_time: %e\n", task.move_time);
+
+    printf("Stat Per Step:\n");
+    printf("distribute_time: %e\n", task.distribute_time / steps);
+    printf("poisson_time: %e\n", task.poisson_time / steps);
+    printf("diff_time: %e\n", task.diff_time / steps);
+    printf("local_p_time: %e\n", task.local_p_time / steps);
+    printf("accel_time: %e\n", task.accel_time / steps);
+    printf("move_time: %e\n", task.move_time / steps);
 }
 
 template<typename T,tensor_flag flag, typename I>
