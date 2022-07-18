@@ -418,7 +418,7 @@ private:
 
 #pragma omp parallel for
         for (auto& body : bodies) {
-            for (int i = 0; i < 2; i++) {
+            for (int i = 0; i < 3; i++) {
                 body.F[i] = 0;
             }
         }
@@ -444,7 +444,7 @@ private:
                                         if (i+i0 > nn) off[2] =  l;
                                         calc_local_forces(cell, cells[i+i0][k+k0][j+j0], off);
                                     } else {
-                                        if (k+k0 >= 0 && k+k0 <= nn && j+j0 >=0 && j+j0 <= nn && i+i0 >= 0 && i+i0 < nn) {
+                                        if (k+k0 >= 0 && k+k0 <= nn && j+j0 >=0 && j+j0 <= nn && i+i0 >= 0 && i+i0 <= nn) {
                                             calc_local_forces(cell, cells[i+i0][k+k0][j+j0], off);
                                         }
                                     }
@@ -478,7 +478,7 @@ private:
         if (!bi.enabled || !bj.enabled) return;
 
         double R = 0;
-        for (int k = 0; k < 2; k++) {
+        for (int k = 0; k < 3; k++) {
             R += sq(bi.x[k]-(bj.x[k]+off[k]));
         }
         R = std::sqrt(R); // +eps;
@@ -489,7 +489,7 @@ private:
                 return;
             }
 
-            for (int k = 0; k < 2; k++) {
+            for (int k = 0; k < 3; k++) {
                 bi.F[k] +=  -bj.mass * G * (bi.x[k] - (bj.x[k]+off[k])) /R/R/R
                     * (erfc( R/2/rcrit )
                        + R/rcrit/sqrt(M_PI)*exp(-R*R/4/rcrit/rcrit));
@@ -690,7 +690,7 @@ private:
 
 template <typename T,tensor_flag flag, bool check, typename I>
 void calc(const Config& c) {
-    int n = c.get("nbody", "n", 512);
+    int n = c.get("nbody", "n", 32);
     int N = c.get("nbody", "N", 100000);
     int steps = c.get("nbody", "steps", 50000);
     double x0 = c.get("nbody", "x0", -10.0);
@@ -706,7 +706,7 @@ void calc(const Config& c) {
     int pponly = c.get("nbody", "pponly", 0);
     int solar = c.get("nbody", "solar", 0);
     int error = c.get("nbody", "error", 0);
-    double crit = c.get("nbody", "rcrit", 2.0);
+    double crit = c.get("nbody", "rcrit", l/n);
     double rsoft = c.get("nbody", "rsoft", 0.01);
 
     NBody<T,check,flag,I> task(x0, y0, z0, l, n, N, dt, G, vel, sgn, local, pponly, solar, crit, rsoft);
@@ -736,12 +736,12 @@ void calc(const Config& c) {
     printf("move_time: %e\n", task.move_time);
 
     printf("Stat Per Step:\n");
-    printf("distribute_time: %e\n", task.distribute_time / steps);
-    printf("poisson_time: %e\n", task.poisson_time / steps);
-    printf("diff_time: %e\n", task.diff_time / steps);
-    printf("local_p_time: %e\n", task.local_p_time / steps);
-    printf("accel_time: %e\n", task.accel_time / steps);
-    printf("move_time: %e\n", task.move_time / steps);
+    printf("distribute_time: %.2fms\n", 1000.0*task.distribute_time / steps);
+    printf("poisson_time: %.2fms\n", 1000.0*task.poisson_time / steps);
+    printf("diff_time: %.2fms\n", 1000.0*task.diff_time / steps);
+    printf("local_p_time: %.2fms\n", 1000.0*task.local_p_time / steps);
+    printf("accel_time: %.2fms\n", 1000.0*task.accel_time / steps);
+    printf("move_time: %.2fms\n", 1000.0*task.move_time / steps);
 }
 
 template<typename T,tensor_flag flag, typename I>
