@@ -27,8 +27,8 @@ public:
 
     T origin[3];
     double l;
-    int n, N;
-    double h;
+    int n, npp, N;
+    double h, hpp;
     double dt;
     double G;
     double vel;
@@ -44,11 +44,9 @@ public:
         T a[3];
         T aprev[3];
         T mass;
-        int enabled;
 
-        int i;
-        int k;
-        int j;
+        int i,k,j;
+        int ipp,kpp,jpp;
 
         T F[3]; // Local force
 
@@ -57,19 +55,18 @@ public:
             , v{0}
             , a{0}
             , aprev{0}
-            , enabled(true)
         { }
     };
 
     struct Cell {
         vector<int> bodies;
-        bool distributed = false;
     };
 
     vector<Body> bodies;
     tensor rhs;
     tensor psi,f;
     fdm::tensor<Cell,3,check,flags> cells;
+    fdm::tensor<Cell,3,check,flags> cellspp;
     fdm::tensor<array<T,3>,3,check,flags> E;
 
     LaplCube<T,check,flags> solver3;
@@ -90,12 +87,14 @@ public:
     double accel_time = 0;
     double move_time = 0;
 
-    NBody(T x0, T y0, T z0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int solar, T crit)
+    NBody(T x0, T y0, T z0, double l, int n, int npp, int N, double dt, double G, double vel, int sgn, int local, int solar, T crit)
         : origin{x0, y0, z0}
         , l(l)
         , n(n) // число ячеек
+        , npp(npp) // сетка для силы pp
         , N(N) // число тел
         , h(l/n)
+        , hpp(l/npp)
         , dt(dt)
         , G(G)
         , vel(vel)
@@ -110,6 +109,8 @@ public:
         , psi({0,n-1,0,n-1,0,n-1})
         , f({0,n-1,0,n-1,0,n-1})
         , cells({0,n-1,0,n-1,0,n-1})
+        , cellspp({0,npp-1,0,npp-1,0,npp-1})
+
         , E({0,n-1,0,n-1,0,n-1})
         , solver3(h,h,h,l,l,l,n,n,n)
         , thread(plot_thread, l, origin, &q)
@@ -197,9 +198,7 @@ private:
 
             double r = 2*l / 2000.0;
             for (auto& body: task.bodies) {
-                if (body.enabled) {
-                    plarc(body.x[1], body.x[0], sqrt(body.mass)*r, sqrt(body.mass)*r, 0, 360, 0, 1);
-                }
+                plarc(body.x[1], body.x[0], sqrt(body.mass)*r, sqrt(body.mass)*r, 0, 360, 0, 1);
             }
             /*
             plotter.plot(matrix_plotter::page()
@@ -244,36 +243,15 @@ private:
 
     void distribute_masses() {
         // per cell
-        for (int i = 0; i < n; i ++) {
-            for (int k = 0; k < n; k ++) {
-                for (int j = 0; j < n; j ++) {
-                    cells[i][k][j].distributed = false;
-                }
-            }
-        }
 
         for (int off = 0; off < I::n; off++) {
 #pragma omp parallel for
             for (int i = off; i < n; i += I::n) {
                 for (int k = off; k < n; k += I::n) {
                     for (int j = off; j < n; j += I::n) {
-                        verify(!cells[i][k][j].distributed);
-
                         for (int index : cells[i][k][j].bodies) {
                             distribute_mass(bodies[index]);
                         }
-
-                        cells[i][k][j].distributed = true;
-                    }
-                }
-            }
-        }
-
-        if constexpr(check==true) {
-            for (int i = 0; i < n; i += I::n) {
-                for (int k = 0; k < n; k += I::n) {
-                    for (int j = 0; j < n; j += I::n) {
-                        verify(cells[i][k][j].distributed);
                     }
                 }
             }
@@ -375,6 +353,14 @@ private:
                 }
             }
         }
+#pragma omp parallel for
+        for (int i = 0; i < npp; i++) {
+            for (int k = 0; k < npp; k++) {
+                for (int j = 0; j < npp; j++) {
+                    cellspp[i][k][j].bodies.clear();
+                }
+            }
+        }
 
         auto t5 = steady_clock::now();
         local_p_time += duration_cast<duration<double>>(t5 - t4).count();
@@ -386,8 +372,6 @@ private:
     }
 
     void apply_bi_bj(Body& bi, Body& bj, T off[2]) {
-        if (!bi.enabled || !bj.enabled) return;
-
         double R = 0;
         for (int k = 0; k < 3; k++) {
             R += sq(bi.x[k]-(bj.x[k]+off[k]));
@@ -452,7 +436,6 @@ private:
     void move() {
 #pragma omp parallel for
         for (auto& body : bodies) {
-            if (!body.enabled) continue;
 
             // verlet integration
             // positions
@@ -473,24 +456,20 @@ private:
                 body.aprev[m] = body.a[m];
             }
 
-            T x = body.x[0]-origin[0];
-            T y = body.x[1]-origin[1];
-            T z = body.x[2]-origin[2];
+            body.j = floor((body.x[0]-origin[0]) / h);
+            body.k = floor((body.x[1]-origin[1]) / h);
+            body.i = floor((body.x[2]-origin[2]) / h);
 
-            int next_j = floor(x / h);
-            int next_k = floor(y / h);
-            int next_i = floor(z / h);
-
-            //verify(abs(body.k-next_k) <= 1, "Too fast, try decrease dt");
-            //verify(abs(body.j-next_j) <= 1, "Too fast, try decrease dt");
-            body.i = next_i; body.k = next_k; body.j = next_j;
+            body.jpp = floor((body.x[0]-origin[0]) / hpp);
+            body.kpp = floor((body.x[1]-origin[1]) / hpp);
+            body.ipp = floor((body.x[2]-origin[2]) / hpp);
         }
 
         // TODO
         for (int index = 0; index < N; index++) {
             auto& body = bodies[index];
-            if (!body.enabled) continue;
             cells[body.i][body.k][body.j].bodies.push_back(index);
+            cellspp[body.ipp][body.kpp][body.jpp].bodies.push_back(index);
         }
 
         int k = 2;
@@ -554,7 +533,12 @@ private:
                 body.k = floor((body.x[1]-origin[1]) / h);
                 body.i = floor((body.x[2]-origin[2]) / h);
 
+                body.jpp = floor((body.x[0]-origin[0]) / hpp);
+                body.kpp = floor((body.x[1]-origin[1]) / hpp);
+                body.ipp = floor((body.x[2]-origin[2]) / hpp);
+
                 cells[body.i][body.k][body.j].bodies.push_back(index);
+                cellspp[body.ipp][body.kpp][body.jpp].bodies.push_back(index);
 
                 minx = min(minx, body.x[0]);
                 maxx = max(maxx, body.x[0]);
@@ -579,6 +563,7 @@ private:
 template <typename T, bool check, typename I>
 void calc(const Config& c) {
     int n = c.get("nbody", "n", 32);
+    int npp = c.get("nbody", "npp", 64);
     int N = c.get("nbody", "N", 100000);
     int steps = c.get("nbody", "steps", 50000);
     double x0 = c.get("nbody", "x0", -10.0);
@@ -595,7 +580,7 @@ void calc(const Config& c) {
     int error = c.get("nbody", "error", 0);
     double crit = c.get("nbody", "rcrit", l/n);
 
-    NBody<T,check,I> task(x0, y0, z0, l, n, N, dt, G, vel, sgn, local, solar, crit);
+    NBody<T,check,I> task(x0, y0, z0, l, n, npp, N, dt, G, vel, sgn, local, solar, crit);
 
     if (error) {
         task.calc_error();
