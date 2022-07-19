@@ -1,6 +1,7 @@
 
 Field grid 128x128x128, local force grid 64x64x64, particles 1000000, time in ms
 CPU: OpenMP (gcc-11) 16 threads
+GPU: Vulkan API 1.1, GLSL Shading Language
 |----------------+----------------+----------------+-------------+----------------|
 | Stage          | Apple M1 (CPU) | Apple M1 (GPU) | Ryzen 3700X | Nvidia RTX3600 |
 |----------------+----------------+----------------+-------------+----------------|
@@ -26,6 +27,7 @@ Relative
 
 Field grid 256x256x256, without local forces, particles 1000000, time in ms
 CPU: OpenMP (gcc-11) 16 threads
+GPU: Vulkan API 1.1, GLSL Shading Language
 |----------------+----------------+----------------+-------------+----------------|
 | Stage          | Apple M1 (CPU) | Apple M1 (GPU) | Ryzen 3700X | Nvidia RTX3600 |
 |----------------+----------------+----------------+-------------+----------------|
@@ -46,3 +48,12 @@ Relative
 | New postions   |              1 |        1160.64 |        0.81 |          72.21 |
 | Total          |              1 |           6.75 |        0.55 |           9.77 |
 |----------------+----------------+----------------+-------------+----------------|
+
+Referencies
+1. R.Hockney, J.Eastwood, Computer Simulation Using Particles, McGraw-Hill, 1981,
+   (перевод: Р.Хокни, Дж.Иствуд, Численное моделирование методом частиц, Москва, Мир, 1987)
+   (PM and P3M algorithms)
+2. A.A.Samarskii, E.S.Nikolaev, Numerical Methods For Grid Equations, Birkhauser Verlag, 1989
+   (оригинал: А.А.Самарский, Е.С.Николаев, Методы решения сеточных уравнений, Москва, Наука, 1978)
+   (Poisson solver)
+3. L.Nyland, Fast N-Body simulation with CUDA, in GPU Gems 3, Addison Wesley Professional, 2007
