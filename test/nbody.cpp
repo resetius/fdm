@@ -320,10 +320,10 @@ private:
 
         if (local) {
 #pragma omp parallel for
-            for (int i = 0; i < n; i++) {
-                for (int k = 0; k < n; k++) {
-                    for (int j = 0; j < n; j++) {
-                        auto& cell = cells[i][k][j];
+            for (int i = 0; i < npp; i++) {
+                for (int k = 0; k < npp; k++) {
+                    for (int j = 0; j < npp; j++) {
+                        auto& cell = cellspp[i][k][j];
 
                         for (int i0 = -1; i0 <= 1; i0++) {
                             for (int k0 = -1; k0 <= 1; k0++) {
@@ -336,7 +336,7 @@ private:
                                     if (j+j0 >= n) off[1] =  l;
                                     if (i+i0 < 0)  off[2] = -l;
                                     if (i+i0 >= n) off[2] =  l;
-                                    calc_local_forces(cell, cells[i+i0][k+k0][j+j0], off);
+                                    calc_local_forces(cell, cellspp[i+i0][k+k0][j+j0], off);
                                 }
                             }
                         }
