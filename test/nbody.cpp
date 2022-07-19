@@ -376,7 +376,7 @@ private:
         for (int k = 0; k < 3; k++) {
             R += sq(bi.x[k]-(bj.x[k]+off[k]));
         }
-        R = std::sqrt(R) + 0.0001;
+        R = std::sqrt(R) + 0.001;
 
         if (R < rcrit) {
             for (int k = 0; k < 3; k++) {
