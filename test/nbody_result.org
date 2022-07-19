@@ -57,3 +57,4 @@ Referencies
    (оригинал: А.А.Самарский, Е.С.Николаев, Методы решения сеточных уравнений, Москва, Наука, 1978)
    (Poisson solver)
 3. L.Nyland, Fast N-Body simulation with CUDA, in GPU Gems 3, Addison Wesley Professional, 2007
+   (Local-force solver)
