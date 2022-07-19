@@ -101,7 +101,7 @@ public:
         , sgn(sgn)
         , local(local)
         , solar(solar)
-        , rcrit(h*crit)
+        , rcrit(hpp*crit)
         , bodies(N)
 
         , rhs({0,n-1,0,n-1,0,n-1})
@@ -578,7 +578,7 @@ void calc(const Config& c) {
     int local = c.get("nbody", "local", 0); // need to check
     int solar = c.get("nbody", "solar", 0);
     int error = c.get("nbody", "error", 0);
-    double crit = c.get("nbody", "rcrit", l/n);
+    double crit = c.get("nbody", "rcrit", 1.0);
 
     NBody<T,check,I> task(x0, y0, z0, l, n, npp, N, dt, G, vel, sgn, local, solar, crit);
 
