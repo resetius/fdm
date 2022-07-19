@@ -742,6 +742,13 @@ void calc(const Config& c) {
     printf("local_p_time: %.2fms\n", 1000.0*task.local_p_time / steps);
     printf("accel_time: %.2fms\n", 1000.0*task.accel_time / steps);
     printf("move_time: %.2fms\n", 1000.0*task.move_time / steps);
+    printf("total: %.2fms\n",
+           1000.0*(task.distribute_time+
+                   task.poisson_time+
+                   task.diff_time+
+                   task.local_p_time+
+                   task.accel_time+
+                   task.move_time) / steps);
 }
 
 template<typename T,tensor_flag flag, typename I>
