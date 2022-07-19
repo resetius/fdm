@@ -18,9 +18,10 @@ using namespace std;
 using namespace std::chrono;
 using namespace asp;
 
-template<typename T,bool check,tensor_flag flag,typename I=CIC3<T>>
+template<typename T,bool check,typename I=CIC3<T>>
 class NBody {
 public:
+    static const tensor_flag flag = tensor_flag::periodic;
     using flags = typename short_flags<flag,flag,flag>::value;
     using tensor =  fdm::tensor<T,3,check,flags>;
 
@@ -68,7 +69,6 @@ public:
     };
 
     vector<Body> bodies;
-    int n0,n1,nn,nnn;
     tensor rhs;
     tensor psi,f;
     fdm::tensor<Cell,3,check,flags> cells;
@@ -96,9 +96,9 @@ public:
     NBody(T x0, T y0, T z0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int pponly, int solar, T crit, T rsoft)
         : origin{x0, y0, z0}
         , l(l)
-        , n(n) // n+1 - число ячеек (для сдвинутых сеток n - число ячеек)
+        , n(n) // число ячеек
         , N(N) // число тел
-        , h(l / (n+1))
+        , h(l/n)
         , dt(dt)
         , G(G)
         , vel(vel)
@@ -109,17 +109,13 @@ public:
         , rcrit(h*crit)
         , rsoft(h*rsoft)
         , bodies(N)
-        , n0(0)
-        , n1(flag==tensor_flag::periodic?0:1)
-        , nn(flag==tensor_flag::periodic?n-1:n)
-        , nnn(flag==tensor_flag::periodic?n-1:n+1)
 
-        , rhs({n1,nn,n1,nn,n1,nn})
+        , rhs({0,n-1,0,n-1,0,n-1})
 
-        , psi({n0,nnn,n0,nnn,n0,nnn})
-        , f({n0,nnn,n0,nnn,n0,nnn})
-        , cells({n0,nn,n0,nn,n0,nn})
-        , E({n1,nn,n1,nn,n1,nn})
+        , psi({0,n-1,0,n-1,0,n-1})
+        , f({0,n-1,0,n-1,0,n-1})
+        , cells({0,n-1,0,n-1,0,n-1})
+        , E({0,n-1,0,n-1,0,n-1})
         , solver3(h,h,h,l,l,l,n,n,n)
         , thread(plot_thread, l, origin, &q)
     {
@@ -291,16 +287,7 @@ private:
         for (int i = 0; i < I::n; i++) {
             for (int k = 0; k < I::n; k++) {
                 for (int j = 0; j < I::n; j++) {
-                    if constexpr(flag == tensor_flag::periodic) {
-                        f[i+i0][k+k0][j+j0] += m * M[i][k][j];
-                    } else {
-                        if (i0+i >= n0 && i0+i <= nnn
-                            && k0+k >= n0 && k0+k <= nnn
-                            && j0+j >= n0 && j0+j <= nnn)
-                        {
-                            f[i+i0][k+k0][j+j0] += m * M[i][k][j];
-                        }
-                    }
+                    f[i+i0][k+k0][j+j0] += m * M[i][k][j];
                 }
             }
         }
@@ -308,9 +295,9 @@ private:
 
     void distribute_masses() {
         // per cell
-        for (int i = n0; i <= nn; i ++) {
-            for (int k = n0; k <= nn; k ++) {
-                for (int j = n0; j <= nn; j ++) {
+        for (int i = 0; i < n; i ++) {
+            for (int k = 0; k < n; k ++) {
+                for (int j = 0; j < n; j ++) {
                     cells[i][k][j].distributed = false;
                 }
             }
@@ -318,9 +305,9 @@ private:
 
         for (int off = 0; off < I::n; off++) {
 #pragma omp parallel for
-            for (int i = n0+off; i <= nn; i += I::n) {
-                for (int k = n0+off; k <= nn; k += I::n) {
-                    for (int j = n0+off; j <= nn; j += I::n) {
+            for (int i = off; i < n; i += I::n) {
+                for (int k = off; k < n; k += I::n) {
+                    for (int j = off; j < n; j += I::n) {
                         verify(!cells[i][k][j].distributed);
 
                         for (int index : cells[i][k][j].bodies) {
@@ -334,9 +321,9 @@ private:
         }
 
         if constexpr(check==true) {
-            for (int i = n0; i <= nn; i += I::n) {
-                for (int k = n0; k <= nn; k += I::n) {
-                    for (int j = n0; j <= nn; j += I::n) {
+            for (int i = 0; i < n; i += I::n) {
+                for (int k = 0; k < n; k += I::n) {
+                    for (int j = 0; j < n; j += I::n) {
                         verify(cells[i][k][j].distributed);
                     }
                 }
@@ -349,14 +336,10 @@ private:
 
         // 1. mass to edges
 #pragma omp parallel for
-        for (int i = n0; i <= nnn; i++) {
-            for (int k = n0; k <= nnn; k++) {
-                for (int j = n0; j <= nnn; j++) {
-                    if constexpr(flag == tensor_flag::periodic) {
-                        f[i][k][j] = - 4*G*M_PI*mass/l/l/l;
-                    } else {
-                        f[i][k][j] = 0;
-                    }
+        for (int i = 0; i < n; i++) {
+            for (int k = 0; k < n; k++) {
+                for (int j = 0; j < n; j++) {
+                    f[i][k][j] = - 4*G*M_PI*mass/l/l/l;
                 }
             }
         }
@@ -369,46 +352,31 @@ private:
 
         // -4pi G ro
 #pragma omp parallel for
-        for (int i = n1; i <= nn; i++) {
-            for (int k = n1; k <= nn; k++) {
-                for (int j = n1; j <= nn; j++) {
+        for (int i = 0; i < n; i++) {
+            for (int k = 0; k < n; k++) {
+                for (int j = 0; j < n; j++) {
                     rhs[i][k][j] = 4*G*M_PI*f[i][k][j]/h/h/h;
                 }
             }
         }
 
-        solver3.solve(&psi[n1][n1][n1], &rhs[n1][n1][n1]);
+        solver3.solve(&psi[0][0][0], &rhs[0][0][0]);
 
         auto t3 = steady_clock::now();
         poisson_time += duration_cast<duration<double>>(t3 - t2).count();
 
         T beta=4./3.;
 #pragma omp parallel for
-        for (int i = n1; i <= nn; i++) {
-            for (int k = n1; k <= nn; k++) {
-                for (int j = n1; j <= nn; j++){
+        for (int i = 0; i < n; i++) {
+            for (int k = 0; k < n; k++) {
+                for (int j = 0; j < n; j++){
                     // 5.137, pp184, Hockney
-                    if constexpr(flag == tensor_flag::periodic) {
-                        E[i][k][j][0] = -beta*(psi[i][k][j+1]-psi[i][k][j-1])/2/h
-                            - (1-beta)*(psi[i][k][j+2]-psi[i][k][j-2])/4/h;
-                        E[i][k][j][1] = -beta*(psi[i][k+1][j]-psi[i][k-1][j])/2/h
-                            - (1-beta)*(psi[i][k+2][j]-psi[i][k-2][j])/4/h;
-                        E[i][k][j][2] = -beta*(psi[i+1][k][j]-psi[i-1][k][j])/2/h
-                            - (1-beta)*(psi[i+2][k][j]-psi[i-2][k][j])/4/h;
-                    } else {
-                        if (j-2 >= n1 && j+2 <= nn && k-2 >= n1 && k+2 <= nn) {
-                            E[i][k][j][0] = -beta*(psi[i][k][j+1]-psi[i][k][j-1])/2/h
-                                - (1-beta)*(psi[i][k][j+2]-psi[i][k][j-2])/4/h;
-                            E[i][k][j][1] = -beta*(psi[i][k+1][j]-psi[i][k-1][j])/2/h
-                                - (1-beta)*(psi[i][k+2][j]-psi[i][k-2][j])/4/h;
-                            E[i][k][j][2] = -beta*(psi[i+1][k][j]-psi[i-1][k][j])/2/h
-                                - (1-beta)*(psi[i-2][k][j]-psi[i-2][k][j])/4/h;
-                        } else {
-                            E[i][k][j][0] = -(psi[i][k][j+1]-psi[i][k][j-1])/2/h;
-                            E[i][k][j][1] = -(psi[i][k+1][j]-psi[i][k-1][j])/2/h;
-                            E[i][k][j][2] = -(psi[i+1][k][j]-psi[i-1][k][j])/2/h;
-                        }
-                    }
+                    E[i][k][j][0] = -beta*(psi[i][k][j+1]-psi[i][k][j-1])/2/h
+                        - (1-beta)*(psi[i][k][j+2]-psi[i][k][j-2])/4/h;
+                    E[i][k][j][1] = -beta*(psi[i][k+1][j]-psi[i][k-1][j])/2/h
+                        - (1-beta)*(psi[i][k+2][j]-psi[i][k-2][j])/4/h;
+                    E[i][k][j][2] = -beta*(psi[i+1][k][j]-psi[i-1][k][j])/2/h
+                        - (1-beta)*(psi[i+2][k][j]-psi[i-2][k][j])/4/h;
                 }
             }
         }
@@ -425,9 +393,9 @@ private:
 
         if (local) {
 #pragma omp parallel for
-            for (int i = n0; i <= nn; i++) {
-                for (int k = n0; k <= nn; k++) {
-                    for (int j = n0; j <= nn; j++) {
+            for (int i = 0; i < n; i++) {
+                for (int k = 0; k < n; k++) {
+                    for (int j = 0; j < n; j++) {
                         auto& cell = cells[i][k][j];
 
                         for (int i0 = -1; i0 <= 1; i0++) {
@@ -435,19 +403,13 @@ private:
                                 for (int j0 = -1; j0 <= 1; j0++) {
                                     T off[] = {0.0,0.0,0.0};
 
-                                    if constexpr(flag == tensor_flag::periodic) {
-                                        if (k+k0 < 0)  off[0] = -l;
-                                        if (k+k0 > nn) off[0] =  l;
-                                        if (j+j0 < 0)  off[1] = -l;
-                                        if (j+j0 > nn) off[1] =  l;
-                                        if (i+i0 < 0)  off[2] = -l;
-                                        if (i+i0 > nn) off[2] =  l;
-                                        calc_local_forces(cell, cells[i+i0][k+k0][j+j0], off);
-                                    } else {
-                                        if (k+k0 >= 0 && k+k0 <= nn && j+j0 >=0 && j+j0 <= nn && i+i0 >= 0 && i+i0 <= nn) {
-                                            calc_local_forces(cell, cells[i+i0][k+k0][j+j0], off);
-                                        }
-                                    }
+                                    if (k+k0 < 0)  off[0] = -l;
+                                    if (k+k0 >= n) off[0] =  l;
+                                    if (j+j0 < 0)  off[1] = -l;
+                                    if (j+j0 >= n) off[1] =  l;
+                                    if (i+i0 < 0)  off[2] = -l;
+                                    if (i+i0 >= n) off[2] =  l;
+                                    calc_local_forces(cell, cells[i+i0][k+k0][j+j0], off);
                                 }
                             }
                         }
@@ -456,10 +418,10 @@ private:
             }
         }
 
-        #pragma omp parallel for
-        for (int i = n0; i <= nn; i++) {
-            for (int k = n0; k <= nn; k++) {
-                for (int j = n0; j <= nn; j++) {
+#pragma omp parallel for
+        for (int i = 0; i < n; i++) {
+            for (int k = 0; k < n; k++) {
+                for (int j = 0; j < n; j++) {
                     cells[i][k][j].bodies.clear();
                 }
             }
@@ -535,16 +497,7 @@ private:
                 for (int k = 0; k < I::n; k++) {
                     for (int j = 0; j < I::n; j++) {
                         for (int m = 0; m < 3; m++) {
-                            if constexpr(flag == tensor_flag::periodic) {
-                                body.a[m] += E[i0+i][k0+k][j0+j][m] * M[i][k][j];
-                            } else {
-                                if (k0+k >= n0 && k0+k <= nnn
-                                    && j0+j >= n0 && j0+j <= nnn
-                                    && i0+i >= n0 && i0+i <= nnn)
-                                {
-                                    body.a[m] += E[i0+i][k0+k][j0+j][m] * M[i][k][j];
-                                }
-                            }
+                            body.a[m] += E[i0+i][k0+k][j0+j][m] * M[i][k][j];
                         }
                     }
                 }
@@ -562,13 +515,11 @@ private:
             for (int m = 0; m < 3; m++) {
                 body.x[m] += dt * body.v[m] + 0.5 * dt * dt * body.aprev[m];
 
-                if constexpr(flag == tensor_flag::periodic) {
-                    if (body.x[m] < origin[m]) {
-                        body.x[m] += l;
-                    }
-                    if (body.x[m] >= origin[m]+l) {
-                        body.x[m] -= l;
-                    }
+                if (body.x[m] < origin[m]) {
+                    body.x[m] += l;
+                }
+                if (body.x[m] >= origin[m]+l) {
+                    body.x[m] -= l;
                 }
             }
             for (int m = 0; m < 3; m++) {
@@ -581,12 +532,6 @@ private:
             T x = body.x[0]-origin[0];
             T y = body.x[1]-origin[1];
             T z = body.x[2]-origin[2];
-
-            if constexpr(flag == tensor_flag::none) {
-                if (x < 0 || x > l) continue;
-                if (y < 0 || y > l) continue;
-                if (z < 0 || z > l) continue;
-            }
 
             int next_j = floor(x / h);
             int next_k = floor(y / h);
@@ -688,7 +633,7 @@ private:
     }
 };
 
-template <typename T,tensor_flag flag, bool check, typename I>
+template <typename T, bool check, typename I>
 void calc(const Config& c) {
     int n = c.get("nbody", "n", 32);
     int N = c.get("nbody", "N", 100000);
@@ -709,7 +654,7 @@ void calc(const Config& c) {
     double crit = c.get("nbody", "rcrit", l/n);
     double rsoft = c.get("nbody", "rsoft", 0.01);
 
-    NBody<T,check,flag,I> task(x0, y0, z0, l, n, N, dt, G, vel, sgn, local, pponly, solar, crit, rsoft);
+    NBody<T,check,I> task(x0, y0, z0, l, n, N, dt, G, vel, sgn, local, pponly, solar, crit, rsoft);
 
     if (error) {
         task.calc_error();
@@ -751,20 +696,20 @@ void calc(const Config& c) {
                    task.move_time) / steps);
 }
 
-template<typename T,tensor_flag flag, typename I>
+template<typename T, typename I>
 void calc2(const Config& c) {
     bool check = c.get("nbody", "check", 1);
     if (check) {
-        calc<T,flag,true,I>(c);
+        calc<T,true,I>(c);
     } else {
-        calc<T,flag,false,I>(c);
+        calc<T,false,I>(c);
     }
 }
 
-template<typename T,tensor_flag flag>
+template<typename T>
 void calc1(const Config& c) {
     string interpolate = c.get("nbody", "interpolate", "tsc");
-    calc2<T,flag,CIC3<T>>(c);
+    calc2<T,CIC3<T>>(c);
 }
 
 int main(int argc, char** argv) {
@@ -776,20 +721,11 @@ int main(int argc, char** argv) {
     c.rewrite(argc, argv);
 
     string datatype = c.get("solver", "datatype", "double");
-    int periodic = c.get("nbody", "periodic", 1);
 
     if (datatype == "float") {
-        if (periodic) {
-            calc1<float,tensor_flag::periodic>(c);
-        } else {
-            calc1<float,tensor_flag::none>(c);
-        }
+        calc1<float>(c);
     } else {
-        if (periodic) {
-            calc1<double,tensor_flag::periodic>(c);
-        } else {
-            calc1<double,tensor_flag::none>(c);
-        }
+        calc1<double>(c);
     }
 
     return 0;
