@@ -34,10 +34,8 @@ public:
     double vel;
     int sgn;
     int local;
-    int pponly;
     int solar;
     double rcrit;
-    double rsoft;
     double mass;
 
     struct Body {
@@ -85,7 +83,6 @@ public:
     concurrent_queue<PlotTask> q;
     std::thread thread;
 
-    int collisions = 0;
     double distribute_time = 0;
     double poisson_time = 0;
     double diff_time = 0; // E time
@@ -93,7 +90,7 @@ public:
     double accel_time = 0;
     double move_time = 0;
 
-    NBody(T x0, T y0, T z0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int pponly, int solar, T crit, T rsoft)
+    NBody(T x0, T y0, T z0, double l, int n, int N, double dt, double G, double vel, int sgn, int local, int solar, T crit)
         : origin{x0, y0, z0}
         , l(l)
         , n(n) // число ячеек
@@ -104,10 +101,8 @@ public:
         , vel(vel)
         , sgn(sgn)
         , local(local)
-        , pponly(pponly)
         , solar(solar)
         , rcrit(h*crit)
-        , rsoft(h*rsoft)
         , bodies(N)
 
         , rhs({0,n-1,0,n-1,0,n-1})
@@ -129,11 +124,7 @@ public:
     }
 
     void step() {
-        if (pponly) {
-            calc_a_pp();
-        } else {
-            calc_a_pm();
-        }
+        calc_a_pm();
 
         auto t1 = steady_clock::now();
         move();
@@ -144,11 +135,7 @@ public:
     void calc_error() {
         int n = static_cast<int>(bodies.size());
 
-        if (pponly) {
-            calc_a_pp();
-        } else {
-            calc_a_pm();
-        }
+        calc_a_pm();
 
         for (int i = 0; i < n; i++) {
             bodies[i].F[0] = 0;
@@ -231,44 +218,6 @@ private:
 //            plreplot();
 //            printf("1\n");
 #endif
-        }
-    }
-
-    void join_bodies(Body& bi, Body& bj) {
-        collisions ++;
-        for (int k = 0; k < 3; k++) {
-            bi.v[k] = (bi.mass*bi.v[k]+bj.mass*bj.v[k]) / (bi.mass + bj.mass);
-        }
-        bi.mass = (bi.mass + bj.mass);
-        bj.mass = 0;
-        bj.enabled = false;
-    }
-
-    void calc_a_pp() {
-        for (int i = 0; i < N; i++) {
-            auto& bi = bodies[i];
-            bi.a[0] = bi.a[1] = bi.a[2] = 0;
-
-            if (!bi.enabled) continue;
-
-            for (int j = 0; j < N; j++) {
-                if (i == j) continue;
-                auto& bj = bodies[j];
-                if (!bj.enabled) continue;
-
-                double R = 0;
-                for (int k = 0; k < 3; k++) {
-                    R += sq(bi.x[k]-bj.x[k]);
-                }
-                R = std::sqrt(R);
-                if (R < rsoft) {
-                    join_bodies(bi, bj);
-                    continue;
-                }
-                for (int k = 0; k < 3; k++) {
-                    bi.a[k] +=  -bj.mass * G * (bi.x[k] - bj.x[k]) /R/R/R;
-                }
-            }
         }
     }
 
@@ -443,14 +392,9 @@ private:
         for (int k = 0; k < 3; k++) {
             R += sq(bi.x[k]-(bj.x[k]+off[k]));
         }
-        R = std::sqrt(R); // +eps;
+        R = std::sqrt(R) + 0.0001;
 
         if (R < rcrit) {
-            if (R < rsoft) {
-                join_bodies(bi, bj);
-                return;
-            }
-
             for (int k = 0; k < 3; k++) {
                 bi.F[k] +=  -bj.mass * G * (bi.x[k] - (bj.x[k]+off[k])) /R/R/R
                     * (erfc( R/2/rcrit )
@@ -550,9 +494,8 @@ private:
         }
 
         int k = 2;
-        printf("%e %e %e %e %d \n",
-               bodies[k].a[0],bodies[k].a[1], bodies[k].x[0],bodies[k].x[1],
-               collisions);
+        printf("%e %e %e %e \n",
+               bodies[k].a[0],bodies[k].a[1], bodies[k].x[0],bodies[k].x[1]);
     }
 
     void init_points() {
@@ -648,13 +591,11 @@ void calc(const Config& c) {
     int sgn = c.get("nbody", "sign", -1);
     int interval = c.get("plot","interval",100);
     int local = c.get("nbody", "local", 0); // need to check
-    int pponly = c.get("nbody", "pponly", 0);
     int solar = c.get("nbody", "solar", 0);
     int error = c.get("nbody", "error", 0);
     double crit = c.get("nbody", "rcrit", l/n);
-    double rsoft = c.get("nbody", "rsoft", 0.01);
 
-    NBody<T,check,I> task(x0, y0, z0, l, n, N, dt, G, vel, sgn, local, pponly, solar, crit, rsoft);
+    NBody<T,check,I> task(x0, y0, z0, l, n, N, dt, G, vel, sgn, local, solar, crit);
 
     if (error) {
         task.calc_error();
