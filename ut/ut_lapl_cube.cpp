@@ -132,6 +132,124 @@ void test_lapl_cube_float(void** data) {
     test_lapl_cube<float>(data);
 }
 
+double ans1(int i, int k, int j, double dz, double dy, double dx, double x1, double y1, double z1, double x2, double y2, double z2) {
+    double x = x1+dx*j-dx/2;
+    double y = y1+dy*k-dy/2;
+    double z = z1+dz*i-dz/2;
+
+    double sx = sin(x);
+    double cy = cos(y);
+    double sz = sin(z);
+    return sx*sx*sx+cy*cy*cy*cy*cy-sz;
+}
+
+double rp1(int i, int k, int j, double dz, double dy, double dx, double x1, double y1, double z1, double x2, double y2, double z2) {
+    double x = x1+dx*j-dx/2;
+    double y = y1+dy*k-dy/2;
+    double z = z1+dz*i-dz/2;
+
+    return 1./16. *
+        (-12.* sin(x) + 36.* sin(3* x)
+         - 10.* cos(y) - 45.* cos(3* y)
+         - 25.* cos(5* y) + 16.* sin(z));
+}
+
+template<typename T>
+void test_lapl_cube_periodic(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    constexpr bool check = true;
+    constexpr tensor_flag ff = tensor_flag::periodic;
+    using flags = tensor_flags<ff,ff,ff>;
+    using tensor = fdm::tensor<T,3,check,flags>;
+
+    double x1 = c->get("test", "x1", 0.0);
+    double y1 = c->get("test", "y1", 0.0);
+    double z1 = c->get("test", "z1", 0.0);
+    double x2 = c->get("test", "x2", 2*M_PI);
+    double y2 = c->get("test", "y2", 2*M_PI);
+    double z2 = c->get("test", "z2", 2*M_PI);
+    int nx = c->get("test", "nx", 32);
+    int ny = c->get("test", "ny", 32);
+    int nz = c->get("test", "nz", 32);
+    int verbose = c->get("test", "verbose", 0);
+
+    double dx = (x2-x1)/nx, dy = (y2-y1)/ny, dz = (z2-z1)/nz;
+
+    LaplCube<T,check,flags> lapl(
+        dx, dy, dz,
+        x2-x1, y2-y1, z2-z1,
+        nx, ny, nz);
+
+    array<int,6> indices = {0,nz-1,0,ny-1,0,nx-1};
+    tensor RHS(indices);
+    tensor ANS(indices);
+
+    for (int i = 0; i < nz; i++) {
+        for (int k = 0; k < ny; k++) {
+            for (int j = 0; j < nx; j++) {
+                RHS[i][k][j] = rp1(i, k, j, dz, dy, dx, x1, y1, z1, x2, y2, z2);
+            }
+        }
+    }
+
+    auto t1 = steady_clock::now();
+    lapl.solve(&ANS[0][0][0], &RHS[0][0][0]);
+    auto t2 = steady_clock::now();
+
+    double nrm = 0;
+    double nrm1= 0;
+    double avg = 0.0;
+    for (int i = 0; i < nz; i++) {
+        for (int k = 0; k < ny; k++) {
+            for (int j = 0; j < nx; j++) {
+                avg += ANS[i][k][j];
+            }
+        }
+    }
+    avg /= nz*ny*nz;
+    for (int i = 0; i < nz; i++) {
+        for (int k = 0; k < ny; k++) {
+            for (int j = 0; j < nx; j++) {
+                ANS[i][k][j] -= avg;
+            }
+        }
+    }
+    for (int i = 0; i < nz; i++) {
+        for (int k = 0; k < ny; k++) {
+            for (int j = 0; j < nx; j++) {
+                double f = ans1(i, k, j, dz, dy, dx, x1, y1, z1, x2, y2, z2);
+                if (verbose > 1) {
+                    printf("%e %e %e %e\n",
+                           ANS[i][k][j], f,
+                           ANS[i][k][j]/f,
+                           std::abs(ANS[i][k][j]-f));
+                }
+
+                nrm = std::max(nrm, std::abs(ANS[i][k][j]-f));
+                nrm1 = std::max(nrm1, std::abs(f));
+            }
+        }
+    }
+
+    nrm /= nrm1;
+
+    auto interval = duration_cast<duration<double>>(t2 - t1);
+
+    if (verbose) {
+        printf("It took me '%f' seconds, err = '%e'\n", interval.count(), nrm);
+    }
+
+    assert_true(nrm < 1e-2); // TODO
+}
+
+void test_lapl_cube_periodic_double(void** data) {
+    test_lapl_cube_periodic<double>(data);
+}
+
+void test_lapl_cube_periodic_float(void** data) {
+    test_lapl_cube_periodic<float>(data);
+}
+
 int main(int argc, char** argv) {
     string config_fn = "ut_lapl_cube.ini";
     Config c;
@@ -141,6 +259,8 @@ int main(int argc, char** argv) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_prestate(test_lapl_cube_double, &c),
         cmocka_unit_test_prestate(test_lapl_cube_float, &c),
+        cmocka_unit_test_prestate(test_lapl_cube_periodic_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cube_periodic_float, &c),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
