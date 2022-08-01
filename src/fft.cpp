@@ -74,14 +74,14 @@ void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
             }
             idx2 = (1 << (s - 1)) * (2 * k - 1);
             S[yoff + idx2]  = s1;
-            S[_yoff + idx2] = s2;
+            S[N - idx2] = s2;
         }
     }
 
 
     padvance(a, 1 << (n - (n-1)));
     S[yoff +(1 << (n - 2))] = a[2];
-    S[_yoff+(1 << (n - 2))] = a[3];
+    S[N-(1 << (n - 2))] = a[3];
 
     padvance(a, 1 << (n - n));
     S[yoff + 0]             = a[0];
@@ -93,11 +93,6 @@ void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
 
     for (int k = 1; k <= N_2-1; k++) {
         S[_yoff + k] = S[_yoff + k] * dx;
-    }
-    for (int k = 1; k < N_2/2; k++) {
-        T tmp = S[_yoff + k];
-        S[_yoff + k] = S[_yoff+N_2-k];
-        S[_yoff+N_2-k] = tmp;
     }
 }
 
