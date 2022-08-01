@@ -103,25 +103,15 @@ void FFT<T>::pFFT(T *S, T* s, T dx) {
 
     cFFT(&S[0], &s[0], dx, N_2,n-1,2);
 
-    for (int k = 1; k < N_2/2; k++) {
-        T tmp = s[N_2 + k];
-        s[N_2 + k] = s[N-k];
-        s[N-k] = tmp;
-    }
-
     // S[N_2] not filled, N_2+1 first non empty
-    sFFT(&S[N_2], &s[N_2], dx, N_2,n-1,2);
+    sFFT(&s[0], &s[N_2], dx, N_2,n-1,2);
 
     for (k = 1; k <= N_2 - 1; k ++) {
-        T S_k   = (S[k] + S[N_2+k]);
-        T S_N_k = (S[k] - S[N_2+k]);
+        int r = k%2;
+        T S_k   = (S[k] + (2*r-1)*s[k]);
+        T S_N_k = (S[k] - (2*r-1)*s[k]);
         S[k]    = S_k;
-        S[N_2+k]= S_N_k;
-    }
-    for (int k = 1; k < N_2/2; k++) {
-        T tmp = S[N_2 + k];
-        S[N_2+k] = S[N-k];
-        S[N  -k] = tmp;
+        S[N-k]  = S_N_k;
     }
 }
 
