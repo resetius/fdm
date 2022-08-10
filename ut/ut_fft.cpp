@@ -207,6 +207,40 @@ void test_periodic_new_old_cmp(void**) {
     FFT_free(ft1);
 }
 
+template<typename T>
+void test_sin_new(void** ) {
+    int N = 1024;
+    FFTTable<T> table(N);
+    fdm::FFT<T> ft(table, N);
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    vector<T> S(N);
+    vector<T> s(N);
+    vector<T> s1(N);
+    vector<T> S1(N);
+
+    for (int i = 0; i < N; i++) {
+        s[i] = distribution(generator);
+    }
+
+    s1 = s;
+    ft.sFFT(&S[0], &s1[0], 1.0);
+    s1 = s;
+    ft.sFFT2(&S1[0], &s1[0], 1.0);
+    for (int i = 0; i < N; i++) {
+        // TODO
+        // assert_float_equal(S1[i], S[i], 1e-15);
+    }
+}
+
+void test_sin_new_double(void** s) {
+    test_sin_new<double>(s);
+}
+
+void test_sin_new_float(void** s) {
+    test_sin_new<float>(s);
+}
+
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_periodic),
@@ -217,6 +251,8 @@ int main() {
         cmocka_unit_test(test_cos_double),
         cmocka_unit_test(test_cos_float),
         cmocka_unit_test(test_periodic_new_old_cmp),
+        cmocka_unit_test(test_sin_new_double),
+        cmocka_unit_test(test_sin_new_float),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

@@ -157,6 +157,30 @@ void FFT<T>::sFFT(T *S,T *s,T dx,int N,int n,int nr) {
 }
 
 template<typename T>
+void FFT<T>::sFFT2(T* S, T* s, T dx) {
+    std::vector<T> b(N); // remove me
+    std::vector<T> z(N); // remove me
+
+    T* a = s;
+
+    for (int s = 1; s <= n - 1; s++) {
+        int l = n - s;
+        int idx = 1<<(n-1);
+
+        // (30), p 170
+        sadvance(a, idx); // a^s
+
+        // (36), p 172
+        // b^0 = a
+        // b^m, m = 1, ... l, incr
+        // (37), p 172
+        // z^l = b^l
+        // z^m, m = l, ...,0, decr
+        // z^0 -> y (ans)
+    }
+}
+
+template<typename T>
 void FFT<T>::cFFT(T *S,T *s,T dx) {
     cFFT(S,s,dx,N,n,1);
 }
