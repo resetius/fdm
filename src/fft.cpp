@@ -205,7 +205,7 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
         }
         // z^0 -> y (ans)
         for (k = 1; k <= 1<<(l-m); k++) {
-            S[1<<(s-1)*(2*k-1)] = z[off(k,1)];
+            S[(1<<(n-l-1))*(2*k-1)] = z[off(k,1)];
         }
     }
 #undef off
