@@ -199,7 +199,7 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
             for (k = 1; k <= 1<<(l-m); k++) {
                 z[off(k,s)] = z[off(k,2*s)]
                     + 1.0/(2.0*cos(M_PI*(2*k-1)/(1<<(l-m+2))))*z[off(k,2*s-1)];
-                z[off(1<<(l-m+1)-k+1,s)] = -z[off(k,2*2)]
+                z[off(1<<(l-m+1)-k+1,s)] = -z[off(k,2*s)]
                     + 1.0/(2.0*cos(M_PI*(2*k-1)/(1<<(l-m+2))))*z[off(k,2*s-1)];
             }
         }
