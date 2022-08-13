@@ -157,12 +157,23 @@ void FFT<T>::sFFT(T *S,T *s,T dx,int N,int n,int nr) {
 }
 
 template<typename T>
+void prn(const std::vector<T>& a) {
+    for (auto& a1 : a) {
+        printf("%f ", a1);
+    }
+    printf("\n");
+}
+
+template<typename T>
 void FFT<T>::sFFT2(T* S, T* s, T dx) {
-    std::vector<T> b(N); // remove me
-    std::vector<T> z(N); // remove me
+    std::vector<T> b(2*N); // remove me
+    std::vector<T> bn(2*N); // remove me
+    std::vector<T> z(2*N); // remove me
+    std::vector<T> zn(2*N); // remove me
 
     T* a = s;
-#define off(a,b) 0
+#define _2(a) (1<<(a))
+#define off(a,b) ((a)*_2(l)+(b))
     for (int l = n-1; l >= 1; l--) { // l=n-s
         // (30), p 170
         sadvance(a, 1<<l); // a^s
@@ -170,45 +181,54 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
         // (36), p 172
         // b^0 = a
         int m = 0, j = 0, s = 0, k = 0;
-        for (j = 1; j <= 1<<(l-m); j++) {
-            b[off(j,1)] = a[(1<<(l+1))-j]; // (m=0)
+        for (j = 1; j <= _2(l-m); j++) {
+            b[off(j,1)] = a[(_2(l+1))-j]; // (m=0)
         }
+        //prn(b);
         // b^m, m = 1, ... l, incr
         for (m = 1; m <= l-1; m++) {
-            for (s = 1; s <= 1<<(m-1); s++) {
-                for (j = 1; j <= (1<<(l-m))-1; j++) {
-                    b[off(j,2*s-1)] = b[off(2*j-1,s)]+b[off(2*j+1,s)];
-                    b[off(j,2*s)]   = b[off(2*j,s)];
+            for (s = 1; s <= _2(m-1); s++) {
+                for (j = 1; j <= _2(l-m)-1; j++) {
+                    bn[off(j,2*s-1)] = b[off(2*j-1,s)]+b[off(2*j+1,s)];
+                    bn[off(j,2*s)]   = b[off(2*j,s)];
                 }
-                b[off(j,2*s)] = b[off(2*j,s)];
+                bn[off(j,2*s)] = b[off(2*j,s)];
             }
+            bn.swap(b);
+            //prn(b);
         }
-        for (s = 1; s <= 1<<(m-1); s++) {
-            b[off(1<<(l-m),2*s-1)] = b[off(1<<(l-m+1)-1,s)];
-            b[off(1<<(l-m)-1,2*s)] = b[off(1<<(l-m+1)-2,s)];
-            b[off(1<<(l-m),2*s)]   = b[off(1<<(l-m+1),s)];
+        for (s = 1; s <= _2(m-1); s++) {
+            bn[off(_2(l-m),2*s-1)] = b[off(_2(l-m+1)-1,s)];
+            bn[off(_2(l-m)-1,2*s)] = b[off(_2(l-m+1)-2,s)];
+            bn[off(_2(l-m),2*s)]   = b[off(_2(l-m+1),s)];
         }
+        bn.swap(b);
+        //prn(b);
 
         // (37), p 172
         // z^l = b^l
-        for (s = 1; s <= 1<<l; s++) {
+        for (s = 1; s <= _2(l); s++) {
             z[off(1,s)] = b[off(1,s)];
         }
         // z^m, m = l, ...,0, decr
         for (m = l; m >= 1; m--) {
-            for (k = 1; k <= 1<<(l-m); k++) {
-                z[off(k,s)] = z[off(k,2*s)]
-                    + 1.0/(2.0*cos(M_PI*(2*k-1)/(1<<(l-m+2))))*z[off(k,2*s-1)];
-                z[off(1<<(l-m+1)-k+1,s)] = -z[off(k,2*s)]
-                    + 1.0/(2.0*cos(M_PI*(2*k-1)/(1<<(l-m+2))))*z[off(k,2*s-1)];
+            for (k = 1; k <= _2(l-m); k++) {
+                for (s = 1; s <= _2(m-1); s++) {
+                    zn[off(k,s)] = z[off(k,2*s)]
+                        + 1.0/(2.0*cos(M_PI*(2*k-1)/(_2(l-m+2))))*z[off(k,2*s-1)];
+                    zn[off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
+                        + 1.0/(2.0*cos(M_PI*(2*k-1)/(_2(l-m+2))))*z[off(k,2*s-1)];
+                }
             }
+            zn.swap(z);
         }
         // z^0 -> y (ans)
-        for (k = 1; k <= 1<<(l-m); k++) {
-            S[(1<<(n-l-1))*(2*k-1)] = z[off(k,1)];
+        for (k = 1; k <= _2(l-m); k++) {
+            S[(_2(n-l-1))*(2*k-1)] = z[off(k,1)];
         }
     }
 #undef off
+#undef _2
 }
 
 template<typename T>
