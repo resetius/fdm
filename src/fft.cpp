@@ -300,6 +300,18 @@ void FFT<T>::cFFT(T *S,T *s,T dx,int N,int n,int nr) {
     S[N/2] =  a[2] * dx;
 }
 
+template<typename T>
+void FFT<T>::cFFT2(T *S, T *s, T dx) {
+    T*a = s;
+    a[0] *= 0.5; a[N] *= 0.5;
+
+    cadvance(a, 1 << (n-n));
+    S[0]   = (a[0] + a[1]) * dx;
+    S[N]   = (a[0] - a[1]) * dx;
+    S[N/2] =  a[2] * dx;
+}
+
+
 template class FFT<double>;
 template class FFT<float>;
 

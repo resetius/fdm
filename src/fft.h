@@ -74,6 +74,7 @@ public:
 
     // new optimized version
     void sFFT2(T* S, T* s, T dx);
+    void cFFT2(T* S, T* s, T dx);
 
 private:
     void init();
