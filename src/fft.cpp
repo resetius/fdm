@@ -173,7 +173,9 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
 
     T* a = s;
 #define _2(a) (1<<(a))
-#define off(a,b) ((a)*_2(l)+(b))
+    // s = 1,...,2^{m-1}
+#define off(a,b) ((a-1)*(_2(m))+(b-1))
+#define _off(a,b) ((a-1)*(_2(m-1))+(b-1))
     for (int l = n-1; l >= 1; l--) { // l=n-s
         // (30), p 170
         sadvance(a, 1<<l); // a^s
@@ -184,26 +186,27 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
         for (j = 1; j <= _2(l-m); j++) {
             b[off(j,1)] = a[(_2(l+1))-j]; // (m=0)
         }
-        //prn(b);
         // b^m, m = 1, ... l, incr
         for (m = 1; m <= l-1; m++) {
             for (s = 1; s <= _2(m-1); s++) {
                 for (j = 1; j <= _2(l-m)-1; j++) {
-                    bn[off(j,2*s-1)] = b[off(2*j-1,s)]+b[off(2*j+1,s)];
-                    bn[off(j,2*s)]   = b[off(2*j,s)];
+                    bn[off(j,2*s-1)] = b[_off(2*j-1,s)]+b[_off(2*j+1,s)];
+                    bn[off(j,2*s)]   = b[_off(2*j,s)];
                 }
-                bn[off(j,2*s)] = b[off(2*j,s)];
+                // j = _2(l-m)
+                bn[off(j,2*s-1)] = b[_off(_2(l-m+1)-1, s)];
+                bn[off(j,2*s)]   = b[_off(2*j,s)];
             }
             bn.swap(b);
-            //prn(b);
         }
+        // m = l
         for (s = 1; s <= _2(m-1); s++) {
-            bn[off(_2(l-m),2*s-1)] = b[off(_2(l-m+1)-1,s)];
-            bn[off(_2(l-m)-1,2*s)] = b[off(_2(l-m+1)-2,s)];
-            bn[off(_2(l-m),2*s)]   = b[off(_2(l-m+1),s)];
+            for (j = 1; j <= _2(l-m); j++) {
+                bn[off(j,2*s)] = b[_off(2*j,s)];
+            }
+            bn[off(_2(l-m),2*s-1)] = b[_off(_2(l-m+1)-1,s)];
         }
         bn.swap(b);
-        //prn(b);
 
         // (37), p 172
         // z^l = b^l
@@ -214,20 +217,25 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
         for (m = l; m >= 1; m--) {
             for (k = 1; k <= _2(l-m); k++) {
                 for (s = 1; s <= _2(m-1); s++) {
-                    zn[off(k,s)] = z[off(k,2*s)]
+                    zn[_off(k,s)] = z[off(k,2*s)]
                         + 1.0/(2.0*cos(M_PI*(2*k-1)/(_2(l-m+2))))*z[off(k,2*s-1)];
-                    zn[off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
+                    zn[_off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
                         + 1.0/(2.0*cos(M_PI*(2*k-1)/(_2(l-m+2))))*z[off(k,2*s-1)];
                 }
             }
             zn.swap(z);
         }
         // z^0 -> y (ans)
-        for (k = 1; k <= _2(l-m); k++) {
-            S[(_2(n-l-1))*(2*k-1)] = z[off(k,1)];
+        for (k = 1; k <= _2(l); k++) {
+            S[(_2(n-l-1))*(2*k-1)] = dx*z[off(k,1)];
         }
     }
+
+    // (31), p 170
+    S[_2(n-1)] = a[1];
+
 #undef off
+#undef _off
 #undef _2
 }
 

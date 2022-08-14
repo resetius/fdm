@@ -214,6 +214,7 @@ template<typename T>
 void test_sin_new(void** data) {
     Config* c = static_cast<Config*>(*data);
     int N = c->get("test", "N", 8);
+    int verbose = c->get("test", "verbose", 0);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
     std::default_random_engine generator;
@@ -222,6 +223,7 @@ void test_sin_new(void** data) {
     vector<T> s(N);
     vector<T> s1(N);
     vector<T> S1(N);
+    vector<T> S2(N);
 
     for (int i = 0; i < N; i++) {
         s[i] = distribution(generator);
@@ -230,10 +232,12 @@ void test_sin_new(void** data) {
     s1 = s;
     if constexpr(is_same<double,T>::value) {
         auto t1 = steady_clock::now();
-        sFT(&S[0], &s[0], 1.0, N);
+        sFT(&S2[0], &s[0], 1.0, N);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
-        printf("t1=%f\n", interval.count());
+        if (verbose) {
+            printf("t1=%f\n", interval.count());
+        }
     }
 
     s1 = s;
@@ -242,7 +246,9 @@ void test_sin_new(void** data) {
         ft.sFFT(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
-        printf("t2=%f\n", interval.count());
+        if (verbose) {
+            printf("t2=%f\n", interval.count());
+        }
     }
 
     s1 = s;
@@ -251,13 +257,21 @@ void test_sin_new(void** data) {
         ft.sFFT2(&S1[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
-        printf("t3=%f\n", interval.count());
+        if (verbose) {
+            printf("t3=%f\n", interval.count());
+        }
+    }
+
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-7;
     }
 
     for (int i = 0; i < N; i++) {
-        // TODO
-        // assert_float_equal(S1[i], S[i], 1e-15);
-        //printf("%e <> %e\n", S1[i], S[i]);
+        assert_float_equal(S1[i], S[i], tol);
+        if (verbose > 1) {
+            printf("%e <> %e <> %e\n", S2[i], S1[i], S[i]);
+        }
     }
 }
 
@@ -276,16 +290,16 @@ int main(int argc, char** argv) {
     c.rewrite(argc, argv);
 
     const struct CMUnitTest tests[] = {
-        //cmocka_unit_test(test_periodic),
-        //cmocka_unit_test(test_periodic_new_double),
-        //cmocka_unit_test(test_periodic_new_float),
-        //cmocka_unit_test(test_sin_double),
-        //cmocka_unit_test(test_sin_float),
-        //cmocka_unit_test(test_cos_double),
-        //cmocka_unit_test(test_cos_float),
-        //cmocka_unit_test(test_periodic_new_old_cmp),
+        cmocka_unit_test(test_periodic),
+        cmocka_unit_test(test_periodic_new_double),
+        cmocka_unit_test(test_periodic_new_float),
+        cmocka_unit_test(test_sin_double),
+        cmocka_unit_test(test_sin_float),
+        cmocka_unit_test(test_cos_double),
+        cmocka_unit_test(test_cos_float),
+        cmocka_unit_test(test_periodic_new_old_cmp),
         cmocka_unit_test_prestate(test_sin_new_double, &c),
-        //cmocka_unit_test_prestate(test_sin_new_float, &c),
+        cmocka_unit_test_prestate(test_sin_new_float, &c),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
