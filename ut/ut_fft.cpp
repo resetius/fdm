@@ -264,7 +264,7 @@ void test_sin_new(void** data) {
 
     double tol = 1e-15;
     if constexpr(is_same<float,T>::value) {
-        tol = 1e-7;
+        tol = 1e-3;
     }
 
     for (int i = 0; i < N; i++) {
