@@ -302,13 +302,74 @@ void FFT<T>::cFFT(T *S,T *s,T dx,int N,int n,int nr) {
 
 template<typename T>
 void FFT<T>::cFFT2(T *S, T *s, T dx) {
+    std::vector<T> b(N); // remove me
+    std::vector<T> bn(N); // remove me
+    std::vector<T>& z = b;
+    std::vector<T>& zn = bn;
+
     T*a = s;
     a[0] *= 0.5; a[N] *= 0.5;
+
+#define off(a,b) ((a)*(_2(m))+(b-1))
+#define _off(a,b) ((a)*(_2(m-1))+(b-1))
+
+    for (int l = n-1; l >= 1; l--) { // l=n-s
+        cadvance(a, _2(l));
+
+        int m = 0, j = 0, s = 0, k = 0;
+        for (j = 1; j <= _2(l-m); j++) {
+            b[off(j,1)] = a[(_2(l+1))-j]; // (m=0)
+        }
+
+        for (m = 1; m <= l-1; m++) {
+            for (s = 1; s <= _2(m-1); s++) {
+                j = 0;
+                bn[off(j,2*s-1)] = b[_off(2*j+1,s)];
+                bn[off(j,2*s)] = b[_off(2*j,s)];
+
+                for (j = 1; j <= _2(l-m)-1; j++) {
+                    bn[off(j,2*s-1)] = b[_off(2*j-1,s)]+b[_off(2*j+1,s)];
+                    bn[off(j,2*s)] = b[_off(2*j,s)];
+                }
+            }
+            bn.swap(b);
+        }
+
+        // m = l
+        for (s = 1; s <= _2(m-1); s++) {
+            j = 0;
+            bn[off(j,2*s-1)] = b[_off(2*j+1,s)];
+            for (j = 0; j <= _2(l-m)-1; j++) {
+                bn[off(j,2*s)] = b[_off(2*j,s)];
+            }
+        }
+
+        bn.swap(b);
+
+        for (m = l; m >= 1; m--) {
+            for (k = 1; k <= _2(l-m); k++) {
+                for (s = 1; s <= _2(m-1); s++) {
+                    zn[_off(k,s)] = z[off(k,2*s)]
+                        + t.iCOS(k,l-m)*z[off(k,2*s-1)];
+                    zn[_off(_2(l-m+1)-k+1,s)] = z[off(k,2*s)]
+                        - t.iCOS(k,l-m)*z[off(k,2*s-1)];
+                }
+            }
+            zn.swap(z);
+        }
+
+        for (k = 1; k <= _2(l); k++) {
+            S[(_2(n-l-1))*(2*k-1)] = dx*z[off(k,1)];
+        }
+    }
 
     cadvance(a, 1 << (n-n));
     S[0]   = (a[0] + a[1]) * dx;
     S[N]   = (a[0] - a[1]) * dx;
     S[N/2] =  a[2] * dx;
+
+#undef off
+#undef _off
 }
 
 
