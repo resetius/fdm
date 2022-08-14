@@ -168,10 +168,8 @@ template<typename T>
 void FFT<T>::sFFT2(T* S, T* s, T dx) {
     std::vector<T> b(2*N); // remove me
     std::vector<T> bn(2*N); // remove me
-    std::vector<T> z(2*N); // remove me
-    std::vector<T> zn(2*N); // remove me
-    std::vector<T> w(2*N); // remove me
-    std::vector<T> wn(2*N); // remove me
+    std::vector<T>& w = b;
+    std::vector<T>& wn = bn;
 
     T* a = s;
 #define _2(a) (1<<(a))
@@ -212,10 +210,6 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
 
         // (37), p 172
         // z^l = b^l
-        for (s = 1; s <= _2(l); s++) {
-            //z[off(1,s)] = b[off(1,s)];
-            w[off(1,s)] = b[off(1,s)];
-        }
         // z^m, m = l, ...,0, decr
         for (m = l; m >= 1; m--) {
             for (k = 1; k <= _2(l-m); k++) {
