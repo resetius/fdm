@@ -170,6 +170,8 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
     std::vector<T> bn(2*N); // remove me
     std::vector<T> z(2*N); // remove me
     std::vector<T> zn(2*N); // remove me
+    std::vector<T> w(2*N); // remove me
+    std::vector<T> wn(2*N); // remove me
 
     T* a = s;
 #define _2(a) (1<<(a))
@@ -211,28 +213,37 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
         // (37), p 172
         // z^l = b^l
         for (s = 1; s <= _2(l); s++) {
-            z[off(1,s)] = b[off(1,s)];
+            //z[off(1,s)] = b[off(1,s)];
+            w[off(1,s)] = b[off(1,s)];
         }
         // z^m, m = l, ...,0, decr
         for (m = l; m >= 1; m--) {
             for (k = 1; k <= _2(l-m); k++) {
                 for (s = 1; s <= _2(m-1); s++) {
-                    zn[_off(k,s)] = z[off(k,2*s)]
-                        + 1.0/(2.0*cos(M_PI*(2*k-1)/(_2(l-m+2))))*z[off(k,2*s-1)];
-                    zn[_off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
-                        + 1.0/(2.0*cos(M_PI*(2*k-1)/(_2(l-m+2))))*z[off(k,2*s-1)];
+                    //zn[_off(k,s)] = z[off(k,2*s)]
+                    //    + 1.0/(2.0*cos(M_PI*(2*k-1)/(_2(l-m+2))))*z[off(k,2*s-1)];
+                    //zn[_off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
+                    //    + 1.0/(2.0*cos(M_PI*(2*k-1)/(_2(l-m+2))))*z[off(k,2*s-1)];
+
+                    wn[_off(k,s)] = w[off(k,2*s-1)]
+                        + 2.0*cos(M_PI*(2*k-1)/(_2(l-m+2)))*w[off(k,2*s)];
+                    wn[_off(_2(l-m+1)-k+1,s)] = w[off(k,2*s-1)]
+                        - 2.0*cos(M_PI*(2*k-1)/(_2(l-m+2)))*w[off(k,2*s)];
+
                 }
             }
-            zn.swap(z);
+            //zn.swap(z);
+            wn.swap(w);
         }
         // z^0 -> y (ans)
         for (k = 1; k <= _2(l); k++) {
-            S[(_2(n-l-1))*(2*k-1)] = dx*z[off(k,1)];
+            //S[(_2(n-l-1))*(2*k-1)] = dx*z[off(k,1)];
+            S[(_2(n-l-1))*(2*k-1)] = dx*sin(M_PI*(2*k-1)/_2(l+1))*w[off(k,1)];
         }
     }
 
     // (31), p 170
-    S[_2(n-1)] = a[1];
+    S[_2(n-1)] = dx*a[1];
 
 #undef off
 #undef _off
