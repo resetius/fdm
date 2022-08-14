@@ -1,5 +1,6 @@
 #include <cmath>
 #include <string.h>
+#include <assert.h>
 
 #include "fft.h"
 #include "verify.h"
@@ -8,15 +9,38 @@ using namespace std;
 
 namespace fdm {
 
+#define _2(a) (1<<(a))
+
 template<typename T>
-void FFTTable<T>::init(int N) {
+void FFTTable<T>::init() {
+    int n1 = N;
+    int n = 0;
+    while (n1 % 2 == 0) {
+        n1 /= 2; n++;
+    }
+
+    verify((1<<n) == N);
+
     ffCOS.resize(2*N);
     ffSIN.resize(2*N);
+    ffiCOS.resize(n*N);
 
     for (int m = 0; m < 2*N; ++m) {
         ffCOS[m] = cos(m * M_PI/N);
         ffSIN[m] = sin(m * M_PI/N);
     }
+
+#define off(k,l) ((l)*N+(k-1))
+    int mx = 0;
+    for (int l = 0; l <= n-1; l++) {
+        for (int k = 1; k <= _2(l); k++) {
+            T x = 2.*cos(M_PI*(2*k-1)/(_2(l+2)));
+            x = 1./x;
+            ffiCOS[off(k,l)] = x;
+            mx = std::max(mx, k);
+        }
+    }
+#undef off
 }
 
 template<typename T>
@@ -166,13 +190,12 @@ void prn(const std::vector<T>& a) {
 
 template<typename T>
 void FFT<T>::sFFT2(T* S, T* s, T dx) {
-    std::vector<T> b(2*N); // remove me
-    std::vector<T> bn(2*N); // remove me
-    std::vector<T>& w = b;
-    std::vector<T>& wn = bn;
+    std::vector<T> b(N); // remove me
+    std::vector<T> bn(N); // remove me
+    std::vector<T>& z = b;
+    std::vector<T>& zn = bn;
 
     T* a = s;
-#define _2(a) (1<<(a))
     // s = 1,...,2^{m-1}
 #define off(a,b) ((a-1)*(_2(m))+(b-1))
 #define _off(a,b) ((a-1)*(_2(m-1))+(b-1))
@@ -188,7 +211,7 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
         }
         // b^m, m = 1, ... l, incr
         for (m = 1; m <= l-1; m++) {
-            for (s = 1; s <= _2(m-1); s++) {
+            for (s = _2(m-1); s >= 1; s--) {
                 for (j = 1; j <= _2(l-m)-1; j++) {
                     bn[off(j,2*s-1)] = b[_off(2*j-1,s)]+b[_off(2*j+1,s)];
                     bn[off(j,2*s)]   = b[_off(2*j,s)];
@@ -214,25 +237,17 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
         for (m = l; m >= 1; m--) {
             for (k = 1; k <= _2(l-m); k++) {
                 for (s = 1; s <= _2(m-1); s++) {
-                    //zn[_off(k,s)] = z[off(k,2*s)]
-                    //    + 1.0/(2.0*cos(M_PI*(2*k-1)/(_2(l-m+2))))*z[off(k,2*s-1)];
-                    //zn[_off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
-                    //    + 1.0/(2.0*cos(M_PI*(2*k-1)/(_2(l-m+2))))*z[off(k,2*s-1)];
-
-                    wn[_off(k,s)] = w[off(k,2*s-1)]
-                        + 2.0*cos(M_PI*(2*k-1)/(_2(l-m+2)))*w[off(k,2*s)];
-                    wn[_off(_2(l-m+1)-k+1,s)] = w[off(k,2*s-1)]
-                        - 2.0*cos(M_PI*(2*k-1)/(_2(l-m+2)))*w[off(k,2*s)];
-
+                    zn[_off(k,s)] = z[off(k,2*s)]
+                        + t.iCOS(k,l-m)*z[off(k,2*s-1)];
+                    zn[_off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
+                        + t.iCOS(k,l-m)*z[off(k,2*s-1)];
                 }
             }
-            //zn.swap(z);
-            wn.swap(w);
+            zn.swap(z);
         }
         // z^0 -> y (ans)
         for (k = 1; k <= _2(l); k++) {
-            //S[(_2(n-l-1))*(2*k-1)] = dx*z[off(k,1)];
-            S[(_2(n-l-1))*(2*k-1)] = dx*sin(M_PI*(2*k-1)/_2(l+1))*w[off(k,1)];
+            S[(_2(n-l-1))*(2*k-1)] = dx*z[off(k,1)];
         }
     }
 
@@ -241,7 +256,6 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
 
 #undef off
 #undef _off
-#undef _2
 }
 
 template<typename T>

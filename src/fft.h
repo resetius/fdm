@@ -10,14 +10,19 @@ public:
     int N;
     std::vector<T> ffCOS;
     std::vector<T> ffSIN;
+    std::vector<T> ffiCOS;
 
-    FFTTable(int N)
+    FFTTable(int N): N(N)
     {
-        init(N);
+        init();
+    }
+
+    T iCOS(int k, int l) const {
+        return ffiCOS[(l)*N+(k-1)];
     }
 
 private:
-    void init(int N);
+    void init();
 };
 
 template<typename T>
