@@ -31,13 +31,11 @@ void FFTTable<T>::init() {
     }
 
 #define off(k,l) ((l)*N+(k-1))
-    int mx = 0;
     for (int l = 0; l <= n-1; l++) {
         for (int k = 1; k <= _2(l); k++) {
             T x = 2.*cos(M_PI*(2*k-1)/(_2(l+2)));
             x = 1./x;
             ffiCOS[off(k,l)] = x;
-            mx = std::max(mx, k);
         }
     }
 #undef off
@@ -189,6 +187,14 @@ void prn(const std::vector<T>& a) {
 }
 
 template<typename T>
+void prn(const T* a, int size) {
+    for (int i = 0; i < size; i++) {
+        printf("%f ", a[i]);
+    }
+    printf("\n");
+}
+
+template<typename T>
 void FFT<T>::sFFT2(T* S, T* s, T dx) {
     std::vector<T> b(N); // remove me
     std::vector<T> bn(N); // remove me
@@ -302,25 +308,26 @@ void FFT<T>::cFFT(T *S,T *s,T dx,int N,int n,int nr) {
 
 template<typename T>
 void FFT<T>::cFFT2(T *S, T *s, T dx) {
-    std::vector<T> b(N); // remove me
-    std::vector<T> bn(N); // remove me
+    std::vector<T> b(N+1); // remove me
+    std::vector<T> bn(N+1); // remove me
     std::vector<T>& z = b;
     std::vector<T>& zn = bn;
 
     T*a = s;
     a[0] *= 0.5; a[N] *= 0.5;
 
-#define off(a,b) ((a)*(_2(m))+(b-1))
-#define _off(a,b) ((a)*(_2(m-1))+(b-1))
+#define off(a,b) ((a)*(_2(m)+1)+(b-1))
+#define _off(a,b) ((a)*(_2(m-1)+1)+(b-1))
 
     for (int l = n-1; l >= 1; l--) { // l=n-s
         cadvance(a, _2(l));
 
         int m = 0, j = 0, s = 0, k = 0;
-        for (j = 1; j <= _2(l-m); j++) {
+        for (j = 0; j <= _2(l-m)-1; j++) {
             b[off(j,1)] = a[(_2(l+1))-j]; // (m=0)
         }
 
+        // (51) p 177
         for (m = 1; m <= l-1; m++) {
             for (s = 1; s <= _2(m-1); s++) {
                 j = 0;
@@ -337,14 +344,17 @@ void FFT<T>::cFFT2(T *S, T *s, T dx) {
 
         // m = l
         for (s = 1; s <= _2(m-1); s++) {
-            j = 0;
-            bn[off(j,2*s-1)] = b[_off(2*j+1,s)];
+            bn[off(0,2*s-1)] = b[_off(1,s)];
             for (j = 0; j <= _2(l-m)-1; j++) {
                 bn[off(j,2*s)] = b[_off(2*j,s)];
             }
         }
 
         bn.swap(b);
+        for (s = 1; s <= _2(l); s++) {
+            zn[off(1,s)] = b[off(0,s)];
+        }
+        zn.swap(z);
 
         for (m = l; m >= 1; m--) {
             for (k = 1; k <= _2(l-m); k++) {

@@ -168,7 +168,7 @@ void test_cos(void**) {
 
     if constexpr(is_same<T,double>::value) {
         cFT(&s2[0], &S[0], 2.0/N, N);
-        for (int i = 1; i < N-1; i++) {
+        for (int i = 0; i <= N; i++) {
             assert_float_equal(s1[i], s2[i], tol);
         }
     }
@@ -213,7 +213,7 @@ void test_periodic_new_old_cmp(void**) {
 template<typename T>
 void test_sin_new(void** data) {
     Config* c = static_cast<Config*>(*data);
-    int N = c->get("test", "N", 8);
+    int N = c->get("test", "N", 256);
     int verbose = c->get("test", "verbose", 0);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
@@ -286,7 +286,7 @@ void test_sin_new_float(void** s) {
 template<typename T>
 void test_cos_new(void** data) {
     Config* c = static_cast<Config*>(*data);
-    int N = c->get("test", "N", 8);
+    int N = c->get("test", "N", 256);
     int verbose = c->get("test", "verbose", 0);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
@@ -340,8 +340,8 @@ void test_cos_new(void** data) {
         tol = 1e-3;
     }
 
-    for (int i = 0; i < N; i++) {
-        //assert_float_equal(S1[i], S[i], tol);
+    for (int i = 0; i <= N; i++) {
+        assert_float_equal(S1[i], S[i], tol);
         if (verbose > 1) {
             printf("%e <> %e <> %e\n", S2[i], S1[i], S[i]);
         }
