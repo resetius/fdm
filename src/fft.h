@@ -82,6 +82,9 @@ private:
     void sFFT(T *S, T *s, T dx, int N, int n,int nr);
     void cFFT(T *S, T *s, T dx, int N, int n,int nr);
 
+    void sFFT2(T* S, T* s, T dx, int N, int n);
+    void cFFT2(T* S, T* s, T dx, int N, int n);
+
     inline void padvance(T*a, int idx);
     inline void cadvance(T*a, int idx);
     inline void sadvance(T*a, int idx);

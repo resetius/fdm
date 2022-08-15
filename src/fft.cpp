@@ -123,10 +123,12 @@ void FFT<T>::pFFT(T *S, T* s, T dx) {
     int N_2 = N/2;
     int k;
 
-    cFFT(&S[0], &s[0], dx, N_2,n-1,2);
+    //cFFT(&S[0], &s[0], dx, N_2,n-1,2);
+    cFFT2(&S[0], &s[0], dx, N_2,n-1);
 
     // S[N_2] not filled, N_2+1 first non empty
-    sFFT(&s[0], &s[N_2], dx, N_2,n-1,2);
+    //sFFT(&s[0], &s[N_2], dx, N_2,n-1,2);
+    sFFT2(&s[0], &s[N_2], dx, N_2,n-1);
 
     for (k = 1; k <= N_2 - 1; k ++) {
         int r = k%2;
@@ -195,7 +197,7 @@ void prn(const T* a, int size) {
 }
 
 template<typename T>
-void FFT<T>::sFFT2(T* S, T* s, T dx) {
+void FFT<T>::sFFT2(T* S, T* s, T dx, int N, int n) {
     std::vector<T> b(N); // remove me
     std::vector<T> bn(N); // remove me
     std::vector<T>& z = b;
@@ -265,6 +267,11 @@ void FFT<T>::sFFT2(T* S, T* s, T dx) {
 }
 
 template<typename T>
+void FFT<T>::sFFT2(T* S, T* s, T dx) {
+    sFFT2(S, s, dx, N, n);
+}
+
+template<typename T>
 void FFT<T>::cFFT(T *S,T *s,T dx) {
     cFFT(S,s,dx,N,n,1);
 }
@@ -307,7 +314,7 @@ void FFT<T>::cFFT(T *S,T *s,T dx,int N,int n,int nr) {
 }
 
 template<typename T>
-void FFT<T>::cFFT2(T *S, T *s, T dx) {
+void FFT<T>::cFFT2(T *S, T *s, T dx, int N, int n) {
     std::vector<T> b(N+1); // remove me
     std::vector<T> bn(N+1); // remove me
     std::vector<T>& z = b;
@@ -382,6 +389,10 @@ void FFT<T>::cFFT2(T *S, T *s, T dx) {
 #undef _off
 }
 
+template<typename T>
+void FFT<T>::cFFT2(T *S, T *s, T dx) {
+    cFFT2(S, s, dx, N, n);
+}
 
 template class FFT<double>;
 template class FFT<float>;
