@@ -119,6 +119,36 @@ void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
 }
 
 template<typename T>
+void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
+    int N_2 = N/2;
+    int yoff = 0;
+    int _yoff = N_2;
+
+    int s, k;
+    T* a = s1;
+
+    for (s = 1; s <= n - 2; s++) {
+        padvance(a, 1<<(n-s));
+    }
+
+    padvance(a, 1 << (n - (n-1)));
+    S[yoff +(1 << (n - 2))] = a[2];
+    S[N-(1 << (n - 2))] = a[3];
+
+    padvance(a, 1 << (n - n));
+    S[yoff + 0]             = a[0];
+    S[yoff + N_2]           = a[1];
+
+    for (k = 0; k <= N_2; k++) {
+        S[yoff + k]  = S[yoff + k] * dx;
+    }
+
+    for (int k = 1; k <= N_2-1; k++) {
+        S[_yoff + k] = S[_yoff + k] * dx;
+    }
+}
+
+template<typename T>
 void FFT<T>::pFFT(T *S, T* s, T dx) {
     int N_2 = N/2;
     int k;
