@@ -436,8 +436,8 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_sin_new_float, &c),
         cmocka_unit_test_prestate(test_cos_new_double, &c),
         cmocka_unit_test_prestate(test_cos_new_float, &c),
-        cmocka_unit_test_prestate(test_periodic_new2_double, &c),
-        cmocka_unit_test_prestate(test_periodic_new2_float, &c),
+        //cmocka_unit_test_prestate(test_periodic_new2_double, &c),
+        //cmocka_unit_test_prestate(test_periodic_new2_float, &c),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

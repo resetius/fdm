@@ -31,7 +31,7 @@ void FFTTable<T>::init() {
     }
 
 #define off(k,l) ((l)*N+(k-1))
-    for (int l = 0; l <= n-1; l++) {
+    for (int l = -1; l <= n-1; l++) {
         for (int k = 1; k <= _2(l); k++) {
             T x = 2.*cos(M_PI*(2*k-1)/(_2(l+2)));
             x = 1./x;
@@ -120,15 +120,70 @@ void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
 
 template<typename T>
 void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
+    std::vector<T> b(N+1); // remove me
+    std::vector<T> bn(N+1); // remove me
+    std::vector<T>& z = b;
+    std::vector<T>& zn = bn;
+
     int N_2 = N/2;
     int yoff = 0;
     int _yoff = N_2;
 
-    int s, k;
+    int s, k, l, m, j;
     T* a = s1;
 
-    for (s = 1; s <= n - 2; s++) {
-        padvance(a, 1<<(n-s));
+#define off(a,b) ((a)*(_2(m)+1)+(b-1))
+#define _off(a,b) ((a)*(_2(m-1)+1)+(b-1))
+
+    for (l = n-2; l >= 2; l--) {
+        // l = n-s
+        padvance(a, _2(l));
+
+        for (j = 0; j <= _2(l)-1; j++) {
+            b[off(j,1)] = a[_2(l)+j];
+        }
+
+        for (m = 1; m <= l-1; m++) {
+            for (s = 1; s <= _2(m-1); s++) {
+                j = 0;
+                bn[off(j,2*s-1)] = b[_off(1,s)] - b[_off(_2(l-m+1)-1,s)];
+                bn[off(j,2*s)] = b[_off(2*j,s)];
+
+                for (j = 1; j <= _2(l-m)-1; j++) {
+                    bn[off(j,2*s-1)] = b[_off(2*j-1,s)] + b[_off(2*j+1,s)];
+                    bn[off(j,2*s)] = b[_off(2*j,s)];
+                }
+            }
+            bn.swap(b);
+        }
+        // m=l-1
+
+        for (s = 1; s <= _2(l-1); s++) {
+            zn[off(1,s)] = b[off(0,s)];
+            zn[_yoff+off(1,s)] = b[off(1,s)];
+        }
+        zn.swap(z);
+
+        for (m = 1; m <= l-1; m++) {
+            for (k = 1; k <= _2(l-m-1); k++) {
+                for (s = 1; s <= _2(m-1); s++) {
+                    zn[off(k,s)] = z[_off(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[_off(k,2*s-1)];
+                    zn[off(_2(l-m)-k+1,s)] = z[_off(k,2*s)]
+                        - t.iCOS(k,l-m-1)*z[_off(k,2*s-1)];
+
+                    zn[_yoff+off(k,s)] = z[_yoff+_off(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[_yoff+_off(k,2*s-1)];
+                    zn[_yoff+off(_2(l-m)-k+1,s)] = -z[_yoff+_off(k,2*s)]
+                        - t.iCOS(k,l-m-1)*z[_yoff+_off(k,2*s-1)];
+                }
+            }
+            zn.swap(z);
+        }
+        for (k = 1; k <= _2(l-1); k++) {
+            S[yoff+_2(n-l-1)*(2*k-1)] = z[off(k,1)];
+            S[N-(_2(n-l-1)*(2*k-1))] = z[_yoff+off(k,1)];
+        }
     }
 
     padvance(a, 1 << (n - (n-1)));
@@ -146,6 +201,9 @@ void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
     for (int k = 1; k <= N_2-1; k++) {
         S[_yoff + k] = S[_yoff + k] * dx;
     }
+
+#undef off
+#undef _off
 }
 
 template<typename T>
