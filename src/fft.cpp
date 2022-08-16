@@ -23,14 +23,14 @@ void FFTTable<T>::init() {
 
     ffCOS.resize(2*N);
     ffSIN.resize(2*N);
-    ffiCOS.resize(n*N);
+    ffiCOS.resize((n+1)*N);
 
     for (int m = 0; m < 2*N; ++m) {
         ffCOS[m] = cos(m * M_PI/N);
         ffSIN[m] = sin(m * M_PI/N);
     }
 
-#define off(k,l) ((l)*N+(k-1))
+#define off(k,l) ((l+1)*N+(k-1))
     for (int l = -1; l <= n-1; l++) {
         for (int k = 1; k <= _2(l); k++) {
             T x = 2.*cos(M_PI*(2*k-1)/(_2(l+2)));
@@ -132,13 +132,14 @@ void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
     int s, k, l, m, j;
     T* a = s1;
 
-#define off(a,b) ((a)*(_2(m)+1)+(b-1))
-#define _off(a,b) ((a)*(_2(m-1)+1)+(b-1))
+#define off(a,b) ((a)*(_2(m))+(b-1))
+#define _off(a,b) ((a)*(_2(m-1))+(b-1))
 
     for (l = n-2; l >= 2; l--) {
         // l = n-s
         padvance(a, _2(l));
 
+	m = 0;
         for (j = 0; j <= _2(l)-1; j++) {
             b[off(j,1)] = a[_2(l)+j];
         }
@@ -164,7 +165,7 @@ void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
         }
         zn.swap(z);
 
-        for (m = 1; m <= l-1; m++) {
+        for (m = l-1; m >= 1; m--) {
             for (k = 1; k <= _2(l-m-1); k++) {
                 for (s = 1; s <= _2(m-1); s++) {
                     zn[off(k,s)] = z[_off(k,2*s)]
@@ -180,6 +181,7 @@ void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
             }
             zn.swap(z);
         }
+
         for (k = 1; k <= _2(l-1); k++) {
             S[yoff+_2(n-l-1)*(2*k-1)] = z[off(k,1)];
             S[N-(_2(n-l-1)*(2*k-1))] = z[_yoff+off(k,1)];

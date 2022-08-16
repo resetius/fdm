@@ -18,7 +18,7 @@ public:
     }
 
     T iCOS(int k, int l) const {
-        return ffiCOS[(l)*N+(k-1)];
+        return ffiCOS[(l+1)*N+(k-1)];
     }
 
 private:
