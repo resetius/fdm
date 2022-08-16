@@ -120,8 +120,8 @@ void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
 
 template<typename T>
 void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
-    std::vector<T> b(N+1); // remove me
-    std::vector<T> bn(N+1); // remove me
+    std::vector<T> b(N); // remove me
+    std::vector<T> bn(N); // remove me
     std::vector<T>& z = b;
     std::vector<T>& zn = bn;
 
@@ -171,15 +171,15 @@ void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
         for (m = l-1; m >= 1; m--) {
             for (k = 1; k <= _2(l-m-1); k++) {
                 for (s = 1; s <= _2(m-1); s++) {
-                    zn[zoff(k,s)] = z[_zoff(k,2*s)]
-                        + t.iCOS(k,l-m-1)*z[_zoff(k,2*s-1)];
-                    zn[zoff(_2(l-m)-k+1,s)] = z[_zoff(k,2*s)]
-                        - t.iCOS(k,l-m-1)*z[_zoff(k,2*s-1)];
+                    zn[_zoff(k,s)] = z[zoff(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[zoff(k,2*s-1)];
+                    zn[_zoff(_2(l-m)-k+1,s)] = z[zoff(k,2*s)]
+                        - t.iCOS(k,l-m-1)*z[zoff(k,2*s-1)];
 
-                    zn[_yoff+zoff(k,s)] = z[_yoff+_off(k,2*s)]
-                        + t.iCOS(k,l-m-1)*z[_yoff+_zoff(k,2*s-1)];
-                    zn[_yoff+zoff(_2(l-m)-k+1,s)] = -z[_yoff+_off(k,2*s)]
-                        + t.iCOS(k,l-m-1)*z[_yoff+_zoff(k,2*s-1)];
+                    zn[_yoff+_zoff(k,s)] = z[_yoff+zoff(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[_yoff+zoff(k,2*s-1)];
+                    zn[_yoff+_zoff(_2(l-m)-k+1,s)] = -z[_yoff+zoff(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[_yoff+zoff(k,2*s-1)];
                 }
             }
             zn.swap(z);
@@ -203,7 +203,7 @@ void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
         S[yoff + k]  = S[yoff + k] * dx;
     }
 
-    for (int k = 1; k <= N_2-1; k++) {
+    for (k = 1; k <= N_2-1; k++) {
         S[_yoff + k] = S[_yoff + k] * dx;
     }
 

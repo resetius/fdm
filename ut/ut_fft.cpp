@@ -401,8 +401,8 @@ void test_periodic_new2(void** data) {
         tol = 1e-3;
     }
 
-    for (int i = 0; i <= N; i++) {
-        //assert_float_equal(S1[i], S[i], tol);
+    for (int i = 0; i < N; i++) {
+        assert_float_equal(S1[i], S[i], tol);
         if (verbose > 1) {
             printf("%e <> %e\n", S1[i], S[i]);
         }
