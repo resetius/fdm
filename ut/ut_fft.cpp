@@ -243,7 +243,7 @@ void test_sin_new(void** data) {
     s1 = s;
     {
         auto t1 = steady_clock::now();
-        ft.sFFT(&S[0], &s1[0], 1.0);
+        ft.sFFT_old(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -254,7 +254,7 @@ void test_sin_new(void** data) {
     s1 = s;
     {
         auto t1 = steady_clock::now();
-        ft.sFFT2(&S1[0], &s1[0], 1.0);
+        ft.sFFT(&S1[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -316,7 +316,7 @@ void test_cos_new(void** data) {
     s1 = s;
     {
         auto t1 = steady_clock::now();
-        ft.cFFT(&S[0], &s1[0], 1.0);
+        ft.cFFT_old(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -327,7 +327,7 @@ void test_cos_new(void** data) {
     s1 = s;
     {
         auto t1 = steady_clock::now();
-        ft.cFFT2(&S1[0], &s1[0], 1.0);
+        ft.cFFT(&S1[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -377,7 +377,7 @@ void test_periodic_new2(void** data) {
     s1 = s;
     {
         auto t1 = steady_clock::now();
-        ft.pFFT_1(&S[0], &s1[0], 1.0);
+        ft.pFFT_1_old(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -388,7 +388,7 @@ void test_periodic_new2(void** data) {
     s1 = s;
     {
         auto t1 = steady_clock::now();
-        ft.pFFT_12(&S1[0], &s1[0], 1.0);
+        ft.pFFT_1(&S1[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {

@@ -58,33 +58,33 @@ public:
       \param s  - начальное условие
       \param dx - множитель перед суммой
 	*/
-	void pFFT_1(T *S, T *s1, T dx);
+	void pFFT_1_old(T *S, T *s1, T dx);
 	/*! быстрое косинусное преобразование.
 	   Самарский-Николаев, страница 176, формулы 46-47
        fftw: REDFT00
        S и s: массивы размера N+1, 0-indexing
 	 */
-    void cFFT(T *S, T *s, T dx);
+    void cFFT_old(T *S, T *s, T dx);
 	/*! быстрое синусное преобразование.
 	   Самарский-Николаев, страница 180
        fftw: RODFT00
        S и s: массивы размера N-1, 1-indexing
 	 */
-    void sFFT(T *S, T *s, T dx);
+    void sFFT_old(T *S, T *s, T dx);
 
     // new optimized version
-    void sFFT2(T* S, T* s, T dx);
-    void cFFT2(T* S, T* s, T dx);
-    void pFFT_12(T* S, T* s, T dx);
+    void sFFT(T* S, T* s, T dx);
+    void cFFT(T* S, T* s, T dx);
+    void pFFT_1(T* S, T* s, T dx);
 
 private:
     void init();
 
-    void sFFT(T *S, T *s, T dx, int N, int n,int nr);
-    void cFFT(T *S, T *s, T dx, int N, int n,int nr);
+    void sFFT_old(T *S, T *s, T dx, int N, int n,int nr);
+    void cFFT_old(T *S, T *s, T dx, int N, int n,int nr);
 
-    void sFFT2(T* S, T* s, T dx, int N, int n);
-    void cFFT2(T* S, T* s, T dx, int N, int n);
+    void sFFT(T* S, T* s, T dx, int N, int n);
+    void cFFT(T* S, T* s, T dx, int N, int n);
 
     inline void padvance(T*a, int idx);
     inline void cadvance(T*a, int idx);
