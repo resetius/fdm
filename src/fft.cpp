@@ -135,11 +135,14 @@ void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
 #define off(a,b) ((a)*(_2(m))+(b-1))
 #define _off(a,b) ((a)*(_2(m-1))+(b-1))
 
-    for (l = n-2; l >= 2; l--) {
+#define zoff(a,b) ((a-1)*(_2(m))+(b-1))
+#define _zoff(a,b) ((a-1)*(_2(m-1))+(b-1))
+
+    for (l = n-1; l >= 2; l--) {
         // l = n-s
         padvance(a, _2(l));
 
-	m = 0;
+        m = 0;
         for (j = 0; j <= _2(l)-1; j++) {
             b[off(j,1)] = a[_2(l)+j];
         }
@@ -157,34 +160,34 @@ void FFT<T>::pFFT_12(T *S, T *s1, T dx) {
             }
             bn.swap(b);
         }
-        // m=l-1
+        m=l-1;
 
         for (s = 1; s <= _2(l-1); s++) {
-            zn[off(1,s)] = b[off(0,s)];
-            zn[_yoff+off(1,s)] = b[off(1,s)];
+            zn[zoff(1,s)] = b[off(0,s)];
+            zn[_yoff+zoff(1,s)] = b[off(1,s)];
         }
         zn.swap(z);
 
         for (m = l-1; m >= 1; m--) {
             for (k = 1; k <= _2(l-m-1); k++) {
                 for (s = 1; s <= _2(m-1); s++) {
-                    zn[off(k,s)] = z[_off(k,2*s)]
-                        + t.iCOS(k,l-m-1)*z[_off(k,2*s-1)];
-                    zn[off(_2(l-m)-k+1,s)] = z[_off(k,2*s)]
-                        - t.iCOS(k,l-m-1)*z[_off(k,2*s-1)];
+                    zn[zoff(k,s)] = z[_zoff(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[_zoff(k,2*s-1)];
+                    zn[zoff(_2(l-m)-k+1,s)] = z[_zoff(k,2*s)]
+                        - t.iCOS(k,l-m-1)*z[_zoff(k,2*s-1)];
 
-                    zn[_yoff+off(k,s)] = z[_yoff+_off(k,2*s)]
-                        + t.iCOS(k,l-m-1)*z[_yoff+_off(k,2*s-1)];
-                    zn[_yoff+off(_2(l-m)-k+1,s)] = -z[_yoff+_off(k,2*s)]
-                        - t.iCOS(k,l-m-1)*z[_yoff+_off(k,2*s-1)];
+                    zn[_yoff+zoff(k,s)] = z[_yoff+_off(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[_yoff+_zoff(k,2*s-1)];
+                    zn[_yoff+zoff(_2(l-m)-k+1,s)] = -z[_yoff+_off(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[_yoff+_zoff(k,2*s-1)];
                 }
             }
             zn.swap(z);
         }
 
         for (k = 1; k <= _2(l-1); k++) {
-            S[yoff+_2(n-l-1)*(2*k-1)] = z[off(k,1)];
-            S[N-(_2(n-l-1)*(2*k-1))] = z[_yoff+off(k,1)];
+            S[yoff+_2(n-l-1)*(2*k-1)] = z[zoff(k,1)];
+            S[N-(_2(n-l-1)*(2*k-1))] = z[_yoff+zoff(k,1)];
         }
     }
 
