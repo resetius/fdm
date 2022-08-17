@@ -400,8 +400,8 @@ void FFT<T>::cFFT(T *S, T *s, T dx, int N, int n) {
     T*a = s;
     a[0] *= 0.5; a[N] *= 0.5;
 
-#define off(a,b) ((a)*(_2(m)+1)+(b-1))
-#define _off(a,b) ((a)*(_2(m-1)+1)+(b-1))
+#define off(a,b) ((a)*(_2(m))+(b-1))
+#define _off(a,b) ((a)*(_2(m-1))+(b-1))
 
     for (int l = n-1; l >= 1; l--) { // l=n-s
         cadvance(a, _2(l));
