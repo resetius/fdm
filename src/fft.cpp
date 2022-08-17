@@ -209,6 +209,8 @@ void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
 
 #undef off
 #undef _off
+#undef zoff
+#undef _zoff
 }
 
 template<typename T>
