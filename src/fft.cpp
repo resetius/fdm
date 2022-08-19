@@ -1,7 +1,10 @@
 #include <cmath>
+#include <complex>
 #include <string.h>
 #include <assert.h>
-
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include "fft.h"
 #include "verify.h"
 
@@ -30,9 +33,17 @@ void FFTTable<T>::init() {
         ffSIN[m] = sin(m * M_PI/N);
     }
 
+    ffEXPr.resize(n);
+    ffEXPi.resize(n);
+    for (int s = 1; s <= n; s++) {
+        int m = 1<<s;
+        ffEXPr[s-1] = cos(-2*M_PI/m);
+        ffEXPi[s-1] = sin(-2*M_PI/m);
+    }
+
 #define off(k,l) ((l+1)*N+(k-1))
     for (int l = -1; l <= n-1; l++) {
-        for (int k = 1; k <= _2(l); k++) {
+        for (int k = 1; k <= _2(l+1); k++) {
             T x = 2.*cos(M_PI*(2*k-1)/(_2(l+2)));
             x = 1./x;
             ffiCOS[off(k,l)] = x;
@@ -298,7 +309,7 @@ void FFT<T>::sFFT(T* S, T* s, T dx, int N, int n) {
         }
         // b^m, m = 1, ... l, incr
         for (m = 1; m <= l-1; m++) {
-            for (s = _2(m-1); s >= 1; s--) {
+            for (s = 1; s <= _2(m-1); s++) {
                 for (j = 1; j <= _2(l-m)-1; j++) {
                     bn[off(j,2*s-1)] = b[_off(2*j-1,s)]+b[_off(2*j+1,s)];
                     bn[off(j,2*s)]   = b[_off(2*j,s)];
@@ -343,6 +354,105 @@ void FFT<T>::sFFT(T* S, T* s, T dx, int N, int n) {
 
 #undef off
 #undef _off
+}
+
+#ifdef _OPENMP
+template<typename T>
+inline void sadvance_omp(T* a, int idx, int id) {
+    if (id <= idx-1) {
+        int j = id;
+        T a1 = a[j] - a[2 * idx - j];
+        T a2 = a[j] + a[2 * idx - j];
+        a[j]           = a1;
+        a[2 * idx - j] = a2;
+    }
+}
+#endif
+
+template<typename T>
+void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
+#ifdef _OPENMP
+    std::vector<T> b(2*N); // remove me
+    std::vector<T> bn(2*N); // remove me
+    std::vector<T>& z = b;
+    std::vector<T>& zn = bn;
+
+    T* a = s;
+    // s = 1,...,2^{m-1}
+#define off(a,b) ((a-1)*(_2(m))+(b-1))
+#define _off(a,b) ((a-1)*(_2(m-1))+(b-1))
+
+    omp_set_dynamic(0);
+    omp_set_num_threads(_2(n-1));
+
+#pragma omp parallel
+    {
+    int id = omp_get_thread_num();
+    for (int l = n-1; l >= 1; l--) { // l=n-s
+        sadvance_omp(a, _2(l), id);
+        int m = 0, j = 0, s = 0, k = 0;
+        if ((j = id+1) < _2(l)) {
+            b[off(j,1)] = a[(_2(l+1))-j];
+        }
+
+        for (m = 1; m <= l-1; m++) {
+            int ns = _2(m-1);
+            int nj = _2(l-m);
+            j = id/ns + 1;
+            s = id%ns + 1;
+            if (j <= nj) {
+                // for j = 0
+                bn[off(j,2*s-1)] = b[_off(2*j-1,s)]+b[_off(2*j+1,s)];
+                bn[off(j,2*s)]   = b[_off(2*j,s)];
+            }
+#pragma omp barrier
+            if (id == 0) bn.swap(b);
+#pragma omp barrier
+        }
+        int ns = _2(m-1);
+        int nj = _2(l-m);
+        j = id/ns + 1;
+        s = id%ns + 1;
+        if (j <= nj) {
+            bn[off(j,2*s)] = b[_off(2*j,s)];
+            if (j == _2(l-m)) {
+                bn[off(_2(l-m),2*s-1)] = b[_off(_2(l-m+1)-1,s)];
+            }
+        }
+#pragma omp barrier
+        if (id == 0) bn.swap(b);
+#pragma omp barrier
+        for (m = l; m >= 1; m--) {
+            int ns = _2(m-1);
+            int nk = _2(l-m);
+            k = id/ns + 1;
+            s = id%ns + 1;
+
+            if (k <= nk) {
+                zn[_off(k,s)] = z[off(k,2*s)]
+                    + t.iCOS(k,l-m)*z[off(k,2*s-1)];
+                zn[_off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
+                    + t.iCOS(k,l-m)*z[off(k,2*s-1)];
+            }
+#pragma omp barrier
+            if (id == 0) zn.swap(z);
+#pragma omp barrier
+        }
+        k = id+1;
+        if (k <= _2(l)) {
+            S[(_2(n-l-1))*(2*k-1)] = dx*z[off(k,1)];
+        }
+    }
+    }
+
+    S[_2(n-1)] = dx*a[1];
+
+#undef off
+#undef _off
+
+#else
+    abort();
+#endif
 }
 
 template<typename T>
@@ -471,6 +581,50 @@ void FFT<T>::cFFT(T *S, T *s, T dx, int N, int n) {
 template<typename T>
 void FFT<T>::cFFT(T *S, T *s, T dx) {
     cFFT(S, s, dx, N, n);
+}
+
+unsigned int rev(unsigned int num, unsigned int count)
+{
+    unsigned int reverse_num = num;
+    for (unsigned int i = 0; i < count; i++) {
+        if ((num & (1 << i))) {
+            reverse_num |= 1 << ((count - 1) - i);
+        }
+    }
+    return reverse_num;
+}
+
+template<typename T>
+void FFT<T>::cpFFT(T* S, T* s1, T dx) {
+    vector<T> Si(N, 0);
+    using cmpl = std::complex<T>;
+
+    for (int k = 0; k < N; k++) {
+        S[rev(k, n)] = s1[k];
+    }
+
+    cmpl wm,w;
+
+    for (int s = 1; s <= n; s++) {
+        const int m = _2(s);
+
+        wm = cmpl{t.ffEXPr[s-1],t.ffEXPi[s-1]};
+
+        for (int k = 0; k <= N-1; k += m) {
+            cmpl w = 1;
+            for (int j = 0; j <= m/2-1; j++) {
+                cmpl t   = w * cmpl{S[k+j+m/2],Si[k+j+m/2]};
+                cmpl u   =     cmpl{S[k+j    ],Si[k+j    ]};
+                cmpl ut  = u+t;
+                cmpl u_t = u-t;
+                S [k+j]     = ut.real();
+                Si[k+j]     = ut.imag();
+                S [k+j+m/2] = u_t.real();
+                Si[k+j+m/2] = u_t.imag();
+                w = w*wm;
+            }
+        }
+    }
 }
 
 template class FFT<double>;

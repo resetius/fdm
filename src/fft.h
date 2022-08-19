@@ -12,6 +12,9 @@ public:
     std::vector<T> ffSIN;
     std::vector<T> ffiCOS;
 
+    std::vector<T> ffEXPr;
+    std::vector<T> ffEXPi;
+
     FFTTable(int N): N(N)
     {
         init();
@@ -76,6 +79,10 @@ public:
     void sFFT(T* S, T* s, T dx);
     void cFFT(T* S, T* s, T dx);
     void pFFT_1(T* S, T* s, T dx);
+
+    void cpFFT(T* S, T* s, T dx);
+
+    void sFFT_omp(T* S, T* s, T dx);
 
 private:
     void init();
