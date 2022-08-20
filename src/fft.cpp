@@ -1,5 +1,6 @@
 #include <cmath>
 #include <complex>
+#include <chrono>
 #include <string.h>
 #include <assert.h>
 #ifdef _OPENMP
@@ -9,6 +10,7 @@
 #include "verify.h"
 
 using namespace std;
+using namespace std::chrono;
 
 namespace fdm {
 
@@ -377,17 +379,14 @@ inline void sadvance_omp(T* a, int idx, int id, int work) {
 template<typename T>
 void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
 #ifdef _OPENMP
-    std::vector<T> b(2*N); // remove me
-    std::vector<T> bn(2*N); // remove me
-    std::vector<T>& z = b;
-    std::vector<T>& zn = bn;
+    std::vector<T> b(N); // remove me
 
     T* a = s;
     // s = 1,...,2^{m-1}
 #define off(a,b) ((a-1)*(_2(m))+(b-1))
 #define _off(a,b) ((a-1)*(_2(m-1))+(b-1))
 
-    int size = 4; // _2(n-1);
+    int size = 2; // _2(n-1);
 
     omp_set_dynamic(0);
     omp_set_num_threads(size);
@@ -395,8 +394,14 @@ void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
 #pragma omp parallel
     {
     int thread_id = omp_get_thread_num();
+    int work = std::max(1, _2(n) / size);
+    int boff = 0;
+    int nboff = boff+N/2;
+
+    time_point<steady_clock> t1;
+    if (thread_id == 0) t1 = steady_clock::now();
     for (int l = n-1; l >= 1; l--) { // l=n-s
-        int work = std::max(1, _2(l) / size);
+        work /= 2;
         int id = thread_id*work;
 
         sadvance_omp(a, _2(l), id, work);
@@ -404,7 +409,7 @@ void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
 
         int m = 0, j = 0, s = 0, k = 0;
         for (j = id+1; j < id+1+work && j <= _2(l); j++) {
-            b[off(j,1)] = a[(_2(l+1))-j];
+            b[boff+off(j,1)] = a[(_2(l+1))-j];
         }
 #pragma omp barrier
 
@@ -416,27 +421,24 @@ void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
                 s = i%ns + 1;
                 if (j <= nj) {
                     if (j == nj) {
-                        bn[off(j,2*s-1)] = b[_off(2*j-1,s)];
+                        b[nboff+off(j,2*s-1)] = b[boff+_off(2*j-1,s)];
                     } else {
-                        bn[off(j,2*s-1)] = b[_off(2*j-1,s)]+b[_off(2*j+1,s)];
+                        b[nboff+off(j,2*s-1)] = b[boff+_off(2*j-1,s)]+b[boff+_off(2*j+1,s)];
                     }
-                    bn[off(j,2*s)]   = b[_off(2*j,s)];
+                    b[nboff+off(j,2*s)]   = b[boff+_off(2*j,s)];
                 }
             }
 #pragma omp barrier
-            if (id == 0) bn.swap(b);
-#pragma omp barrier
+            swap(boff, nboff);
         }
-#pragma omp barrier
 
         int ns = _2(m-1);
         for (s = id + 1; s < id+1+work && s <= ns; s++) {
-            bn[off(1,2*s)] = b[_off(2,s)];
-            bn[off(1,2*s-1)] = b[_off(1,s)];
+            b[nboff+off(1,2*s)] = b[boff+_off(2,s)];
+            b[nboff+off(1,2*s-1)] = b[boff+_off(1,s)];
         }
 #pragma omp barrier
-        if (id == 0) bn.swap(b);
-#pragma omp barrier
+        swap(boff, nboff);
 
         for (m = l; m >= 1; m--) {
             int ns = _2(m-1);
@@ -446,21 +448,25 @@ void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
                 s = i%ns + 1;
 
                 if (k <= nk) {
-                    zn[_off(k,s)] = z[off(k,2*s)]
-                        + t.iCOS(k,l-m)*z[off(k,2*s-1)];
-                    zn[_off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
-                        + t.iCOS(k,l-m)*z[off(k,2*s-1)];
+                    b[nboff+_off(k,s)] = b[boff+off(k,2*s)]
+                        + t.iCOS(k,l-m)*b[boff+off(k,2*s-1)];
+                    b[nboff+_off(_2(l-m+1)-k+1,s)] = -b[boff+off(k,2*s)]
+                        + t.iCOS(k,l-m)*b[boff+off(k,2*s-1)];
                 }
             }
 #pragma omp barrier
-            if (id == 0) zn.swap(z);
-#pragma omp barrier
+            swap(boff, nboff);
         }
         for (k = id+1; k < id+1+work&&k <= _2(l); k++) {
-            S[(_2(n-l-1))*(2*k-1)] = dx*z[off(k,1)];
+            S[(_2(n-l-1))*(2*k-1)] = dx*b[boff+off(k,1)];
         }
 
 #pragma omp barrier
+    }
+    if (thread_id == 0) {
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        //printf("time=%f\n", interval.count());
     }
     }
 
