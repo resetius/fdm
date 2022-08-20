@@ -287,6 +287,14 @@ void FFT<T>::sFFT_old(T *S,T *s,T dx,int N,int n,int nr) {
 }
 
 template<typename T>
+void prn(T*a, int n) {
+    for (int i = 0; i < n; i++) {
+        printf("%f ", a[i]);
+    }
+    printf("\n\n");
+}
+
+template<typename T>
 void FFT<T>::sFFT(T* S, T* s, T dx, int N, int n) {
     std::vector<T> b(N); // remove me
     std::vector<T> bn(N); // remove me
@@ -322,10 +330,8 @@ void FFT<T>::sFFT(T* S, T* s, T dx, int N, int n) {
         }
         // m = l
         for (s = 1; s <= _2(m-1); s++) {
-            for (j = 1; j <= _2(l-m); j++) {
-                bn[off(j,2*s)] = b[_off(2*j,s)];
-            }
-            bn[off(_2(l-m),2*s-1)] = b[_off(_2(l-m+1)-1,s)];
+            bn[off(1,2*s)] = b[_off(2,s)];
+            bn[off(1,2*s-1)] = b[_off(1,s)];
         }
         bn.swap(b);
 
@@ -358,9 +364,8 @@ void FFT<T>::sFFT(T* S, T* s, T dx, int N, int n) {
 
 #ifdef _OPENMP
 template<typename T>
-inline void sadvance_omp(T* a, int idx, int id) {
-    if (id <= idx-1) {
-        int j = id;
+inline void sadvance_omp(T* a, int idx, int id, int work) {
+    for (int j = id+1; j < id+1+work && j <= idx-1; j++) {
         T a1 = a[j] - a[2 * idx - j];
         T a2 = a[j] + a[2 * idx - j];
         a[j]           = a1;
@@ -382,66 +387,80 @@ void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
 #define off(a,b) ((a-1)*(_2(m))+(b-1))
 #define _off(a,b) ((a-1)*(_2(m-1))+(b-1))
 
+    int size = 4; // _2(n-1);
+
     omp_set_dynamic(0);
-    omp_set_num_threads(_2(n-1));
+    omp_set_num_threads(size);
 
 #pragma omp parallel
     {
-    int id = omp_get_thread_num();
+    int thread_id = omp_get_thread_num();
     for (int l = n-1; l >= 1; l--) { // l=n-s
-        sadvance_omp(a, _2(l), id);
+        int work = std::max(1, _2(l) / size);
+        int id = thread_id*work;
+
+        sadvance_omp(a, _2(l), id, work);
+#pragma omp barrier
+
         int m = 0, j = 0, s = 0, k = 0;
-        if ((j = id+1) < _2(l)) {
+        for (j = id+1; j < id+1+work && j <= _2(l); j++) {
             b[off(j,1)] = a[(_2(l+1))-j];
         }
+#pragma omp barrier
 
         for (m = 1; m <= l-1; m++) {
             int ns = _2(m-1);
             int nj = _2(l-m);
-            j = id/ns + 1;
-            s = id%ns + 1;
-            if (j <= nj) {
-                // for j = 0
-                bn[off(j,2*s-1)] = b[_off(2*j-1,s)]+b[_off(2*j+1,s)];
-                bn[off(j,2*s)]   = b[_off(2*j,s)];
+            for (int i = id; i < id+work; i++) {
+                j = i/ns + 1;
+                s = i%ns + 1;
+                if (j <= nj) {
+                    if (j == nj) {
+                        bn[off(j,2*s-1)] = b[_off(2*j-1,s)];
+                    } else {
+                        bn[off(j,2*s-1)] = b[_off(2*j-1,s)]+b[_off(2*j+1,s)];
+                    }
+                    bn[off(j,2*s)]   = b[_off(2*j,s)];
+                }
             }
 #pragma omp barrier
             if (id == 0) bn.swap(b);
 #pragma omp barrier
         }
+#pragma omp barrier
+
         int ns = _2(m-1);
-        int nj = _2(l-m);
-        j = id/ns + 1;
-        s = id%ns + 1;
-        if (j <= nj) {
-            bn[off(j,2*s)] = b[_off(2*j,s)];
-            if (j == _2(l-m)) {
-                bn[off(_2(l-m),2*s-1)] = b[_off(_2(l-m+1)-1,s)];
-            }
+        for (s = id + 1; s < id+1+work && s <= ns; s++) {
+            bn[off(1,2*s)] = b[_off(2,s)];
+            bn[off(1,2*s-1)] = b[_off(1,s)];
         }
 #pragma omp barrier
         if (id == 0) bn.swap(b);
 #pragma omp barrier
+
         for (m = l; m >= 1; m--) {
             int ns = _2(m-1);
             int nk = _2(l-m);
-            k = id/ns + 1;
-            s = id%ns + 1;
+            for (int i = id; i < id+work; i++) {
+                k = i/ns + 1;
+                s = i%ns + 1;
 
-            if (k <= nk) {
-                zn[_off(k,s)] = z[off(k,2*s)]
-                    + t.iCOS(k,l-m)*z[off(k,2*s-1)];
-                zn[_off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
-                    + t.iCOS(k,l-m)*z[off(k,2*s-1)];
+                if (k <= nk) {
+                    zn[_off(k,s)] = z[off(k,2*s)]
+                        + t.iCOS(k,l-m)*z[off(k,2*s-1)];
+                    zn[_off(_2(l-m+1)-k+1,s)] = -z[off(k,2*s)]
+                        + t.iCOS(k,l-m)*z[off(k,2*s-1)];
+                }
             }
 #pragma omp barrier
             if (id == 0) zn.swap(z);
 #pragma omp barrier
         }
-        k = id+1;
-        if (k <= _2(l)) {
+        for (k = id+1; k < id+1+work&&k <= _2(l); k++) {
             S[(_2(n-l-1))*(2*k-1)] = dx*z[off(k,1)];
         }
+
+#pragma omp barrier
     }
     }
 
@@ -547,6 +566,7 @@ void FFT<T>::cFFT(T *S, T *s, T dx, int N, int n) {
         }
 
         bn.swap(b);
+
         for (s = 1; s <= _2(l); s++) {
             zn[off(1,s)] = b[off(0,s)];
         }
