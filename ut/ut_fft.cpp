@@ -504,10 +504,11 @@ void test_sin_omp(void** data) {
     s1 = s;
     {
         // warmup
-        for (int i = 0; i <10; i++) {
-            ft.sFFT_omp(&S[0], &s1[0], 1.0);
-        }
+        //for (int i = 0; i <10; i++) {
+        //    ft.sFFT_omp(&S[0], &s1[0], 1.0);
+        //}
 
+        s1 = s;
         auto t1 = steady_clock::now();
         ft.sFFT_omp(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
@@ -523,7 +524,7 @@ void test_sin_omp(void** data) {
     }
 
     for (int i = 0; i < N; i++) {
-        assert_float_equal(S1[i], S1[i], tol);
+        assert_float_equal(S1[i], S[i], tol);
         if (verbose == 2) {
             printf("%f %f\n", S1[i], S[i]);
         }
