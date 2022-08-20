@@ -401,21 +401,21 @@ void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
     time_point<steady_clock> t1;
     if (thread_id == 0) t1 = steady_clock::now();
     for (int l = n-1; l >= 1; l--) { // l=n-s
-        work /= 2;
+        work >>= 1;
         int id = thread_id*work;
 
         sadvance_omp(a, _2(l), id, work);
-#pragma omp barrier
 
-        int m = 0, j = 0, s = 0, k = 0;
+#pragma omp barrier
+        int m = 0, j = 0, s = 0, k = 0, i = 0;
         for (j = id+1; j < id+1+work && j <= _2(l); j++) {
             b[boff+off(j,1)] = a[(_2(l+1))-j];
         }
-#pragma omp barrier
 
         for (m = 1; m <= l-1; m++) {
             int ns = _2(m-1);
             int nj = _2(l-m);
+#pragma omp barrier
             for (int i = id; i < id+work; i++) {
                 j = i/ns + 1;
                 s = i%ns + 1;
@@ -428,40 +428,37 @@ void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
                     b[nboff+off(j,2*s)]   = b[boff+_off(2*j,s)];
                 }
             }
-#pragma omp barrier
             swap(boff, nboff);
         }
 
         int ns = _2(m-1);
+#pragma omp barrier
         for (s = id + 1; s < id+1+work && s <= ns; s++) {
             b[nboff+off(1,2*s)] = b[boff+_off(2,s)];
             b[nboff+off(1,2*s-1)] = b[boff+_off(1,s)];
         }
-#pragma omp barrier
         swap(boff, nboff);
 
         for (m = l; m >= 1; m--) {
             int ns = _2(m-1);
             int nk = _2(l-m);
-            for (int i = id; i < id+work; i++) {
-                k = i/ns + 1;
-                s = i%ns + 1;
-
-                if (k <= nk) {
-                    b[nboff+_off(k,s)] = b[boff+off(k,2*s)]
-                        + t.iCOS(k,l-m)*b[boff+off(k,2*s-1)];
-                    b[nboff+_off(_2(l-m+1)-k+1,s)] = -b[boff+off(k,2*s)]
-                        + t.iCOS(k,l-m)*b[boff+off(k,2*s-1)];
-                }
-            }
 #pragma omp barrier
+            for (i = id, k=i/n+1, s=i%ns+1;
+                 k <= nk && i < id+work;
+                 i++, k=i/ns+1,s=i%ns+1)
+            {
+                b[nboff+_off(k,s)] = b[boff+off(k,2*s)]
+                    + t.iCOS(k,l-m)*b[boff+off(k,2*s-1)];
+                b[nboff+_off(_2(l-m+1)-k+1,s)] = -b[boff+off(k,2*s)]
+                    + t.iCOS(k,l-m)*b[boff+off(k,2*s-1)];
+            }
             swap(boff, nboff);
         }
+
+#pragma omp barrier
         for (k = id+1; k < id+1+work&&k <= _2(l); k++) {
             S[(_2(n-l-1))*(2*k-1)] = dx*b[boff+off(k,1)];
         }
-
-#pragma omp barrier
     }
     if (thread_id == 0) {
         auto t2 = steady_clock::now();
