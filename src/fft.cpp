@@ -267,7 +267,7 @@ void FFT<T>::pFFT_1_omp(T *S, T *s1, T dx) {
 
 #pragma omp barrier
         int m = 0, j = 0, s = 0, k = 0, i = 0;
-        for (j = 0; j <= _2(l)-1; j++) {
+        for (j = id; j<id+work&&j <= _2(l)-1; j++) {
             b[boff+off(j,1)] = a[_2(l)+j];
         }
 
