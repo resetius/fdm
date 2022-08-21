@@ -611,6 +611,7 @@ void cadvance_omp(T*a, int idx, int id, int work) {
 
 template<typename T>
 void FFT<T>::cFFT_omp(T *S, T *s, T dx) {
+#ifdef _OPENMP
     std::vector<T> b(2*N); // remove me
 
     T*a = s;
@@ -711,6 +712,10 @@ void FFT<T>::cFFT_omp(T *S, T *s, T dx) {
 
 #undef off
 #undef _off
+
+#else // #ifdef _OPENMP
+    abort();
+#endif
 }
 
 template<typename T>
