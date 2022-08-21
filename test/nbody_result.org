@@ -1,4 +1,33 @@
+New results (fft improve, gpu timings fix)
+Field grid 32x32x32, local force grid 64x64x64, particles 1000000, time in ms
+CPU: OpenMP (gcc-11) 16 threads
+GPU: Vulkan API 1.1, GLSL Shading Language
+|----------------+----------------+----------------+-------------+-----------------|
+| Stage          | Apple M1 (CPU) | Apple M1 (GPU) | Ryzen 3700X | Nvidia RTX 3060 |
+|----------------+----------------+----------------+-------------+-----------------|
+| Density        |           9.63 |           5.30 |             |                 |
+| Poisson        |            1.7 |           0.93 |             |                 |
+| Field strenght |           0.83 |           0.01 |             |                 |
+| Local forces   |         159.20 |         156.64 |             |                 |
+| New positions  |           68.3 |           7.81 |             |                 |
+| Total          |         237.96 |         170.72 |             |                 |
+|----------------+----------------+----------------+-------------+-----------------|
 
+Field grid 64x64x64, local force grid 64x64x64, particles 1000000, time in ms
+CPU: OpenMP (gcc-11) 16 threads
+GPU: Vulkan API 1.1, GLSL Shading Language
+|----------------+----------------+----------------+-------------+-----------------|
+| Stage          | Apple M1 (CPU) | Apple M1 (GPU) | Ryzen 3700X | Nvidia RTX 3060 |
+|----------------+----------------+----------------+-------------+-----------------|
+| Density        |           9.73 |          11.17 |             |                 |
+| Poisson        |           9.52 |           5.38 |             |                 |
+| Field strenght |           6.63 |           0.01 |             |                 |
+| Local forces   |          394.9 |         152.14 |             |                 |
+| New positions  |          93.45 |           8.43 |             |                 |
+| Total          |         514.23 |         177.15 |             |                 |
+|----------------+----------------+----------------+-------------+-----------------|
+
+Old results
 Field grid 128x128x128, local force grid 64x64x64, particles 1000000, time in ms
 CPU: OpenMP (gcc-11) 16 threads
 GPU: Vulkan API 1.1, GLSL Shading Language
