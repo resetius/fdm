@@ -219,7 +219,7 @@ void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
 }
 
 template<typename T>
-void padvance(T* a, int idx, int id, int work)
+void padvance_omp(T* a, int idx, int id, int work)
 {
     for (int j = id; j<id+work&&j <= idx - 1; j++) {
         T a1, a2;
@@ -233,16 +233,12 @@ void padvance(T* a, int idx, int id, int work)
 template<typename T>
 void FFT<T>::pFFT_1_omp(T *S, T *s1, T dx) {
 #ifdef _OPENMP
-    std::vector<T> b(N); // remove me
-    std::vector<T> bn(N); // remove me
-    std::vector<T>& z = b;
-    std::vector<T>& zn = bn;
+    std::vector<T> b(2*N); // remove me
 
     int N_2 = N/2;
     int yoff = 0;
     int _yoff = N_2;
 
-    int s, k, l, m, j;
     T* a = s1;
 
 #define off(a,b) ((a)*(_2(m))+(b-1))
@@ -258,75 +254,91 @@ void FFT<T>::pFFT_1_omp(T *S, T *s1, T dx) {
 
 #pragma omp parallel
     {
-    for (l = n-1; l >= 2; l--) {
-        // l = n-s
-        padvance(a, _2(l));
+    int thread_id = omp_get_thread_num();
+    int work = std::max(2, _2(n) / size);
+    int boff = 0;
+    int nboff = boff+N;
 
-        m = 0;
+    for (int l = n-1; l >= 2; l--) { // l=n-s
+        work = max(1, work>>1);
+        int id = thread_id*work;
+
+        padvance_omp(a, _2(l), id, work);
+
+#pragma omp barrier
+        int m = 0, j = 0, s = 0, k = 0, i = 0;
         for (j = 0; j <= _2(l)-1; j++) {
-            b[off(j,1)] = a[_2(l)+j];
+            b[boff+off(j,1)] = a[_2(l)+j];
         }
 
         for (m = 1; m <= l-1; m++) {
-            for (s = 1; s <= _2(m-1); s++) {
-                j = 0;
-                bn[off(j,2*s-1)] = b[_off(1,s)] - b[_off(_2(l-m+1)-1,s)];
-                bn[off(j,2*s)] = b[_off(2*j,s)];
+            int ns = _2(m-1);
+            int nj = _2(l-m)-1;
 
-                for (j = 1; j <= _2(l-m)-1; j++) {
-                    bn[off(j,2*s-1)] = b[_off(2*j-1,s)] + b[_off(2*j+1,s)];
-                    bn[off(j,2*s)] = b[_off(2*j,s)];
+#pragma omp barrier
+            for (int i = id; i < id+work; i++) {
+                j = i/ns;
+                s = i%ns+1;
+
+                if (j == 0) {
+                    b[nboff+off(j,2*s-1)] = b[boff+_off(1,s)]-b[boff+_off(_2(l-m+1)-1,s)];
+                    b[nboff+off(j,2*s)] = b[boff+_off(2*j,s)];
+                } else if (j <= nj) {
+                    b[nboff+off(j,2*s-1)] = b[boff+_off(2*j-1,s)] + b[boff+_off(2*j+1,s)];
+                    b[nboff+off(j,2*s)] = b[boff+_off(2*j,s)];
                 }
             }
-            bn.swap(b);
+            swap(nboff, boff);
         }
-        m=l-1;
 
-        for (s = 1; s <= _2(l-1); s++) {
-            zn[zoff(1,s)] = b[off(0,s)];
-            zn[_yoff+zoff(1,s)] = b[off(1,s)];
+#pragma omp barrier
+        m=l-1;
+        for (s = id+1; s<id+1+work&&s <= _2(l-1); s++) {
+            b[nboff+zoff(1,s)] = b[boff+off(0,s)];
+            b[nboff+_yoff+zoff(1,s)] = b[boff+off(1,s)];
         }
-        zn.swap(z);
+        swap(nboff, boff);
 
         for (m = l-1; m >= 1; m--) {
-            for (k = 1; k <= _2(l-m-1); k++) {
-                for (s = 1; s <= _2(m-1); s++) {
-                    zn[_zoff(k,s)] = z[zoff(k,2*s)]
-                        + t.iCOS(k,l-m-1)*z[zoff(k,2*s-1)];
-                    zn[_zoff(_2(l-m)-k+1,s)] = z[zoff(k,2*s)]
-                        - t.iCOS(k,l-m-1)*z[zoff(k,2*s-1)];
-
-                    zn[_yoff+_zoff(k,s)] = z[_yoff+zoff(k,2*s)]
-                        + t.iCOS(k,l-m-1)*z[_yoff+zoff(k,2*s-1)];
-                    zn[_yoff+_zoff(_2(l-m)-k+1,s)] = -z[_yoff+zoff(k,2*s)]
-                        + t.iCOS(k,l-m-1)*z[_yoff+zoff(k,2*s-1)];
+            int ns = _2(m-1);
+            int nk = _2(l-m-1);
+#pragma omp barrier
+            for (i = id; i <id+work; i++) {
+                s=i%ns+1;
+                k=i/ns+1;
+                int r=k%2; k/=2;
+                if (k <= nk) {
+                    if (r==1) {
+                        b[nboff+_zoff(k,s)] = b[boff+zoff(k,2*s)]
+                            + t.iCOS(k,l-m-1)*b[boff+zoff(k,2*s-1)];
+                        b[nboff+_zoff(_2(l-m)-k+1,s)] = b[boff+zoff(k,2*s)]
+                            - t.iCOS(k,l-m-1)*b[boff+zoff(k,2*s-1)];
+                    } else {
+                        b[nboff+_yoff+_zoff(k,s)] = b[boff+_yoff+zoff(k,2*s)]
+                            + t.iCOS(k,l-m-1)*b[boff+_yoff+zoff(k,2*s-1)];
+                        b[nboff+_yoff+_zoff(_2(l-m)-k+1,s)] = -b[boff+_yoff+zoff(k,2*s)]
+                            + t.iCOS(k,l-m-1)*b[boff+_yoff+zoff(k,2*s-1)];
+                    }
                 }
             }
-            zn.swap(z);
+            swap(nboff, boff);
         }
 
-        for (k = 1; k <= _2(l-1); k++) {
-            S[yoff+_2(n-l-1)*(2*k-1)] = z[zoff(k,1)];
-            S[N-(_2(n-l-1)*(2*k-1))] = z[_yoff+zoff(k,1)];
+#pragma omp barrier
+        for (k = id+1; k<id+1+work&&k <= _2(l-1); k++) {
+            S[yoff+_2(n-l-1)*(2*k-1)] = dx*b[boff+zoff(k,1)];
+            S[N-(_2(n-l-1)*(2*k-1))] = dx*b[boff+_yoff+zoff(k,1)];
         }
     }
     }
 
     padvance(a, 1 << (n - (n-1)));
-    S[yoff +(1 << (n - 2))] = a[2];
-    S[N-(1 << (n - 2))] = a[3];
+    S[yoff +(1 << (n - 2))] = dx*a[2];
+    S[N-(1 << (n - 2))] = dx*a[3];
 
     padvance(a, 1 << (n - n));
-    S[yoff + 0]             = a[0];
-    S[yoff + N_2]           = a[1];
-
-    for (k = 0; k <= N_2; k++) {
-        S[yoff + k]  = S[yoff + k] * dx;
-    }
-
-    for (k = 1; k <= N_2-1; k++) {
-        S[_yoff + k] = S[_yoff + k] * dx;
-    }
+    S[yoff + 0]             = dx*a[0];
+    S[yoff + N_2]           = dx*a[1];
 
 #undef off
 #undef _off
