@@ -247,7 +247,7 @@ void FFT<T>::pFFT_1_omp(T *S, T *s1, T dx) {
 #define zoff(a,b) ((a-1)*(_2(m))+(b-1))
 #define _zoff(a,b) ((a-1)*(_2(m-1))+(b-1))
 
-    int size = 2; // _2(n-1);
+    int size = 4; // _2(n-1);
 
     omp_set_dynamic(0);
     omp_set_num_threads(size);
@@ -260,7 +260,7 @@ void FFT<T>::pFFT_1_omp(T *S, T *s1, T dx) {
     int nboff = boff+N;
 
     for (int l = n-1; l >= 2; l--) { // l=n-s
-        work = max(1, work>>1);
+        work = max(1, _2(l)/size);
         int id = thread_id*work;
 
         padvance_omp(a, _2(l), id, work);
@@ -292,6 +292,8 @@ void FFT<T>::pFFT_1_omp(T *S, T *s1, T dx) {
         }
 
 #pragma omp barrier
+        work = max(1, _2(l-1)/size);
+        id = thread_id*work;
         m=l-1;
         for (s = id+1; s<id+1+work&&s <= _2(l-1); s++) {
             b[nboff+zoff(1,s)] = b[boff+off(0,s)];
@@ -306,19 +308,15 @@ void FFT<T>::pFFT_1_omp(T *S, T *s1, T dx) {
             for (i = id; i <id+work; i++) {
                 s=i%ns+1;
                 k=i/ns+1;
-                int r=k%2; k/=2;
                 if (k <= nk) {
-                    if (r==1) {
-                        b[nboff+_zoff(k,s)] = b[boff+zoff(k,2*s)]
-                            + t.iCOS(k,l-m-1)*b[boff+zoff(k,2*s-1)];
-                        b[nboff+_zoff(_2(l-m)-k+1,s)] = b[boff+zoff(k,2*s)]
-                            - t.iCOS(k,l-m-1)*b[boff+zoff(k,2*s-1)];
-                    } else {
-                        b[nboff+_yoff+_zoff(k,s)] = b[boff+_yoff+zoff(k,2*s)]
-                            + t.iCOS(k,l-m-1)*b[boff+_yoff+zoff(k,2*s-1)];
-                        b[nboff+_yoff+_zoff(_2(l-m)-k+1,s)] = -b[boff+_yoff+zoff(k,2*s)]
-                            + t.iCOS(k,l-m-1)*b[boff+_yoff+zoff(k,2*s-1)];
-                    }
+                    b[nboff+_zoff(k,s)] = b[boff+zoff(k,2*s)]
+                        + t.iCOS(k,l-m-1)*b[boff+zoff(k,2*s-1)];
+                    b[nboff+_zoff(_2(l-m)-k+1,s)] = b[boff+zoff(k,2*s)]
+                        - t.iCOS(k,l-m-1)*b[boff+zoff(k,2*s-1)];
+                    b[nboff+_yoff+_zoff(k,s)] = b[boff+_yoff+zoff(k,2*s)]
+                        + t.iCOS(k,l-m-1)*b[boff+_yoff+zoff(k,2*s-1)];
+                    b[nboff+_yoff+_zoff(_2(l-m)-k+1,s)] = -b[boff+_yoff+zoff(k,2*s)]
+                        + t.iCOS(k,l-m-1)*b[boff+_yoff+zoff(k,2*s-1)];
                 }
             }
             swap(nboff, boff);
