@@ -621,8 +621,8 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_complex_double, &c),
         cmocka_unit_test_prestate(test_sin_omp_float, &c),
         cmocka_unit_test_prestate(test_sin_omp_double, &c),
-        //cmocka_unit_test_prestate(test_cos_omp_float, &c),
-        //cmocka_unit_test_prestate(test_cos_omp_double, &c),
+        cmocka_unit_test_prestate(test_cos_omp_float, &c),
+        cmocka_unit_test_prestate(test_cos_omp_double, &c),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

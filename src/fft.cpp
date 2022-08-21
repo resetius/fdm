@@ -401,7 +401,7 @@ void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
     time_point<steady_clock> t1;
     if (thread_id == 0) t1 = steady_clock::now();
     for (int l = n-1; l >= 1; l--) { // l=n-s
-        work >>= 1;
+        work = max(1, work>>1);
         int id = thread_id*work;
 
         sadvance_omp(a, _2(l), id, work);
@@ -563,9 +563,7 @@ void FFT<T>::cFFT(T *S, T *s, T dx, int N, int n) {
         // m = l
         for (s = 1; s <= _2(m-1); s++) {
             bn[off(0,2*s-1)] = b[_off(1,s)];
-            for (j = 0; j <= _2(l-m)-1; j++) {
-                bn[off(j,2*s)] = b[_off(2*j,s)];
-            }
+            bn[off(0,2*s)] = b[_off(0,s)];
         }
 
         bn.swap(b);
@@ -613,7 +611,7 @@ void cadvance_omp(T*a, int idx, int id, int work) {
 
 template<typename T>
 void FFT<T>::cFFT_omp(T *S, T *s, T dx) {
-    std::vector<T> b(N); // remove me
+    std::vector<T> b(2*N); // remove me
 
     T*a = s;
     a[0] *= 0.5; a[N] *= 0.5;
@@ -621,7 +619,7 @@ void FFT<T>::cFFT_omp(T *S, T *s, T dx) {
 #define off(a,b) ((a)*(_2(m))+(b-1))
 #define _off(a,b) ((a)*(_2(m-1))+(b-1))
 
-    int size = 2; // _2(n-1);
+    int size = 4; // _2(n-1);
 
     omp_set_dynamic(0);
     omp_set_num_threads(size);
@@ -631,10 +629,10 @@ void FFT<T>::cFFT_omp(T *S, T *s, T dx) {
     int thread_id = omp_get_thread_num();
     int work = std::max(2, _2(n) / size);
     int boff = 0;
-    int nboff = boff+N/2;
+    int nboff = boff+N;
 
     for (int l = n-1; l >= 1; l--) { // l=n-s
-        work >>= 1;
+        work = max(1, work>>1);
         int id = thread_id*work;
 
         cadvance_omp(a, _2(l), id, work);
@@ -648,11 +646,11 @@ void FFT<T>::cFFT_omp(T *S, T *s, T dx) {
         // (51) p 177
         for (m = 1; m <= l-1; m++) {
             int ns = _2(m-1);
-            int nj = _2(l-m);
+            int nj = _2(l-m)-1;
 
 #pragma omp barrier
             for (int i = id; i < id+work; i++) {
-                j = i/ns+1;
+                j = i/ns;
                 s = i%ns+1;
                 if (j <= nj) {
                     if (j == 0) {
