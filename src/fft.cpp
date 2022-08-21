@@ -199,9 +199,117 @@ void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
         }
 
         for (k = 1; k <= _2(l-1); k++) {
+            S[yoff+_2(n-l-1)*(2*k-1)] = dx*z[zoff(k,1)];
+            S[N-(_2(n-l-1)*(2*k-1))] = dx*z[_yoff+zoff(k,1)];
+        }
+    }
+
+    padvance(a, 1 << (n - (n-1)));
+    S[yoff +(1 << (n - 2))] = dx*a[2];
+    S[N-(1 << (n - 2))] = dx*a[3];
+
+    padvance(a, 1 << (n - n));
+    S[yoff + 0]             = dx*a[0];
+    S[yoff + N_2]           = dx*a[1];
+
+#undef off
+#undef _off
+#undef zoff
+#undef _zoff
+}
+
+template<typename T>
+void padvance(T* a, int idx, int id, int work)
+{
+    for (int j = id; j<id+work&&j <= idx - 1; j++) {
+        T a1, a2;
+        a1 = a[j] + a[idx + j];
+        a2 = a[j] - a[idx + j];
+        a[j]       = a1;
+        a[idx + j] = a2;
+    }
+}
+
+template<typename T>
+void FFT<T>::pFFT_1_omp(T *S, T *s1, T dx) {
+#ifdef _OPENMP
+    std::vector<T> b(N); // remove me
+    std::vector<T> bn(N); // remove me
+    std::vector<T>& z = b;
+    std::vector<T>& zn = bn;
+
+    int N_2 = N/2;
+    int yoff = 0;
+    int _yoff = N_2;
+
+    int s, k, l, m, j;
+    T* a = s1;
+
+#define off(a,b) ((a)*(_2(m))+(b-1))
+#define _off(a,b) ((a)*(_2(m-1))+(b-1))
+
+#define zoff(a,b) ((a-1)*(_2(m))+(b-1))
+#define _zoff(a,b) ((a-1)*(_2(m-1))+(b-1))
+
+    int size = 2; // _2(n-1);
+
+    omp_set_dynamic(0);
+    omp_set_num_threads(size);
+
+#pragma omp parallel
+    {
+    for (l = n-1; l >= 2; l--) {
+        // l = n-s
+        padvance(a, _2(l));
+
+        m = 0;
+        for (j = 0; j <= _2(l)-1; j++) {
+            b[off(j,1)] = a[_2(l)+j];
+        }
+
+        for (m = 1; m <= l-1; m++) {
+            for (s = 1; s <= _2(m-1); s++) {
+                j = 0;
+                bn[off(j,2*s-1)] = b[_off(1,s)] - b[_off(_2(l-m+1)-1,s)];
+                bn[off(j,2*s)] = b[_off(2*j,s)];
+
+                for (j = 1; j <= _2(l-m)-1; j++) {
+                    bn[off(j,2*s-1)] = b[_off(2*j-1,s)] + b[_off(2*j+1,s)];
+                    bn[off(j,2*s)] = b[_off(2*j,s)];
+                }
+            }
+            bn.swap(b);
+        }
+        m=l-1;
+
+        for (s = 1; s <= _2(l-1); s++) {
+            zn[zoff(1,s)] = b[off(0,s)];
+            zn[_yoff+zoff(1,s)] = b[off(1,s)];
+        }
+        zn.swap(z);
+
+        for (m = l-1; m >= 1; m--) {
+            for (k = 1; k <= _2(l-m-1); k++) {
+                for (s = 1; s <= _2(m-1); s++) {
+                    zn[_zoff(k,s)] = z[zoff(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[zoff(k,2*s-1)];
+                    zn[_zoff(_2(l-m)-k+1,s)] = z[zoff(k,2*s)]
+                        - t.iCOS(k,l-m-1)*z[zoff(k,2*s-1)];
+
+                    zn[_yoff+_zoff(k,s)] = z[_yoff+zoff(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[_yoff+zoff(k,2*s-1)];
+                    zn[_yoff+_zoff(_2(l-m)-k+1,s)] = -z[_yoff+zoff(k,2*s)]
+                        + t.iCOS(k,l-m-1)*z[_yoff+zoff(k,2*s-1)];
+                }
+            }
+            zn.swap(z);
+        }
+
+        for (k = 1; k <= _2(l-1); k++) {
             S[yoff+_2(n-l-1)*(2*k-1)] = z[zoff(k,1)];
             S[N-(_2(n-l-1)*(2*k-1))] = z[_yoff+zoff(k,1)];
         }
+    }
     }
 
     padvance(a, 1 << (n - (n-1)));
@@ -224,6 +332,10 @@ void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
 #undef _off
 #undef zoff
 #undef _zoff
+
+#else // #ifdef _OPENMP
+    abort();
+#endif
 }
 
 template<typename T>
