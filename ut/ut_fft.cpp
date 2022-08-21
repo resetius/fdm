@@ -503,11 +503,6 @@ void test_sin_omp(void** data) {
 
     s1 = s;
     {
-        // warmup
-        //for (int i = 0; i <10; i++) {
-        //    ft.sFFT_omp(&S[0], &s1[0], 1.0);
-        //}
-
         s1 = s;
         auto t1 = steady_clock::now();
         ft.sFFT_omp(&S[0], &s1[0], 1.0);
@@ -539,6 +534,68 @@ void test_sin_omp_float(void** s) {
     test_sin_omp<float>(s);
 }
 
+template<typename T>
+void test_cos_omp(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 256);
+    int verbose = c->get("test", "verbose", 0);
+    FFTTable<T> table(N);
+    fdm::FFT<T> ft(table, N);
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    vector<T> S(N+1);
+    vector<T> s(N+1);
+    vector<T> s1(N+1);
+    vector<T> S1(N+1);
+
+    for (int i = 0; i < N+1; i++) {
+        s[i] = distribution(generator);
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft.cFFT(&S1[0], &s1[0], 1.0);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t3=%f\n", interval.count());
+        }
+    }
+
+    s1 = s;
+    {
+        s1 = s;
+        auto t1 = steady_clock::now();
+        ft.cFFT_omp(&S[0], &s1[0], 1.0);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t3=%f\n", interval.count());
+        }
+    }
+
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-3;
+    }
+
+    for (int i = 0; i < N+1; i++) {
+        assert_float_equal(S1[i], S[i], tol);
+        if (verbose == 2) {
+            printf("%f %f\n", S1[i], S[i]);
+        }
+    }
+}
+
+void test_cos_omp_double(void** s) {
+    test_cos_omp<double>(s);
+}
+
+void test_cos_omp_float(void** s) {
+    test_cos_omp<float>(s);
+}
+
 int main(int argc, char** argv) {
     string config_fn = "ut_fft.ini";
     Config c;
@@ -564,6 +621,8 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_complex_double, &c),
         cmocka_unit_test_prestate(test_sin_omp_float, &c),
         cmocka_unit_test_prestate(test_sin_omp_double, &c),
+        //cmocka_unit_test_prestate(test_cos_omp_float, &c),
+        //cmocka_unit_test_prestate(test_cos_omp_double, &c),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

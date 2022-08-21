@@ -82,7 +82,11 @@ public:
 
     void cpFFT(T* S, T* s, T dx);
 
+    // experimental, don not use!
     void sFFT_omp(T* S, T* s, T dx);
+    void cFFT_omp(T* S, T* s, T dx);
+    void pFFT_1_omp(T *S, T* s, T dx);
+    void pFFT_omp(T *S, T* s, T dx);
 
 private:
     void init();
