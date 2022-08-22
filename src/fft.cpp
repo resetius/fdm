@@ -452,6 +452,7 @@ void FFT<T>::sFFT(T* S, T* s, T dx, int N, int n) {
             }
             bn.swap(b);
         }
+
         // m = l
         for (s = 1; s <= _2(m-1); s++) {
             bn[off(1,2*s)] = b[_off(2,s)];
@@ -501,14 +502,14 @@ inline void sadvance_omp(T* a, int idx, int id, int work) {
 template<typename T>
 void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
 #ifdef _OPENMP
-    std::vector<T> b(N); // remove me
+    std::vector<T> b(2*N); // remove me
 
     T* a = s;
     // s = 1,...,2^{m-1}
 #define off(a,b) ((a-1)*(_2(m))+(b-1))
 #define _off(a,b) ((a-1)*(_2(m-1))+(b-1))
 
-    int size = 2; // _2(n-1);
+    int size = 4; // _2(n-1);
 
     omp_set_dynamic(0);
     omp_set_num_threads(size);
@@ -565,7 +566,7 @@ void FFT<T>::sFFT_omp(T* S, T* s, T dx) {
             int ns = _2(m-1);
             int nk = _2(l-m);
 #pragma omp barrier
-            for (i = id, k=i/n+1, s=i%ns+1;
+            for (i = id, k=i/ns+1, s=i%ns+1;
                  k <= nk && i < id+work;
                  i++, k=i/ns+1,s=i%ns+1)
             {
