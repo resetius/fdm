@@ -28,6 +28,14 @@ private:
     void init();
 };
 
+/*
+  FFT algorithms for real numbers from classic book
+  A. A. Samarskii, E. S. Nikolaev, "Numerical Methods For Grid
+  Equations" (Birkhauser Verlag, 1989)
+  original in russian:
+  Самарский А. А., Николаев Е. С.
+  "Методы решения сеточных уравнений", М: Наука, 1978.
+ */
 template<typename T>
 class FFT {
     const FFTTable<T>& t;
@@ -83,6 +91,10 @@ public:
     void cpFFT(T* S, T* s, T dx);
 
     // experimental, don not use!
+    // these omp functions were created to help me debug and implement
+    // ideas for GPU (GLSL) version of fft
+    // they don't speedup anything on CPU because of high cost of threads creating
+    // and synchronization but the same approach for GPU works perfectly
     void sFFT_omp(T* S, T* s, T dx);
     void cFFT_omp(T* S, T* s, T dx);
     void pFFT_1_omp(T *S, T* s, T dx);
