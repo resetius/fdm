@@ -79,6 +79,7 @@ public:
 
     concurrent_queue<PlotTask> q;
     std::thread thread;
+    int debug;
 
     double distribute_time = 0;
     double poisson_time = 0;
@@ -86,8 +87,9 @@ public:
     double local_p_time = 0;
     double accel_time = 0;
     double move_time = 0;
+    int step_ = 0;
 
-    NBody(T x0, T y0, T z0, double l, int n, int npp, int N, double dt, double G, double vel, int sgn, int local, int solar, T crit)
+    NBody(T x0, T y0, T z0, double l, int n, int npp, int N, double dt, double G, double vel, int sgn, int local, int solar, T crit, int debug)
         : origin{x0, y0, z0}
         , l(l)
         , n(n) // число ячеек
@@ -114,6 +116,7 @@ public:
         , E({0,n-1,0,n-1,0,n-1})
         , solver3(h,h,h,l,l,l,n,n,n)
         , thread(plot_thread, l, origin, &q)
+        , debug(debug)
     {
         init_points();
     }
@@ -131,6 +134,8 @@ public:
         move();
         auto t2 = steady_clock::now();
         move_time += duration_cast<duration<double>>(t2 - t1).count();
+
+        step_ ++;
     }
 
     void calc_error() {
@@ -258,6 +263,28 @@ private:
         }
     }
 
+    template<typename TT>
+    void maybe_debug_output(TT& data, const char* name) {
+        if (!debug) {
+            return;
+        }
+        char buf[1024];
+        snprintf(buf, sizeof(buf)-1, "%s.%06d.txt", name, step_);
+        FILE* f = fopen(buf, "wb");
+
+        for (int i = 0; i < n; i++) {
+            for (int k = 0; k < n; k++) {
+                for (int j = 0; j < n; j++) {
+                    fprintf(f, "%e ", data[i][k][j]);
+                }
+                fprintf(f, "\n");
+            }
+            fprintf(f, "\n");
+        }
+
+        fclose(f);
+    }
+
     void calc_a_pm() {
         auto t1 = steady_clock::now();
 
@@ -266,7 +293,7 @@ private:
         for (int i = 0; i < n; i++) {
             for (int k = 0; k < n; k++) {
                 for (int j = 0; j < n; j++) {
-                    f[i][k][j] = - 4*G*M_PI*mass/l/l/l;
+                    f[i][k][j] = - mass/l/l/l; // avg rho
                 }
             }
         }
@@ -286,6 +313,8 @@ private:
                 }
             }
         }
+
+        maybe_debug_output(rhs, "density");
 
         solver3.solve(&psi[0][0][0], &rhs[0][0][0]);
 
@@ -579,8 +608,9 @@ void calc(const Config& c) {
     int solar = c.get("nbody", "solar", 0);
     int error = c.get("nbody", "error", 0);
     double crit = c.get("nbody", "rcrit", 1.0);
+    int debug = c.get("nbody", "debug", 0);
 
-    NBody<T,check,I> task(x0, y0, z0, l, n, npp, N, dt, G, vel, sgn, local, solar, crit);
+    NBody<T,check,I> task(x0, y0, z0, l, n, npp, N, dt, G, vel, sgn, local, solar, crit, debug);
 
     if (error) {
         task.calc_error();
