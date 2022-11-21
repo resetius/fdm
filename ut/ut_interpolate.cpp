@@ -63,10 +63,53 @@ void test_interpolate_float(void** ) {
     test_interpolate<float>();
 }
 
+template<typename T>
+void test_CIC3() {
+    using I = CIC3<T>;
+    I interpolator;
+    T m = 10.0;
+    typename I::matrix M;
+    T h = 1.0;
+    int i0, k0, j0;
+
+    interpolator.distribute(
+        M, 0.5, 0.5, 0.5,
+        &j0, &k0, &i0, h
+        );
+    assert_int_equal(i0, 0);
+    assert_int_equal(k0, 0);
+    assert_int_equal(j0, 0);
+    T f[2][2][2] = {0};
+    for (int i = 0; i < I::n; i++) {
+        for (int k = 0; k < I::n; k++) {
+            for (int j = 0; j < I::n; j++) {
+                f[i+i0][k+k0][j+j0] += m * M[i][k][j];
+            }
+        }
+    }
+    for (int i = 0; i < 2; i++) {
+        for (int k = 0; k < 2; k++) {
+            for (int j = 0; j < 2; j++) {
+                assert_float_equal(f[i][k][j], m/8.0, 1e-12);
+            }
+        }
+    }
+}
+
+void test_CIC3_double(void** ) {
+    test_CIC3<double>();
+}
+
+void test_CIC3_float(void** ) {
+    test_CIC3<float>();
+}
+
 int main(int argc, char** argv) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_prestate(test_interpolate_double, nullptr),
         cmocka_unit_test_prestate(test_interpolate_float, nullptr),
+        cmocka_unit_test_prestate(test_CIC3_double, nullptr),
+        cmocka_unit_test_prestate(test_CIC3_float, nullptr),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
