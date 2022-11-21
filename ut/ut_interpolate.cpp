@@ -94,6 +94,23 @@ void test_CIC3() {
             }
         }
     }
+
+    interpolator.distribute(
+        M, 0.5, 0.6, 0.7,
+        &j0, &k0, &i0, h
+        );
+    assert_int_equal(i0, 0);
+    assert_int_equal(k0, 0);
+    assert_int_equal(j0, 0);
+    T mm = 0;
+    for (int i = 0; i < I::n; i++) {
+        for (int k = 0; k < I::n; k++) {
+            for (int j = 0; j < I::n; j++) {
+                mm += m * M[i][k][j];
+            }
+        }
+    }
+    assert_float_equal(mm, m, 1e-12);
 }
 
 void test_CIC3_double(void** ) {
