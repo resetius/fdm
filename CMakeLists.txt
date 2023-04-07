@@ -1,5 +1,6 @@
-project(fdm)
 cmake_minimum_required(VERSION 3.20)
+project(fdm)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(PkgConfig REQUIRED)
 find_package(OpenMP)
 enable_testing()
@@ -10,6 +11,7 @@ endif ()
 
 pkg_check_modules(NETCDF REQUIRED netcdf)
 pkg_check_modules(PLPLOT REQUIRED plplot)
+pkg_check_modules(VULKAN REQUIRED vulkan)
 
 if (NOT BLAS_FOUND)
 pkg_check_modules(BLAS openblas)
@@ -76,6 +78,14 @@ set(SRC
     src/eigenvectors_storage.cpp
     )
 add_library(fdm SHARED ${SRC})
+
+if (VULKAN_FOUND)
+    set(COMPUTE_SRC
+        compute/vulkan/loader.c
+    )
+    add_library(compute SHARED ${COMPUTE_SRC})
+    target_include_directories(compute PUBLIC ${CMAKE_SOURCE_DIR})
+endif ()
 
 if (MSVC)
     target_compile_options(fdm PUBLIC ${PLPLOT_CFLAGS_OTHER} PRIVATE "/DFDM_LIBRARY_EXPORT" "/W4")
