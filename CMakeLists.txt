@@ -11,7 +11,7 @@ endif ()
 
 pkg_check_modules(NETCDF REQUIRED netcdf)
 pkg_check_modules(PLPLOT REQUIRED plplot)
-pkg_check_modules(VULKAN REQUIRED vulkan)
+pkg_check_modules(VULKAN vulkan)
 
 if (NOT BLAS_FOUND)
 pkg_check_modules(BLAS openblas)
