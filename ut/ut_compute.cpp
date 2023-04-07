@@ -10,6 +10,9 @@ extern "C" {
 #include <compute/vulkan/vk.h>
 }
 
+#include <compute/vulkan/instance.h>
+#include <compute/vulkan/device.h>
+
 void test_vulkan_load_lib(void** ) {
     assert_true(vkGetInstanceProcAddr == NULL);
     vk_init();
@@ -96,7 +99,7 @@ void test_vulkan_load_dev(void** ) {
     if (deviceCount > sizeof(devices)/sizeof(VkPhysicalDevice)) {
         deviceCount = sizeof(devices)/sizeof(VkPhysicalDevice);
     }
-    vkEnumeratePhysicalDevices(instance, &deviceCount, devices);    
+    vkEnumeratePhysicalDevices(instance, &deviceCount, devices);
     VkPhysicalDeviceProperties properties;
     for (uint32_t i = 0; i < deviceCount; i++) {
         vkGetPhysicalDeviceProperties(devices[i], &properties);
@@ -112,12 +115,45 @@ void test_vulkan_load_dev(void** ) {
     vk_destroy();
 }
 
+void test_vulkan_load_libpp(void** ) {
+    NVulkan::Lib lib;
+}
+
+void test_vulkan_load_instance(void** ) {
+    NVulkan::Lib lib;
+    NVulkan::Instance instance;
+}
+
+void test_vulkan_load_phydev(void** ) {
+    NVulkan::Lib lib;
+    NVulkan::Instance instance;
+    NVulkan::PhyDevice phyDev(instance, 0);
+}
+
+void test_vulkan_load_devpp(void** ) {
+    NVulkan::Lib lib;
+    NVulkan::Instance instance;
+    NVulkan::PhyDevice phyDev(instance, 0);
+}
+
+void test_vulkan_load_logdev(void** ) {
+    NVulkan::Lib lib;
+    NVulkan::Instance instance;
+    NVulkan::PhyDevice phyDev(instance, 0);
+    NVulkan::Device dev(phyDev);
+}
+
 int main(int argc, char** argv) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_vulkan_load_lib),
         cmocka_unit_test(test_vulkan_load_l0),
         cmocka_unit_test(test_vulkan_load_l1),
         cmocka_unit_test(test_vulkan_load_dev),
+        cmocka_unit_test(test_vulkan_load_libpp),
+        cmocka_unit_test(test_vulkan_load_instance),
+        cmocka_unit_test(test_vulkan_load_phydev),
+        cmocka_unit_test(test_vulkan_load_devpp),
+        cmocka_unit_test(test_vulkan_load_logdev),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

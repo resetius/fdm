@@ -82,6 +82,8 @@ add_library(fdm SHARED ${SRC})
 if (VULKAN_FOUND)
     set(COMPUTE_SRC
         compute/vulkan/loader.c
+        compute/vulkan/instance.cpp
+        compute/vulkan/device.cpp
     )
     add_library(compute SHARED ${COMPUTE_SRC})
     target_include_directories(compute PUBLIC ${CMAKE_SOURCE_DIR})

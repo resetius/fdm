@@ -37,7 +37,7 @@ void vk_load_global() {
 #define L0_FUNC(name) \
     ktx_##name = name = (PFN_##name)vkGetInstanceProcAddr(NULL, #name); \
     if (!name) { \
-        fprintf(stderr, "Warn: cannot load '%s'", #name); \
+        fprintf(stderr, "Warn: cannot load '%s'\n", #name); \
     }
 
 #include "symbols.h"
@@ -49,7 +49,7 @@ void vk_load_instance(VkInstance instance) {
 #define L1_FUNC(name) \
     ktx_##name = name = (PFN_##name)vkGetInstanceProcAddr(instance, #name); \
     if (!name) { \
-        fprintf(stderr, "Warn: cannot load '%s'", #name); \
+        fprintf(stderr, "Warn: cannot load '%s'\n", #name); \
     }
 
 #include "symbols.h"
