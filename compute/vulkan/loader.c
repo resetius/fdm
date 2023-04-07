@@ -2,9 +2,6 @@
 #include <vulkan/vulkan.h>
 #include <dlfcn.h>
 
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-
 #include <assert.h>
 
 #define DECL_FUNC(name)                         \
