@@ -3,6 +3,7 @@
 #include <dlfcn.h>
 
 #include <assert.h>
+#include <stdio.h>
 
 #define DECL_FUNC(name)                         \
     PFN_##name name;                            \
@@ -35,7 +36,9 @@ void vk_destroy() {
 void vk_load_global() {
 #define L0_FUNC(name) \
     ktx_##name = name = (PFN_##name)vkGetInstanceProcAddr(NULL, #name); \
-    assert(name);
+    if (!name) { \
+        fprintf(stderr, "Warn: cannot load '%s'", #name); \
+    }
 
 #include "symbols.h"
 
@@ -45,7 +48,9 @@ void vk_load_global() {
 void vk_load_instance(VkInstance instance) {
 #define L1_FUNC(name) \
     ktx_##name = name = (PFN_##name)vkGetInstanceProcAddr(instance, #name); \
-    assert(name);
+    if (!name) { \
+        fprintf(stderr, "Warn: cannot load '%s'", #name); \
+    }
 
 #include "symbols.h"
 
