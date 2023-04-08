@@ -1,20 +1,23 @@
 #include "instance.h"
-#include "compute/vulkan/vk.h"
 
 #include <assert.h>
 #include <stdexcept>
+
+#include <glslang/Include/glslang_c_interface.h>
 
 namespace NVulkan {
 
 Lib::Lib()
 {
+    glslang_initialize_process();
     vk_init();
     vk_load_global();
 }
 
 Lib::~Lib()
-{
+{    
     vk_destroy();
+    glslang_finalize_process();
 }
 
 Instance::Instance() {    
@@ -40,6 +43,8 @@ Instance::Instance() {
     if (vkCreateInstance(&vkInstanceInfo, NULL, &instance_) != VK_SUCCESS) {
         throw std::runtime_error("Cannot create instance");
     }
+
+    vk_load_instance(instance_);
 }
 
 } /* NVulkan */

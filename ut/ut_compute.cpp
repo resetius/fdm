@@ -1,3 +1,4 @@
+#include "compute/vulkan/shader.h"
 #include <stdarg.h>
 #include <stddef.h>
 #include <setjmp.h>
@@ -12,6 +13,7 @@ extern "C" {
 
 #include <compute/vulkan/instance.h>
 #include <compute/vulkan/device.h>
+#include <compute/vulkan/shader.h>
 
 void test_vulkan_load_lib(void** ) {
     assert_true(vkGetInstanceProcAddr == NULL);
@@ -143,6 +145,15 @@ void test_vulkan_load_logdev(void** ) {
     NVulkan::Device dev(phyDev);
 }
 
+void test_shader_load(void** ) {
+    NVulkan::Lib lib;
+    NVulkan::Instance instance;
+    NVulkan::PhyDevice phyDev(instance, 0);
+    NVulkan::Device dev(phyDev);
+
+    NVulkan::Shader(dev, "../compute/test_shader_1.comp");
+}
+
 int main(int argc, char** argv) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_vulkan_load_lib),
@@ -154,6 +165,7 @@ int main(int argc, char** argv) {
         cmocka_unit_test(test_vulkan_load_phydev),
         cmocka_unit_test(test_vulkan_load_devpp),
         cmocka_unit_test(test_vulkan_load_logdev),
+        cmocka_unit_test(test_shader_load)
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

@@ -51,6 +51,10 @@ class Device {
 public:
     Device(PhyDevice& dev);
 
+    VkDevice& dev() {
+        return dev_;
+    }
+
 private:    
     PhyDevice phyDev_;
     VkDevice dev_;

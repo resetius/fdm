@@ -39,7 +39,7 @@ endif ()
 
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}/lib")
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if (EXISTS ${CMAKE_SOURCE_DIR}/deps/umfpack/UFconfig/UFconfig.h)
@@ -80,12 +80,17 @@ set(SRC
 add_library(fdm SHARED ${SRC})
 
 if (VULKAN_FOUND)
+    find_package(glslang CONFIG REQUIRED)
+    find_package(Threads REQUIRED)
+
     set(COMPUTE_SRC
         compute/vulkan/loader.c
         compute/vulkan/instance.cpp
         compute/vulkan/device.cpp
+        compute/vulkan/shader.cpp
     )
     add_library(compute SHARED ${COMPUTE_SRC})
+    target_link_libraries(compute PUBLIC glslang::glslang glslang::SPIRV glslang::glslang-default-resource-limits)
     target_include_directories(compute PUBLIC ${CMAKE_SOURCE_DIR})
 endif ()
 

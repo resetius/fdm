@@ -60,7 +60,9 @@ void vk_load_instance(VkInstance instance) {
 void vk_load_device(VkDevice device) {
 #define L2_FUNC(name) \
     ktx_##name = name = (PFN_##name)vkGetDeviceProcAddr(device, #name); \
-    assert(name)
+    if (!name) { \
+        fprintf(stderr, "Warn: cannot load '%s'\n", #name); \
+    }
 
 #include "symbols.h"
 

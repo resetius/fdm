@@ -1,5 +1,4 @@
 #include "device.h"
-#include "compute/vulkan/instance.h"
 
 #include <stdexcept>
 #include <vector>
@@ -120,6 +119,8 @@ Device::Device(PhyDevice& dev)
     if (vkCreateDevice(phyDev_.dev(), &info, NULL, &dev_) != VK_SUCCESS) {
         throw std::runtime_error("Cannot create logical device");
     }
+
+    vk_load_device(dev_);
 }
 
 } /* NVulkan */
