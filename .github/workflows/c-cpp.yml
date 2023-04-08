@@ -22,7 +22,7 @@ jobs:
     - name: apt-get update
       run: sudo apt-get update
     - name: Install packages
-      run: sudo apt-get install vulkan-tools glslang-dev mesa-vulkan-drivers libvulkan-dev vulkan-headers libopenblas-openmp-dev libcmocka-dev libplplot-dev libnetcdf-dev cmake ninja-build
+      run: sudo apt-get install vulkan-tools glslang-dev glslang-tools mesa-vulkan-drivers libvulkan-dev vulkan-headers libopenblas-openmp-dev libcmocka-dev libplplot-dev libnetcdf-dev cmake ninja-build
     - name: configure
       run: mkdir build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
     - name: make
