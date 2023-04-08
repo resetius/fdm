@@ -15,6 +15,8 @@ extern "C" {
 #include <compute/vulkan/device.h>
 #include <compute/vulkan/shader.h>
 
+const char* sourceDir = "../";
+
 void test_vulkan_load_lib(void** ) {
     assert_true(vkGetInstanceProcAddr == NULL);
     vk_init();
@@ -151,10 +153,16 @@ void test_shader_load(void** ) {
     NVulkan::PhyDevice phyDev(instance, 0);
     NVulkan::Device dev(phyDev);
 
-    NVulkan::Shader(dev, "../compute/test_shader_1.comp");
+    std::string file = sourceDir;
+    file += "/compute/test_shader_1.comp";
+    NVulkan::Shader(dev, file);
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) {    
+    if (argc > 1) {
+        sourceDir = argv[1];
+    }
+
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_vulkan_load_lib),
         cmocka_unit_test(test_vulkan_load_l0),

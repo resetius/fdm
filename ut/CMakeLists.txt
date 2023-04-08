@@ -15,7 +15,7 @@ macro(ut name source)
     target_link_libraries(ut_${name} compute ${CMOCKA_LIBRARIES})
   endif ()
 
-  add_test(NAME ${name} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_${name})
+  add_test(NAME ${name} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_${name} ${CMAKE_SOURCE_DIR})
   set_tests_properties(${name} PROPERTIES ENVIRONMENT "CMOCKA_MESSAGE_OUTPUT=xml;CMOCKA_XML_FILE=${name}.xml")
 endmacro()
 
