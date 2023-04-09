@@ -92,9 +92,10 @@ Shader::Shader(Device& dev, const std::string& file, EShaderLang lang, EShaderSt
     IncluderContext context;
     auto pos = file.rfind("/");
     if (pos != std::string::npos) {
-        context.paths.emplace_back(file.substr(0, pos));
+        context.paths.emplace_back(file.substr(0, pos));    
     }
-    context.paths.emplace_back("..");
+    context.paths.emplace_back("ut"); // TODO: remove this hack
+    context.paths.emplace_back(".."); // TODO: remove this hack
 
     std::ifstream f(file);
     if (!f) {

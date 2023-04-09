@@ -3,6 +3,6 @@
 
 layout(local_size_x = 64) in;
 
-#include "compute/test_shader_2.h"
+#include "../../compute/test_shader_2.h"
 
 void main() { }
