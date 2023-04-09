@@ -5,11 +5,60 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <list>
+
+#include <stdlib.h>
 
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
 
 namespace NVulkan {
+
+namespace {
+
+struct IncluderContext {
+    std::string baseDir;
+    std::list<std::string> strings;
+};
+
+glsl_include_result_t* include_local_func(void* ctx, const char* header_name, const char* includer_name, size_t include_depth)
+{
+    IncluderContext* context = reinterpret_cast<IncluderContext*>(ctx);
+    std::string filePath;
+    if (!context->baseDir.empty()) {
+        filePath  = context->baseDir;
+        filePath += "/";
+        filePath += header_name;
+    } else {
+        filePath = header_name;
+    }
+    std::ifstream f(filePath);
+    if (!f) {
+        throw std::runtime_error(std::string("Cannot open file ") + filePath);
+    }
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    context->strings.push_back(ss.str());
+    glsl_include_result_t* result = static_cast<glsl_include_result_t*>(calloc(1, sizeof(*result)));
+    result->header_data = context->strings.back().c_str();
+    result->header_length = context->strings.back().length();
+    result->header_name = header_name;
+    return result;
+}
+
+glsl_include_result_t* include_system_func(void* ctx, const char* header_name, const char* includer_name, size_t include_depth)
+{
+    return nullptr;
+}
+
+int free_include_result_func(void* ctx, glsl_include_result_t* result)
+{
+    free (result);
+    return 0;
+}
+
+
+} /* namespace } */
 
 Shader::Shader(Device& dev, const std::string& file, EShaderLang lang, EShaderStage stage) {
     if (lang != EShaderLang::GLSL) {
@@ -20,10 +69,27 @@ Shader::Shader(Device& dev, const std::string& file, EShaderLang lang, EShaderSt
         throw std::runtime_error("Unsupported shader stage");
     }
 
+    IncluderContext context;
+    auto pos = file.rfind("/");
+    if (pos != std::string::npos) {
+        context.baseDir = file.substr(0, pos);
+    }
+
     std::ifstream f(file);
+    if (!f) {
+        throw std::runtime_error(std::string("Cannot open file ") + file);
+    }
     std::ostringstream ss;
     ss << f.rdbuf();
     std::string shaderCode = ss.str();
+
+    const glsl_include_callbacks_t callbacks = {        
+        .include_system = include_system_func,
+        .include_local = include_local_func,
+        .free_include_result = free_include_result_func
+    };    
+
+    // const glsl_include_callbacks_t callbacks = {};
 
     const glslang_input_t input =
     {
@@ -39,10 +105,12 @@ Shader::Shader(Device& dev, const std::string& file, EShaderLang lang, EShaderSt
         .force_default_version_and_profile = false,
         .forward_compatible = false,
         .messages = GLSLANG_MSG_DEFAULT_BIT,
-        .resource = glslang_default_resource()
+        .resource = glslang_default_resource(),
+        .callbacks = callbacks,
+        .callbacks_ctx = &context
     };
 
-    // TODO: raplace with uniq_ptr on C++23
+    // TODO: replace with unique_ptr on C++23
     auto shader = std::shared_ptr<glslang_shader_t>(glslang_shader_create(&input), glslang_shader_delete);
     if (!glslang_shader_preprocess(shader.get(), &input))
     {

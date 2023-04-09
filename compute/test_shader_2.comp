@@ -1,0 +1,8 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+layout(local_size_x = 64) in;
+
+#include "test_shader_2.h"
+
+void main() { }

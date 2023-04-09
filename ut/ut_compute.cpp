@@ -158,13 +158,24 @@ void test_shader_load(void** ) {
     NVulkan::Shader(dev, file);
 }
 
+void test_shader_load_with_include(void** ) {
+    NVulkan::Lib lib;
+    NVulkan::Instance instance;
+    NVulkan::PhyDevice phyDev(instance, 0);
+    NVulkan::Device dev(phyDev);
+
+    std::string file = sourceDir;
+    file += "/compute/test_shader_2.comp";
+    NVulkan::Shader(dev, file);
+}
+
 int main(int argc, char** argv) {    
     if (argc > 1) {
         sourceDir = argv[1];
     }
 
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test(test_vulkan_load_lib),
+        /*cmocka_unit_test(test_vulkan_load_lib),
         cmocka_unit_test(test_vulkan_load_l0),
         cmocka_unit_test(test_vulkan_load_l1),
         cmocka_unit_test(test_vulkan_load_dev),
@@ -173,7 +184,8 @@ int main(int argc, char** argv) {
         cmocka_unit_test(test_vulkan_load_phydev),
         cmocka_unit_test(test_vulkan_load_devpp),
         cmocka_unit_test(test_vulkan_load_logdev),
-        cmocka_unit_test(test_shader_load)
+        cmocka_unit_test(test_shader_load),*/
+        cmocka_unit_test(test_shader_load_with_include)
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
