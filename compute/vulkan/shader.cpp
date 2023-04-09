@@ -67,19 +67,18 @@ int free_include_result_func(void* ctx, glsl_include_result_t* result)
 }
 
 
-// https://stackoverflow.com/questions/63461798/c-templated-metaprogramming-checking-if-a-struct-has-a-field
-// helper type for the visitor #4
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-// explicit deduction guide (not needed as of C++20)
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+template<typename T>
+requires std::is_member_pointer_v<decltype(&T::callbacks)>
+void setCallbacks(T& t, glsl_include_callbacks_t callbacks, void* context) {
+    t.callbacks = callbacks;
+    t.callbacks_ctx = context;
+}
 
-#define HasField(C, Field) \
-    [](){ \
-        return overloaded{[]<typename T>(int) -> decltype(std::declval<T>().Field, void(), std::true_type()) { return {}; }, \
-                          []<typename T>(...) { return std::false_type{}; }}.operator()<C>(0); \
-    }()
+template<typename T>
+void setCallbacks(T&, glsl_include_callbacks_t, void*) { }
 
 } /* namespace } */
+
 
 Shader::Shader(Device& dev, const std::string& file, EShaderLang lang, EShaderStage stage) {
     if (lang != EShaderLang::GLSL) {
@@ -128,10 +127,7 @@ Shader::Shader(Device& dev, const std::string& file, EShaderLang lang, EShaderSt
         .resource = glslang_default_resource()
     };
 
-    if constexpr (HasField(glslang_input_t, callbacks)) {
-        input.callbacks = callbacks;
-        input.callbacks_ctx = &context;
-    }
+    setCallbacks(input, callbacks, &context);
 
     // TODO: replace with unique_ptr on C++23
     auto shader = std::shared_ptr<glslang_shader_t>(glslang_shader_create(&input), glslang_shader_delete);
