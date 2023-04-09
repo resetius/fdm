@@ -91,7 +91,9 @@ if (VULKAN_FOUND)
     )
     add_library(compute SHARED ${COMPUTE_SRC})
     target_link_libraries(compute PUBLIC glslang::glslang glslang::SPIRV glslang::glslang-default-resource-limits)
+    target_include_directories(compute PUBLIC glslang::glslang glslang::SPIRV glslang::glslang-default-resource-limits)
     target_include_directories(compute PUBLIC ${CMAKE_SOURCE_DIR})
+
 endif ()
 
 if (MSVC)
