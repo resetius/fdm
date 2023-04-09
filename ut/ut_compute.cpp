@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
     }
 
     const struct CMUnitTest tests[] = {
-        /*cmocka_unit_test(test_vulkan_load_lib),
+        cmocka_unit_test(test_vulkan_load_lib),
         cmocka_unit_test(test_vulkan_load_l0),
         cmocka_unit_test(test_vulkan_load_l1),
         cmocka_unit_test(test_vulkan_load_dev),
@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
         cmocka_unit_test(test_vulkan_load_phydev),
         cmocka_unit_test(test_vulkan_load_devpp),
         cmocka_unit_test(test_vulkan_load_logdev),
-        cmocka_unit_test(test_shader_load),*/
+        cmocka_unit_test(test_shader_load),
         cmocka_unit_test(test_shader_load_with_include)
     };
     return cmocka_run_group_tests(tests, NULL, NULL);

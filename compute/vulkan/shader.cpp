@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <list>
+#include <vector>
 
 #include <stdlib.h>
 
@@ -17,25 +18,33 @@ namespace NVulkan {
 namespace {
 
 struct IncluderContext {
-    std::string baseDir;
+    std::vector<std::string> paths;
     std::list<std::string> strings;
 };
+
+std::ifstream tryOpen(const std::vector<std::string>& paths, std::string file) {
+    std::string filePath;
+    filePath = file;
+    std::ifstream f(filePath);
+    if (f) { 
+        return f; 
+    }
+    for (const auto& p : paths) {
+        filePath  = p;
+        filePath += "/";
+        filePath += file;
+        f = std::ifstream(filePath);
+        if (f) { 
+            return f; 
+        }
+    }
+    throw std::runtime_error(std::string("Cannot open file ") + file);
+}
 
 glsl_include_result_t* include_local_func(void* ctx, const char* header_name, const char* includer_name, size_t include_depth)
 {
     IncluderContext* context = reinterpret_cast<IncluderContext*>(ctx);
-    std::string filePath;
-    if (!context->baseDir.empty()) {
-        filePath  = context->baseDir;
-        filePath += "/";
-        filePath += header_name;
-    } else {
-        filePath = header_name;
-    }
-    std::ifstream f(filePath);
-    if (!f) {
-        throw std::runtime_error(std::string("Cannot open file ") + filePath);
-    }
+    std::ifstream f = tryOpen(context->paths, header_name);
     std::ostringstream ss;
     ss << f.rdbuf();
     context->strings.push_back(ss.str());
@@ -58,6 +67,18 @@ int free_include_result_func(void* ctx, glsl_include_result_t* result)
 }
 
 
+// https://stackoverflow.com/questions/63461798/c-templated-metaprogramming-checking-if-a-struct-has-a-field
+// helper type for the visitor #4
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+// explicit deduction guide (not needed as of C++20)
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
+#define HasField(C, Field) \
+    [](){ \
+        return overloaded{[]<typename T>(int) -> decltype(std::declval<T>().Field, void(), std::true_type()) { return {}; }, \
+                          []<typename T>(...) { return std::false_type{}; }}.operator()<C>(0); \
+    }()
+
 } /* namespace } */
 
 Shader::Shader(Device& dev, const std::string& file, EShaderLang lang, EShaderStage stage) {
@@ -72,8 +93,9 @@ Shader::Shader(Device& dev, const std::string& file, EShaderLang lang, EShaderSt
     IncluderContext context;
     auto pos = file.rfind("/");
     if (pos != std::string::npos) {
-        context.baseDir = file.substr(0, pos);
+        context.paths.emplace_back(file.substr(0, pos));
     }
+    context.paths.emplace_back("..");
 
     std::ifstream f(file);
     if (!f) {
@@ -87,11 +109,9 @@ Shader::Shader(Device& dev, const std::string& file, EShaderLang lang, EShaderSt
         .include_system = include_system_func,
         .include_local = include_local_func,
         .free_include_result = free_include_result_func
-    };    
+    };
 
-    // const glsl_include_callbacks_t callbacks = {};
-
-    const glslang_input_t input =
+    glslang_input_t input =
     {
         .language = GLSLANG_SOURCE_GLSL,
         .stage = GLSLANG_STAGE_COMPUTE,
@@ -105,10 +125,13 @@ Shader::Shader(Device& dev, const std::string& file, EShaderLang lang, EShaderSt
         .force_default_version_and_profile = false,
         .forward_compatible = false,
         .messages = GLSLANG_MSG_DEFAULT_BIT,
-        .resource = glslang_default_resource(),
-        .callbacks = callbacks,
-        .callbacks_ctx = &context
+        .resource = glslang_default_resource()
     };
+
+    if constexpr (HasField(glslang_input_t, callbacks)) {
+        input.callbacks = callbacks;
+        input.callbacks_ctx = &context;
+    }
 
     // TODO: replace with unique_ptr on C++23
     auto shader = std::shared_ptr<glslang_shader_t>(glslang_shader_create(&input), glslang_shader_delete);
