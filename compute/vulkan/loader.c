@@ -25,7 +25,11 @@ static void* handle = NULL;
 PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = NULL;
 
 void vk_init() {
+#ifdef __APPLE__
+    handle = dlopen("libvulkan.dylib", RTLD_GLOBAL | RTLD_NOW);
+#else
     handle = dlopen("libvulkan.so", RTLD_GLOBAL | RTLD_NOW);
+#endif
     vkGetInstanceProcAddr = dlsym(handle, "vkGetInstanceProcAddr");
 }
 
