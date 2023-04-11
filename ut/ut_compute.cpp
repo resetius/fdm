@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <setjmp.h>
 #include <math.h>
+#include <string.h>
 
 #include <iostream>
 #include <vector>
@@ -44,7 +45,7 @@ void test_vulkan_load_l1(void** ) {
     vkEnumerateInstanceExtensionProperties(NULL, &allExtCount, &exts[0]);
 
     int hasPortabilityEnumeration = 0;
-    for (int i = 0; i < allExtCount; i++) {
+    for (uint32_t i = 0; i < allExtCount; i++) {
         if (!strcmp(exts[i].extensionName, "VK_KHR_portability_enumeration")) {
             hasPortabilityEnumeration = 1;
         }
@@ -95,7 +96,7 @@ void test_vulkan_load_dev(void** ) {
     vkEnumerateInstanceExtensionProperties(NULL, &allExtCount, &exts[0]);
 
     int hasPortabilityEnumeration = 0;
-    for (int i = 0; i < allExtCount; i++) {
+    for (uint32_t i = 0; i < allExtCount; i++) {
         if (!strcmp(exts[i].extensionName, "VK_KHR_portability_enumeration")) {
             hasPortabilityEnumeration = 1;
         }
