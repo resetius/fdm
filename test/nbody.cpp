@@ -341,9 +341,9 @@ private:
         diff_time += duration_cast<duration<double>>(t4 - t3).count();
 
 #pragma omp parallel for
-        for (auto& body : bodies) {
+        for (int j = 0; j < bodies.size(); j++) {
             for (int i = 0; i < 3; i++) {
-                body.F[i] = 0;
+                bodies[j].F[i] = 0;
             }
         }
 
@@ -430,7 +430,8 @@ private:
         I interpolator;
 
 #pragma omp parallel for
-        for (auto& body : bodies) {
+        for (int j = 0; j < bodies.size(); j++) {
+            auto& body = bodies[j];
             int i0, k0, j0;
             typename I::matrix M;
             interpolator.distribute(
@@ -464,7 +465,8 @@ private:
 
     void move() {
 #pragma omp parallel for
-        for (auto& body : bodies) {
+        for (int j = 0; j < bodies.size(); j++) {
+            auto& body = bodies[j];
 
             // verlet integration
             // positions
