@@ -411,7 +411,7 @@ private:
         }
 
 #pragma omp parallel for
-        for (int j = 0; j < bodies.size(); j++) {
+        for (size_t j = 0; j < bodies.size(); j++) {
             auto& body = bodies[j];
             for (int i = 0; i < 2; i++) {
                 body.F[i] = 0;
@@ -492,7 +492,7 @@ private:
         I interpolator;
 
 #pragma omp parallel for
-        for (int j = 0; j < bodies.size(); j++) {
+        for (size_t j = 0; j < bodies.size(); j++) {
             auto& body = bodies[j];
             int k0, j0;
             typename I::matrix M;
@@ -532,7 +532,7 @@ private:
 
     void move() {
 #pragma omp parallel for
-        for (int j = 0; j < bodies.size(); j++) {
+        for (size_t j = 0; j < bodies.size(); j++) {
             auto& body = bodies[j];
             if (!body.enabled) continue;
 
