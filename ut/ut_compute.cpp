@@ -5,6 +5,7 @@
 #include <math.h>
 
 #include <iostream>
+#include <vector>
 
 extern "C" {
 #include <cmocka.h>
@@ -37,6 +38,22 @@ void test_vulkan_load_l0(void** ) {
 void test_vulkan_load_l1(void** ) {
     vk_init();
     vk_load_global();
+    uint32_t allExtCount = 0;
+    vkEnumerateInstanceExtensionProperties(NULL, &allExtCount, NULL);
+    std::vector<VkExtensionProperties> exts(allExtCount);
+    vkEnumerateInstanceExtensionProperties(NULL, &allExtCount, &exts[0]);
+
+    int hasPortabilityEnumeration = 0;
+    for (int i = 0; i < allExtCount; i++) {
+        if (!strcmp(exts[i].extensionName, "VK_KHR_portability_enumeration")) {
+            hasPortabilityEnumeration = 1;
+        }
+    }
+    std::vector<const char*> extNames;
+    extNames.push_back("VK_KHR_get_physical_device_properties2");
+    if (hasPortabilityEnumeration) {
+        extNames.push_back("VK_KHR_portability_enumeration");
+    }
 
     VkApplicationInfo appInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -50,11 +67,13 @@ void test_vulkan_load_l1(void** ) {
     VkInstanceCreateInfo vkInstanceInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = NULL,
-        .flags = 0,
+        .flags = hasPortabilityEnumeration
+            ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
+            : static_cast<VkInstanceCreateFlags>(0),
         .pApplicationInfo = &appInfo,
         .enabledLayerCount = 0,
-        .enabledExtensionCount = 0,
-        .ppEnabledExtensionNames = nullptr
+        .enabledExtensionCount = static_cast<uint32_t>(extNames.size()),
+        .ppEnabledExtensionNames = &extNames[0]
     };
 
     VkInstance instance;
@@ -70,6 +89,22 @@ void test_vulkan_load_l1(void** ) {
 void test_vulkan_load_dev(void** ) {
     vk_init();
     vk_load_global();
+    uint32_t allExtCount = 0;
+    vkEnumerateInstanceExtensionProperties(NULL, &allExtCount, NULL);
+    std::vector<VkExtensionProperties> exts(allExtCount);
+    vkEnumerateInstanceExtensionProperties(NULL, &allExtCount, &exts[0]);
+
+    int hasPortabilityEnumeration = 0;
+    for (int i = 0; i < allExtCount; i++) {
+        if (!strcmp(exts[i].extensionName, "VK_KHR_portability_enumeration")) {
+            hasPortabilityEnumeration = 1;
+        }
+    }
+    std::vector<const char*> extNames;
+    extNames.push_back("VK_KHR_get_physical_device_properties2");
+    if (hasPortabilityEnumeration) {
+        extNames.push_back("VK_KHR_portability_enumeration");
+    }
 
     VkApplicationInfo appInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -83,11 +118,13 @@ void test_vulkan_load_dev(void** ) {
     VkInstanceCreateInfo vkInstanceInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = NULL,
-        .flags = 0,
+        .flags = hasPortabilityEnumeration
+            ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
+            : static_cast<VkInstanceCreateFlags>(0),
         .pApplicationInfo = &appInfo,
         .enabledLayerCount = 0,
-        .enabledExtensionCount = 0,
-        .ppEnabledExtensionNames = nullptr
+        .enabledExtensionCount = static_cast<uint32_t>(extNames.size()),
+        .ppEnabledExtensionNames = &extNames[0]
     };
 
     VkInstance instance;
@@ -169,7 +206,7 @@ void test_shader_load_with_include(void** ) {
     NVulkan::Shader(dev, file);
 }
 
-int main(int argc, char** argv) {    
+int main(int argc, char** argv) {
     if (argc > 1) {
         sourceDir = argv[1];
     }
