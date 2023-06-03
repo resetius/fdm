@@ -84,6 +84,8 @@ if (VULKAN_FOUND)
     find_package(Threads REQUIRED)
 
     set(COMPUTE_SRC
+        compute/vulkan/compute.cpp
+        compute/vulkan/command_pool.cpp
         compute/vulkan/loader.c
         compute/vulkan/instance.cpp
         compute/vulkan/device.cpp
