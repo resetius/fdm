@@ -79,7 +79,7 @@ void test_CIC3() {
     assert_int_equal(i0, 0);
     assert_int_equal(k0, 0);
     assert_int_equal(j0, 0);
-    T f[2][2][2] = {0};
+    T f[2][2][2] = {{{0}}};
     for (int i = 0; i < I::n; i++) {
         for (int k = 0; k < I::n; k++) {
             for (int j = 0; j < I::n; j++) {
