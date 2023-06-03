@@ -9,8 +9,8 @@ CommandPool::CommandPool(Device& dev, uint32_t family /* compute family*/)
 {
     VkCommandPoolCreateInfo cpInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
         .queueFamilyIndex = family,
-        .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT
     };
 
     if (vkCreateCommandPool(dev.dev(), &cpInfo, nullptr, &pool_) != VK_SUCCESS) {
