@@ -18,9 +18,25 @@ CommandPool::CommandPool(Device& dev, uint32_t family /* compute family*/)
     }
 }
 
+CommandPool::~CommandPool()
+{
+    vkDestroyCommandPool(dev_.dev(), pool_, NULL);
+}
+
 VkCommandBuffer CommandPool::acquire()
 {
-    return {};
+    VkCommandBuffer buffer;
+    VkCommandBufferAllocateInfo info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = pool_,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
+
+    if (vkAllocateCommandBuffers(dev_.dev(), &info, &buffer) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate command buffers");
+    }
+    return buffer;
 }
 
 void CommandPool::reset()

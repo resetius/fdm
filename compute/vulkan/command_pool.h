@@ -7,6 +7,7 @@ namespace NVulkan {
 class CommandPool {
 public:
     CommandPool(Device& dev, uint32_t family);
+    ~CommandPool();
 
     VkCommandBuffer acquire();
     void reset();
