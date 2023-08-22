@@ -45,7 +45,7 @@ struct Flags {
     int nf = 0;
 };
 
-const int nn = 32;
+const int nn = 32; // 16; // 32;
 const int threads = nn*nn;
 
 struct Test {
@@ -90,7 +90,7 @@ void gen(Test* t) {
     verify((int)t->pos.size() == t->n);
 }
 
-void parts_thread_init(Test* t, int globalIndex, int x, int y) {
+void parts_thread_init(Test* t, int threads, int globalIndex, int x, int y) {
     auto particles = t->n;
     uint work_size = (particles + threads - 1) / threads;
     uint from = globalIndex * work_size;
@@ -103,7 +103,11 @@ void parts_thread_init(Test* t, int globalIndex, int x, int y) {
     t->list_heads[y][x] = -1;
 }
 
-void parts_thread(Test* t, int globalIndex, int x, int y) {
+uint idx(float x, float h) {
+    return (uint) floor((fabsf(x)*0.9999999) / h);
+}
+
+void parts_thread(Test* t, int threads, int globalIndex, int x, int y) {
     float l = t->l;
     auto particles = t->n;
     uint work_size = (particles + threads - 1) / threads;
@@ -116,7 +120,10 @@ void parts_thread(Test* t, int globalIndex, int x, int y) {
         float x[2] = {
             t->pos[i].v.x - t->origin.v.x, t->pos[i].v.y - t->origin.v.y
         };
-        uint index[2] = {(uint)floor(x[0]/h32), (uint)floor(x[1]/h32)};
+        uint index[2] = {idx(x[0], h32), idx(x[1], h32)};
+        if (i == 96089) {
+            printf("%f %f %d\n", x[0], t->pos[i].v.x, index[0]);
+        }
 
         // в lists[index.y][index.x] лежит голова списка, отвечающего за область (index.y,index.x)
         // в list[i] сохраняем предыдущий элемент списка, в list[i] пишет только один поток, поэтому синхронизация не нужна
@@ -130,7 +137,7 @@ void parts(Test* t) {
     for (int i = 0; i < threads; i++) {
         int y = i / nn;
         int x = i % nn;
-        parts_thread_init(t, i, x, y);
+        parts_thread_init(t, threads, i, x, y);
     }
 
 //#pragma omp parallel for num_threads(threads)
@@ -138,7 +145,7 @@ void parts(Test* t) {
     for (int i = 0; i < threads; i++) {
         int y = i / nn;
         int x = i % nn;
-        parts_thread(t, i, x, y);
+        parts_thread(t, threads, i, x, y);
     }
 }
 
@@ -178,10 +185,17 @@ void parts_sort_thread(Test* t, int globalIndex, int x, int y) {
     int cur = t->list_heads[y][x];
     while (cur != -1) {
         auto& pos = t->pos[cur];
-        float x[3] = {
+        float r[3] = {
             pos.v.x - t->origin.v.x, pos.v.y - t->origin.v.y, pos.v.z - t->origin.v.z
         };
-        uint index[3] = {(uint)floor(x[0]/h32), (uint)floor(x[1]/h32), (uint)floor(x[2]/h32)};
+        uint index[3] = {idx(r[0], h32), idx(r[1], h32), idx(r[2], h32)};
+        if (index[0] != (uint)x) {
+            printf("%d, %d %d, %.16f, %.16f\n", cur, index[0], x, pos.v.x, pos.v.x - t->origin.v.x);
+            verify(index[0] == (uint)x);
+        }
+        if (index[1] != (uint)y) {
+            verify(index[1] == (uint)y);
+        }
         auto& cell = t->cells[index[2]][index[1]][index[0]];
         verify (cell.n < max_per_cell);
         cell.data[cell.n++] = cur;
@@ -239,10 +253,10 @@ void process(Test*t, Index id, Index other, const Pos& dh, int from, int to) {
     int n2 = cell2.n;
 
     float l = t->l;
-    float rcrit = l / nn;
+    float rcrit = l / 32; // nn;
     float h = l/nn;
     float G = 1;
-    const float eps = 0.001; // TODO
+    const float eps = 0.01; // TODO
     int i = -1;
 
     for (i0 = from; i0 < to; i0++) {
@@ -264,11 +278,17 @@ void process(Test*t, Index id, Index other, const Pos& dh, int from, int to) {
                     R += (rj.r[k] - ri.r[k]) * (rj.r[k] - ri.r[k]);
                 }
                 if (R > 3*(2*h)*(2*h)) {
-                    printf("%f %f, {%d,%d,%d}, {%d,%d,%d}\n",
+                    printf("%f %f, {%d,%d,%d}, {%d,%d,%d}, %d %d, %d %d, %d %d, %d %d, {%f,%f,%f}, {%f,%f,%f}\n",
                         sqrt(R),
                         sqrt(3*(2*h)*(2*h)),
                         id.x, id.x, id.z,
-                        other.x, other.x, other.z
+                        other.x, other.x, other.z,
+                        n1, n2,
+                        from, to,
+                        i0, j0, 
+                        cell1.data[i0], cell2.data[j0],
+                        t->pos[cell1.data[i0]].r[0], t->pos[cell1.data[i0]].r[1], t->pos[cell1.data[i0]].r[2],
+                        t->pos[cell2.data[j0]].r[0], t->pos[cell2.data[j0]].r[1], t->pos[cell2.data[j0]].r[2]
                         );
                     verify(R < 3*(2*h)*(2*h));
                 }
@@ -286,10 +306,9 @@ void process(Test*t, Index id, Index other, const Pos& dh, int from, int to) {
     }
 }
 
-void parts_pp_thread(Test* t, int i, int x, int y, int z) {
+void parts_pp_thread(Test* t, int threads, int i, int x, int y, int z) {
     auto& cell = t->cells[z][y][x];
     int n1 = cell.n;
-    int threads = nn;
     int work_size = int((n1+threads-1)/threads);
     int from = int(i*work_size);
     int to = from+work_size;
@@ -332,8 +351,9 @@ void parts_pp(Test* t) {
         for (int y = 0; y < nn; y++) {
             for (int x = 0; x < nn; x++) {
 //#pragma omp parallel for num_threads(nn)
+#pragma omp parallel for
                 for (int i = 0; i < nn; i++) {
-                    parts_pp_thread(t, i, x, y, z);
+                    parts_pp_thread(t, nn, i, x, y, z);
                 }
             }
         }
@@ -380,7 +400,7 @@ void plot(Test* t, int step) {
 
     plenv(t->origin.r[1], t->origin.r[1]+t->l, t->origin.r[0], t->origin.r[0]+t->l, 1, 0);
     pllab("Y", "X", "");
-    double r = 0.1;
+    double r = 0.05;
     for (auto& p: t->pos) {
         plarc(p.r[1], p.r[0], r, r, 0, 360, 0, 1);
     }
@@ -388,7 +408,7 @@ void plot(Test* t, int step) {
 
 void calc(Test* t) {
     float tt = 0;
-    float T = 10;
+    float T = 100;
     int step = 0;
     while (tt < T) {
         printf("Step: %d %f\n", step, tt);
@@ -397,7 +417,7 @@ void calc(Test* t) {
         parts_pp(t);
         move(t);
         if (step % 10 == 0) {
-            // plot(t, step);
+            plot(t, step);
         }
         tt += t->dt;
         step ++;
@@ -418,5 +438,6 @@ int main() {
     //print_cells(t);
     //parts_pp(t);
     calc(t);
+    free(t);
     return 0;
 }
