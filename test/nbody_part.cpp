@@ -8,6 +8,8 @@
 
 #include <vector>
 
+#include "matrix_plot.h"
+
 #include "verify.h"
 
 using uint = uint32_t;
@@ -123,14 +125,16 @@ void parts_thread(Test* t, int globalIndex, int x, int y) {
 }
 
 void parts(Test* t) {
-#pragma omp parallel for num_threads(threads)
+//#pragma omp parallel for num_threads(threads)
+#pragma omp parallel for
     for (int i = 0; i < threads; i++) {
         int y = i / nn;
         int x = i % nn;
         parts_thread_init(t, i, x, y);
     }
 
-#pragma omp parallel for num_threads(threads)
+//#pragma omp parallel for num_threads(threads)
+#pragma omp parallel for
     for (int i = 0; i < threads; i++) {
         int y = i / nn;
         int x = i % nn;
@@ -186,14 +190,16 @@ void parts_sort_thread(Test* t, int globalIndex, int x, int y) {
 }
 
 void parts_sort(Test* t) {
-#pragma omp parallel for num_threads(threads)
+//#pragma omp parallel for num_threads(threads)
+#pragma omp parallel for
     for (int i = 0; i < threads; i++) {
         int y = i / nn;
         int x = i % nn;
         parts_sort_thread_init(t, i, x, y);
     }
 
-#pragma omp parallel for num_threads(threads)
+//#pragma omp parallel for num_threads(threads)
+#pragma omp parallel for
     for (int i = 0; i < threads; i++) {
         int y = i / nn;
         int x = i % nn;
@@ -257,7 +263,15 @@ void process(Test*t, Index id, Index other, const Pos& dh, int from, int to) {
                 for (int k = 0; k < 3; k++) {
                     R += (rj.r[k] - ri.r[k]) * (rj.r[k] - ri.r[k]);
                 }
-                verify(R < 3*(2*h)*(2*h));
+                if (R > 3*(2*h)*(2*h)) {
+                    printf("%f %f, {%d,%d,%d}, {%d,%d,%d}\n",
+                        sqrt(R),
+                        sqrt(3*(2*h)*(2*h)),
+                        id.x, id.x, id.z,
+                        other.x, other.x, other.z
+                        );
+                    verify(R < 3*(2*h)*(2*h));
+                }
                 R = sqrt(R);
                 Re = R + eps;
                 maxR = std::max(maxR, R);
@@ -351,7 +365,25 @@ void move(Test* t) {
 }
 
 void plot(Test* t, int step) {
+    using namespace fdm;
+
     printf("Plot %d\n", step);
+
+    char buf[1024];
+    snprintf(buf, sizeof(buf), "pp_%07d.png", step);
+
+    matrix_plotter plotter(
+        matrix_plotter::settings()
+            .sub(1, 1)
+            .devname("pngcairo")
+            .fname(buf));
+
+    plenv(t->origin.r[1], t->origin.r[1]+t->l, t->origin.r[0], t->origin.r[0]+t->l, 1, 0);
+    pllab("Y", "X", "");
+    double r = 0.1;
+    for (auto& p: t->pos) {
+        plarc(p.r[1], p.r[0], r, r, 0, 360, 0, 1);
+    }
 }
 
 void calc(Test* t) {
@@ -359,12 +391,13 @@ void calc(Test* t) {
     float T = 10;
     int step = 0;
     while (tt < T) {
+        printf("Step: %d %f\n", step, tt);
         parts(t);
         parts_sort(t);
         parts_pp(t);
         move(t);
         if (step % 10 == 0) {
-            plot(t, step);
+            // plot(t, step);
         }
         tt += t->dt;
         step ++;
