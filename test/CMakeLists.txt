@@ -37,5 +37,8 @@ target_link_libraries(test_arpack fdm)
 add_executable(test_nbody nbody.cpp)
 target_link_libraries(test_nbody fdm)
 
+add_executable(test_nbody_part nbody_part.cpp)
+target_link_libraries(test_nbody_part fdm)
+
 add_executable(test_nbody2d nbody2d.cpp)
 target_link_libraries(test_nbody2d fdm)
