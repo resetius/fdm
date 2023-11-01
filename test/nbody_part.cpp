@@ -424,6 +424,69 @@ void calc(Test* t) {
     }
 }
 
+#define off(i,k,j) ((i)*nn*nn+(k)*nn+(j))
+#define poff(i,k,j) (((i+nn)%nn)*nn*nn+((k+nn)%nn)*nn+((j+nn)%nn))
+
+void dist_mass(Test* t) {
+    float l = t->l;
+    float h32 = l/nn;
+    std::vector<float> rho(nn*nn*nn);
+    float total_mass = 0;
+    for (auto& p : t->pos) {
+        float x[3] = {
+            p.v.x - t->origin.v.x, 
+            p.v.y - t->origin.v.y,
+            p.v.z - t->origin.v.z
+        };
+        float mass = p.v.w;
+        total_mass += mass;
+        uint index[3] = {idx(x[0], h32), idx(x[1], h32), idx(x[2], h32)};
+
+        x[0] = (x[0]-index[0]*h32)/h32;
+        x[1] = (x[1]-index[1]*h32)/h32;
+        x[2] = (x[2]-index[2]*h32)/h32;
+    
+        for (int i = 0; i < 2; i++) {
+            for (int k = 0; k < 2; k++) {
+                for (int j = 0; j < 2; j++) {
+                    rho[poff(index[2]+i, index[1]+k, index[0]+j)] += 
+                        mass * std::abs((1-i-x[2])*(1-k-x[1])*(1-j-x[0]));
+                }
+            }
+        }
+    }
+    float rho0 = total_mass / l / l / l;
+    float mrho = 0;
+
+    for (auto& p : t->pos) {
+        float x[3] = {
+            p.v.x - t->origin.v.x, 
+            p.v.y - t->origin.v.y,
+            p.v.z - t->origin.v.z
+        };
+        uint index[3] = {idx(x[0], h32), idx(x[1], h32), idx(x[2], h32)};
+
+        x[0] = (x[0]-index[0]*h32)/h32;
+        x[1] = (x[1]-index[1]*h32)/h32;
+        x[2] = (x[2]-index[2]*h32)/h32;    
+
+        float rho1 = 0.0;
+        for (int i = 0; i < 2; i++) {
+            for (int k = 0; k < 2; k++) {
+                for (int j = 0; j < 2; j++) {
+                    rho1 += rho[poff(index[2]+i, index[1]+k, index[0]+j)]
+                         * std::abs((1-i-x[2])*(1-k-x[1])*(1-j-x[0]));
+                }
+            }
+        }
+
+        mrho = std::max(mrho, rho1);
+    }
+
+    printf("%e %e\n", mrho, rho0);
+    printf("%e %e\n", mrho/rho0, rho0/rho0);
+}
+
 int main() {
     Test* t = (Test*)calloc(1, sizeof(*t));
     t->n = 200000;
@@ -437,7 +500,8 @@ int main() {
     //parts_sort(t);
     //print_cells(t);
     //parts_pp(t);
-    calc(t);
+    //calc(t);
+    dist_mass(t);
     free(t);
     return 0;
 }
