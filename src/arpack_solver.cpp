@@ -10,6 +10,9 @@
 namespace fdm {
 
 using namespace asp;
+using std::vector;
+using std::complex;
+using std::is_same;
 
 extern "C" void dnaupd_(
     int* ido,
@@ -98,7 +101,6 @@ extern "C" void sneupd_(
     int* lworkl,
     int* info);
 
-using namespace std;
 
 template<typename T>
 void arpack_solver<T>::solve(

@@ -10,8 +10,10 @@
 #include "umfpack_solver.h"
 #include "asp_misc.h"
 
-using namespace std;
 using namespace fdm;
+
+using std::vector;
+using std::string;
 
 using asp::format;
 using asp::sq;

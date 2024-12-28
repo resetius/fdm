@@ -13,8 +13,9 @@
 #include "ns_cube.h"
 
 using namespace fdm;
-using namespace std;
 using namespace asp;
+using std::vector;
+using std::string;
 
 template<typename T, bool check>
 void calc(const Config& c) {

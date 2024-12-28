@@ -7,8 +7,9 @@
 #include "projection.h"
 
 using namespace fdm;
-using namespace std;
 using namespace asp;
+using std::vector;
+using std::string;
 
 template<typename T, bool check, tensor_flag zflag>
 void calc(const Config& c) {

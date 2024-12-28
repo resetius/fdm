@@ -2,8 +2,9 @@
 #include "matrix_plot.h"
 #include "asp_misc.h"
 
-using namespace std;
 using namespace asp;
+using std::vector;
+using std::string;
 
 namespace fdm {
 

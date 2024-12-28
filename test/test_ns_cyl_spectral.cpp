@@ -3,9 +3,11 @@
 #include "velocity_plot.h"
 #include "eigenvectors_storage.h"
 
-using namespace std;
 using namespace fdm;
 using namespace asp;
+using std::string;
+using std::vector;
+using std::complex;
 
 template<typename T, bool check>
 void calc(const Config& c) {

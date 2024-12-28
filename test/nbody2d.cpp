@@ -14,9 +14,13 @@
 #include "interpolate.h"
 
 using namespace fdm;
-using namespace std;
 using namespace std::chrono;
 using namespace asp;
+using std::string;
+using std::vector;
+using std::array;
+using std::min;
+using std::max;
 
 template<typename T,bool check,tensor_flag flag,typename I=TSC2<T>>
 class NBody {

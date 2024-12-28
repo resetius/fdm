@@ -14,9 +14,13 @@
 #include "interpolate.h"
 
 using namespace fdm;
-using namespace std;
 using namespace std::chrono;
 using namespace asp;
+using std::vector;
+using std::string;
+using std::array;
+using std::max;
+using std::min;
 
 template<typename T,bool check,typename I=CIC3<T>>
 class NBody {

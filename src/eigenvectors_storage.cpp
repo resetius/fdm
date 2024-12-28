@@ -5,8 +5,9 @@
 #include "verify.h"
 #include "eigenvectors_storage.h"
 
-using namespace std;
 using namespace asp;
+using std::vector;
+using std::is_same;
 
 #define nc_call(expr) do {                        \
         int code = expr;                          \

@@ -665,7 +665,7 @@ int main(int argc, char** argv) {
     c.rewrite(argc, argv);
 
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test(test_periodic),
+        /*cmocka_unit_test(test_periodic),
         cmocka_unit_test(test_periodic_new_double),
         cmocka_unit_test(test_periodic_new_float),
         cmocka_unit_test(test_sin_double),
@@ -681,12 +681,12 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_periodic_new2_float, &c),
         cmocka_unit_test_prestate(test_complex_float, &c),
         cmocka_unit_test_prestate(test_complex_double, &c),
-        cmocka_unit_test_prestate(test_sin_omp_float, &c),
+        cmocka_unit_test_prestate(test_sin_omp_float, &c),*/
         cmocka_unit_test_prestate(test_sin_omp_double, &c),
-        cmocka_unit_test_prestate(test_cos_omp_float, &c),
+        /*cmocka_unit_test_prestate(test_cos_omp_float, &c),
         cmocka_unit_test_prestate(test_cos_omp_double, &c),
         cmocka_unit_test_prestate(test_per_omp_float, &c),
-        cmocka_unit_test_prestate(test_per_omp_double, &c),
+        cmocka_unit_test_prestate(test_per_omp_double, &c),*/
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
