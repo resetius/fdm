@@ -47,7 +47,7 @@ public:
     // strange
     std::vector<Solver<T>> solver;
     FFTTable<T> ft_table;
-    FFT<T> ft;
+    FFTOmpSafe<T,FFT<T>> ft;
 
     LaplCyl3FFT1(double dr, double dz,
              double r0, double lr, double lz,
@@ -166,9 +166,9 @@ public:
     FFTTable<T> ft_phi_table;
     FFTTable<T> ft_z_table_;
     FFTTable<T>* ft_z_table;
-    FFT<T> ft_phi;
-    FFT<T> ft_z_;
-    FFT<T>& ft_z;
+    FFTOmpSafe<T,FFT<T>> ft_phi;
+    FFTOmpSafe<T,FFT<T>> ft_z_;
+    FFTOmpSafe<T,FFT<T>>& ft_z;
     std::vector<T> lm_phi, lm_z;
 
     fdm::tensor<T,3,check> matrices;

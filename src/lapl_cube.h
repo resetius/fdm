@@ -33,12 +33,12 @@ public:
     FFTTable<T> ft_x_table;
     FFTTable<T> ft_y_table;
     FFTTable<T> ft_z_table;
-    FFT<T> ft_x;
-    FFT<T> ft_y_;
-    FFT<T> ft_z_;
+    FFTOmpSafe<T,FFT<T>> ft_x;
+    FFTOmpSafe<T,FFT<T>> ft_y_;
+    FFTOmpSafe<T,FFT<T>> ft_z_;
 
-    FFT<T>& ft_y;
-    FFT<T>& ft_z;
+    FFTOmpSafe<T,FFT<T>>& ft_y;
+    FFTOmpSafe<T,FFT<T>>& ft_z;
 
     std::vector<T> lm_y;
     std::vector<T> lm_x_;

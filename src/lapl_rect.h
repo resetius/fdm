@@ -25,7 +25,7 @@ public:
     std::vector<T> L,D,U;
 
     FFTTable<T> ft_y_table;
-    FFT<T> ft_y;
+    FFTOmpSafe<T,FFT<T>> ft_y;
 
     std::vector<T> lm_y;
 
@@ -81,7 +81,7 @@ public:
 
     FFTTable<T>  ft_x_table_;
     FFTTable<T>* ft_x_table;
-    FFT<T> ft_x;
+    FFTOmpSafe<T,FFT<T>> ft_x;
 
     std::vector<T> lm_x_;
     T* lm_x;

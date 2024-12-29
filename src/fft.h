@@ -2,6 +2,10 @@
 
 #include <vector>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #ifdef HAVE_FFTW3
 #include <fftw3.h>
 #endif
@@ -260,4 +264,53 @@ private:
     void init();
 };
 
+template<typename T, typename U>
+class FFTOmpSafe
+{
+    std::vector<U> instances;
+
+    int thread_count() {
+#ifdef _OPENMP
+        return omp_get_max_threads();
+#else
+        return 1;
+#endif
+    }
+
+    int thread_id() {
+#ifdef _OPENMP
+        return omp_get_thread_num();
+#else
+        return 0;
+#endif
+    }
+
+public:
+    template <typename... Args>
+    FFTOmpSafe(Args&&... args)
+    {
+        instances.reserve(thread_count());
+        for (int i = 0; i < thread_count(); i++) {
+            instances.emplace_back(std::forward<Args>(args)...);
+        }
+    }
+
+    void pFFT_1(T *S, T* s, T dx) {
+        instances[thread_id()].pFFT_1(S, s, dx);
+    }
+
+    void pFFT(T *S, T* s, T dx) {
+        instances[thread_id()].pFFT(S, s, dx);
+    }
+
+    void sFFT(T* S, T* s, T dx) {
+        instances[thread_id()].sFFT(S, s, dx);
+    }
+
+    void cFFT(T* S, T* s, T dx) {
+        instances[thread_id()].cFFT(S, s, dx);
+    }
+};
+
 } // namespace fdm
+
