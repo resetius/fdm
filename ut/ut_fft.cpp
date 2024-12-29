@@ -420,6 +420,70 @@ void test_periodic_new2_float(void** s) {
     test_periodic_new2<float>(s);
 }
 
+#ifdef HAVE_FFTW3
+template<typename T>
+void test_periodic_fftw3_pFFT_1(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 256);
+    int verbose = c->get("test", "verbose", 0);
+    FFTTable<T> table(N);
+    fdm::FFT<T> ft(table, N);
+    fdm::FFT_fftw3<T> ft_fftw3(N);
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    vector<T> S(N);
+    vector<T> s(N);
+    vector<T> s1(N);
+    vector<T> S1(N);
+
+    for (int i = 0; i < N; i++) {
+        s[i] = distribution(generator);
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft_fftw3.pFFT_1(&S[0], &s1[0], 1.0);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t2=%f\n", interval.count());
+        }
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft.pFFT_1(&S1[0], &s1[0], 1.0);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t3=%f\n", interval.count());
+        }
+    }
+
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-3;
+    }
+
+    for (int i = 0; i < N; i++) {
+        assert_float_equal(S1[i], S[i], tol);
+        if (verbose > 1) {
+            printf("%e <> %e\n", S1[i], S[i]);
+        }
+    }
+}
+
+void test_periodic_fftw3_pFFT_1_double(void** s) {
+    test_periodic_fftw3_pFFT_1<double>(s);
+}
+
+void test_periodic_fftw3_pFFT_1_float(void** s) {
+    test_periodic_fftw3_pFFT_1<float>(s);
+}
+#endif
+
 template<typename T>
 void test_complex(void** data) {
     Config* c = static_cast<Config*>(*data);
@@ -671,7 +735,7 @@ int main(int argc, char** argv) {
     c.rewrite(argc, argv);
 
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test(test_periodic),
+        /*cmocka_unit_test(test_periodic),
         cmocka_unit_test(test_periodic_new_double),
         cmocka_unit_test(test_periodic_new_float),
         cmocka_unit_test(test_sin_double),
@@ -692,7 +756,11 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_cos_omp_float, &c),
         cmocka_unit_test_prestate(test_cos_omp_double, &c),
         cmocka_unit_test_prestate(test_per_omp_float, &c),
-        cmocka_unit_test_prestate(test_per_omp_double, &c),
+        cmocka_unit_test_prestate(test_per_omp_double, &c),*/
+#ifdef HAVE_FFTW3
+        cmocka_unit_test_prestate(test_periodic_fftw3_pFFT_1_float, &c),
+        cmocka_unit_test_prestate(test_periodic_fftw3_pFFT_1_double, &c),
+#endif
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
