@@ -2,6 +2,10 @@
 
 #include <vector>
 
+#ifdef HAVE_FFTW3
+#include <fftw3.h>
+#endif
+
 namespace fdm {
 
 template<typename T>
@@ -75,6 +79,110 @@ private:
     void cFFT(T* S, T* s, T dx, int N, int n);
 };
 
+// fftw3 wrapper
+#ifdef HAVE_FFTW3
+template<typename T>
+struct FFT_fftw3_plan {};
+
+template<>
+struct FFT_fftw3_plan<double> {
+    fftw_complex* r2c_out;
+    double* r2c_in;
+    fftw_plan r2c_plan;
+
+    double* c2r_out;
+    fftw_complex* c2r_in;
+    fftw_plan c2r_plan;
+
+    FFT_fftw3_plan(int N)
+        : r2c_out(new fftw_complex[N/2+1])
+        , r2c_in(new double[N])
+        , r2c_plan(fftw_plan_dft_r2c_1d(
+            N, r2c_in, r2c_out, FFTW_ESTIMATE
+        ))
+        , c2r_out(new double[N])
+        , c2r_in(new fftw_complex[N/2+1])
+        , c2r_plan(fftw_plan_dft_c2r_1d(
+            N, c2r_in, c2r_out, FFTW_ESTIMATE
+        ))
+    { }
+
+    ~FFT_fftw3_plan() {
+        fftw_destroy_plan(r2c_plan);
+        delete [] r2c_out;
+        delete [] r2c_in;
+
+        fftw_destroy_plan(c2r_plan);
+        delete [] c2r_out;
+        delete [] c2r_in;
+    }
+
+    void c2r_execute() {
+        fftw_execute(c2r_plan);
+    }
+
+    void r2c_execute() {
+        fftw_execute(r2c_plan);
+    }
+};
+
+template<>
+struct FFT_fftw3_plan<float> {
+    fftwf_complex* r2c_out;
+    float* r2c_in;
+    fftwf_plan r2c_plan;
+
+    float* c2r_out;
+    fftwf_complex* c2r_in;
+    fftwf_plan c2r_plan;
+
+    FFT_fftw3_plan(int N)
+        : r2c_out(new fftwf_complex[N/2+1])
+        , r2c_in(new float[N])
+        , r2c_plan(fftwf_plan_dft_r2c_1d(
+            N, r2c_in, r2c_out, FFTW_ESTIMATE
+        ))
+        , c2r_out(new float[N])
+        , c2r_in(new fftwf_complex[N/2+1])
+        , c2r_plan(fftwf_plan_dft_c2r_1d(
+            N, c2r_in, c2r_out, FFTW_ESTIMATE
+        ))
+    { }
+
+    ~FFT_fftw3_plan() {
+        fftwf_destroy_plan(r2c_plan);
+        delete [] r2c_out;
+        delete [] r2c_in;
+
+        fftwf_destroy_plan(c2r_plan);
+        delete [] c2r_out;
+        delete [] c2r_in;
+    }
+
+    void c2r_execute() {
+        fftwf_execute(c2r_plan);
+    }
+
+    void r2c_execute() {
+        fftwf_execute(r2c_plan);
+    }
+};
+
+template<typename T>
+class FFT_fftw3 {
+    int N;
+    FFT_fftw3_plan<T> plan;
+
+public:
+    FFT_fftw3(int N)
+        : N(N)
+        , plan(N)
+    { }
+
+    void pFFT_1(T *S, T *s1, T dx);
+    void pFFT(T *S, T* s, T dx);
+};
+#endif
 
 // don't use
 template<typename T>

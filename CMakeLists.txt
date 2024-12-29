@@ -12,6 +12,7 @@ endif ()
 pkg_check_modules(NETCDF REQUIRED netcdf)
 pkg_check_modules(PLPLOT REQUIRED plplot)
 pkg_check_modules(VULKAN vulkan)
+pkg_check_modules(FFTW3 fftw3)
 
 if (NOT BLAS_FOUND)
 pkg_check_modules(BLAS openblas)
@@ -69,6 +70,7 @@ set(SRC
     src/arpack_solver.cpp
     src/sparse.cpp
     src/fft.cpp
+    src/fft_fftw3.cpp
     src/fft_old.cpp
     src/fft_debug_omp.cpp
     src/lapl_rect.cpp
@@ -100,14 +102,20 @@ if (VULKAN_FOUND)
 
 endif ()
 
-if (MSVC)
-    target_compile_options(fdm PUBLIC ${PLPLOT_CFLAGS_OTHER} PRIVATE "/DFDM_LIBRARY_EXPORT" "/W4")
+if (FFTW3_FOUND)
+    set(FFTW3_FLAGS "-DHAVE_FFTW3")
 else ()
-    target_compile_options(fdm PUBLIC ${PLPLOT_CFLAGS_OTHER} "-Wall")
+    set(FFTW3_FLAGS "")
+endif ()
+
+if (MSVC)
+    target_compile_options(fdm PUBLIC ${PLPLOT_CFLAGS_OTHER} ${FFTW3_FLAGS} PRIVATE "/DFDM_LIBRARY_EXPORT" "/W4")
+else ()
+    target_compile_options(fdm PUBLIC ${PLPLOT_CFLAGS_OTHER} ${FFTW3_FLAGS} "-Wall")
 endif()
-target_include_directories(fdm PUBLIC ${PLPLOT_INCLUDE_DIRS} ${BLAS_INCLUDE_DIRS} PRIVATE ${NETCDF_INCLUDE_DIRS})
-target_link_directories(fdm PUBLIC ${PLPLOT_LIBRARY_DIRS} ${BLAS_LIBRARY_DIRS} ${LAPACK_LIBRARY_DIRS} PRIVATE ${NETCDF_LIBRARY_DIRS})
-target_link_libraries(fdm PUBLIC ${PLPLOT_LIBRARIES} ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES} arpack superlu umfpack PRIVATE ${NETCDF_LIBRARIES})
+target_include_directories(fdm PUBLIC ${PLPLOT_INCLUDE_DIRS} ${BLAS_INCLUDE_DIRS} PRIVATE ${NETCDF_INCLUDE_DIRS} ${FFTW3_INCLUDE_DIRS})
+target_link_directories(fdm PUBLIC ${PLPLOT_LIBRARY_DIRS} ${BLAS_LIBRARY_DIRS} ${LAPACK_LIBRARY_DIRS} PRIVATE ${NETCDF_LIBRARY_DIRS} ${FFTW3_LIBRARY_DIRS})
+target_link_libraries(fdm PUBLIC ${PLPLOT_LIBRARIES} ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES} arpack superlu umfpack PRIVATE ${NETCDF_LIBRARIES} ${FFTW3_LIBRARIES})
 if (OpenMP_CXX_FOUND)
     target_link_libraries(fdm PUBLIC OpenMP::OpenMP_CXX)
 endif()
