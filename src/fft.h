@@ -68,16 +68,6 @@ public:
 
     void cpFFT(T* S, T* s, T dx);
 
-    // experimental, don not use!
-    // these omp functions were created to help me debug and implement
-    // ideas for GPU (GLSL) version of fft
-    // they don't speedup anything on CPU because of high cost of threads creating
-    // and synchronization but the same approach for GPU works perfectly
-    void sFFT_omp(T* S, T* s, T dx);
-    void cFFT_omp(T* S, T* s, T dx);
-    void pFFT_1_omp(T *S, T* s, T dx);
-    void pFFT_omp(T *S, T* s, T dx);
-
 private:
     void init();
 
@@ -130,6 +120,36 @@ private:
 
     void sFFT(T *S, T *s, T dx, int N, int n,int nr);
     void cFFT(T *S, T *s, T dx, int N, int n,int nr);
+};
+
+// don't use
+// experimental, don not use!
+// these omp functions were created to help me debug and implement
+// ideas for GPU (GLSL) version of fft
+// they don't speedup anything on CPU because of high cost of threads creating
+// and synchronization but the same approach for GPU works perfectly
+template<typename T>
+class FFT_debug_omp {
+    const FFTTable<T>& t;
+
+    int N;
+    int n; // N = 2^n
+
+public:
+    FFT_debug_omp(const FFTTable<T>& table, int N)
+        : t(table)
+        , N(N)
+    {
+        init();
+    }
+
+    void sFFT(T* S, T* s, T dx);
+    void cFFT(T* S, T* s, T dx);
+    void pFFT_1(T *S, T* s, T dx);
+    void pFFT(T *S, T* s, T dx);
+
+private:
+    void init();
 };
 
 } // namespace fdm

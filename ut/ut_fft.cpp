@@ -482,6 +482,7 @@ void test_sin_omp(void** data) {
     int verbose = c->get("test", "verbose", 0);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
+    fdm::FFT_debug_omp<T> ft_omp(table, N);
     std::default_random_engine generator;
     std::uniform_real_distribution<T> distribution(-1, 1);
     vector<T> S(N);
@@ -508,7 +509,7 @@ void test_sin_omp(void** data) {
     {
         s1 = s;
         auto t1 = steady_clock::now();
-        ft.sFFT_omp(&S[0], &s1[0], 1.0);
+        ft_omp.sFFT(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -544,6 +545,7 @@ void test_cos_omp(void** data) {
     int verbose = c->get("test", "verbose", 0);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
+    fdm::FFT_debug_omp<T> ft_omp(table, N);
     std::default_random_engine generator;
     std::uniform_real_distribution<T> distribution(-1, 1);
     vector<T> S(N+1);
@@ -570,7 +572,7 @@ void test_cos_omp(void** data) {
     {
         s1 = s;
         auto t1 = steady_clock::now();
-        ft.cFFT_omp(&S[0], &s1[0], 1.0);
+        ft_omp.cFFT(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -606,6 +608,7 @@ void test_per_omp(void** data) {
     int verbose = c->get("test", "verbose", 0);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
+    fdm::FFT_debug_omp<T> ft_omp(table, N);
     std::default_random_engine generator;
     std::uniform_real_distribution<T> distribution(-1, 1);
     vector<T> S(N);
@@ -632,7 +635,7 @@ void test_per_omp(void** data) {
     {
         s1 = s;
         auto t1 = steady_clock::now();
-        ft.pFFT_1_omp(&S[0], &s1[0], 1.0);
+        ft_omp.pFFT_1(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
