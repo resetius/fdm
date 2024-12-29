@@ -1,8 +1,5 @@
-#include <cmath>
 #include <complex>
-#include <chrono>
 #include <string.h>
-#include <assert.h>
 #include "fft.h"
 #include "verify.h"
 
@@ -14,6 +11,17 @@ namespace fdm {
 #define _2(a) (1<<(a))
 
 namespace {
+
+unsigned int rev(unsigned int num, unsigned int count)
+{
+    unsigned int reverse_num = num;
+    for (unsigned int i = 0; i < count; i++) {
+        if ((num & (1 << i))) {
+            reverse_num |= 1 << ((count - 1) - i);
+        }
+    }
+    return reverse_num;
+}
 
 template<typename T>
 inline void sadvance(T*a, int idx) {
@@ -100,8 +108,6 @@ void FFT<T>::init() {
 
 template<typename T>
 void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
-    std::vector<T> b(N); // remove me
-    std::vector<T> bn(N); // remove me
     std::vector<T>& z = b;
     std::vector<T>& zn = bn;
 
@@ -214,8 +220,6 @@ void prn(T*a, int n) {
 
 template<typename T>
 void FFT<T>::sFFT(T* S, T* s, T dx, int N, int n) {
-    std::vector<T> b(N); // remove me
-    std::vector<T> bn(N); // remove me
     std::vector<T>& z = b;
     std::vector<T>& zn = bn;
 
@@ -288,8 +292,6 @@ void FFT<T>::sFFT(T* S, T* s, T dx) {
 
 template<typename T>
 void FFT<T>::cFFT(T *S, T *s, T dx, int N, int n) {
-    std::vector<T> b(N+1); // remove me
-    std::vector<T> bn(N+1); // remove me
     std::vector<T>& z = b;
     std::vector<T>& zn = bn;
 
@@ -364,17 +366,6 @@ void FFT<T>::cFFT(T *S, T *s, T dx, int N, int n) {
 template<typename T>
 void FFT<T>::cFFT(T *S, T *s, T dx) {
     cFFT(S, s, dx, N, n);
-}
-
-unsigned int rev(unsigned int num, unsigned int count)
-{
-    unsigned int reverse_num = num;
-    for (unsigned int i = 0; i < count; i++) {
-        if ((num & (1 << i))) {
-            reverse_num |= 1 << ((count - 1) - i);
-        }
-    }
-    return reverse_num;
 }
 
 template<typename T>

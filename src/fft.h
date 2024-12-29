@@ -51,10 +51,15 @@ class FFT {
     int N;
     int n; // N = 2^n
 
+    std::vector<T> b;
+    std::vector<T> bn;
+
 public:
     FFT(const FFTTable<T>& table, int N)
         : t(table)
         , N(N)
+        , b(N)
+        , bn(N)
     {
         init();
     }
