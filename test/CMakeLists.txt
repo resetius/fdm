@@ -42,3 +42,6 @@ target_link_libraries(test_nbody_part fdm)
 
 add_executable(test_nbody2d nbody2d.cpp)
 target_link_libraries(test_nbody2d fdm)
+
+add_executable(test_fft_bench test_fft_bench.cpp)
+target_link_libraries(test_fft_bench fdm)
