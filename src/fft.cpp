@@ -1,8 +1,13 @@
+#include <cmath>
 #include <complex>
+#include <chrono>
+#include <string.h>
+#include <assert.h>
 #include "fft.h"
 #include "verify.h"
 
 using namespace std;
+using namespace std::chrono;
 
 namespace fdm {
 
@@ -95,6 +100,8 @@ void FFT<T>::init() {
 
 template<typename T>
 void FFT<T>::pFFT_1(T *S, T *s1, T dx) {
+    std::vector<T> b(N); // remove me
+    std::vector<T> bn(N); // remove me
     std::vector<T>& z = b;
     std::vector<T>& zn = bn;
 
@@ -198,7 +205,17 @@ void FFT<T>::pFFT(T *S, T* s, T dx) {
 }
 
 template<typename T>
+void prn(T*a, int n) {
+    for (int i = 0; i < n; i++) {
+        printf("%f ", a[i]);
+    }
+    printf("\n\n");
+}
+
+template<typename T>
 void FFT<T>::sFFT(T* S, T* s, T dx, int N, int n) {
+    std::vector<T> b(N); // remove me
+    std::vector<T> bn(N); // remove me
     std::vector<T>& z = b;
     std::vector<T>& zn = bn;
 
