@@ -232,12 +232,14 @@ void FFT<T>::sFFT(T* S, T* s, T dx, int N, int n) {
         }
         // b^m, m = 1, ... l, incr
         for (m = 1; m <= l-1; m++) {
-            for (s = 1; s <= _2(m-1); s++) {
-                for (j = 1; j <= _2(l-m)-1; j++) {
+            for (j = 1; j <= _2(l-m)-1; j++) {
+                for (s = 1; s <= _2(m-1); s++) {
                     bn[off(j,2*s-1)] = b[_off(2*j-1,s)]+b[_off(2*j+1,s)];
                     bn[off(j,2*s)]   = b[_off(2*j,s)];
                 }
-                // j = _2(l-m)
+            }
+            j = _2(l-m);
+            for (s = 1; s <= _2(m-1); s++) {
                 bn[off(j,2*s-1)] = b[_off(_2(l-m+1)-1, s)];
                 bn[off(j,2*s)]   = b[_off(2*j,s)];
             }
