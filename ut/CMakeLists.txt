@@ -12,7 +12,7 @@ macro(ut name source)
   target_link_directories(ut_${name} PRIVATE ${CMOCKA_LIBRARY_DIRS})
   target_link_libraries(ut_${name} fdm ${CMOCKA_LIBRARIES})
   if (VULKAN_FOUND)
-    target_link_libraries(ut_${name} compute ${CMOCKA_LIBRARIES})
+    target_link_libraries(ut_${name} compute)
   endif ()
 
   add_test(NAME ${name} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ut_${name} ${CMAKE_SOURCE_DIR})
