@@ -217,6 +217,7 @@ void test_sin_new(void** data) {
     int verbose = c->get("test", "verbose", 0);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
+    fdm::FFT<T> ft_old(table, N);
     std::default_random_engine generator;
     std::uniform_real_distribution<T> distribution(-1, 1);
     vector<T> S(N);
@@ -243,7 +244,7 @@ void test_sin_new(void** data) {
     s1 = s;
     {
         auto t1 = steady_clock::now();
-        ft.sFFT_old(&S[0], &s1[0], 1.0);
+        ft_old.sFFT(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -290,6 +291,7 @@ void test_cos_new(void** data) {
     int verbose = c->get("test", "verbose", 0);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
+    fdm::FFT_old<T> ft_old(table, N);
     std::default_random_engine generator;
     std::uniform_real_distribution<T> distribution(-1, 1);
     vector<T> S(N+1);
@@ -316,7 +318,7 @@ void test_cos_new(void** data) {
     s1 = s;
     {
         auto t1 = steady_clock::now();
-        ft.cFFT_old(&S[0], &s1[0], 1.0);
+        ft.cFFT(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -363,6 +365,7 @@ void test_periodic_new2(void** data) {
     int verbose = c->get("test", "verbose", 0);
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
+    fdm::FFT<T> ft_old(table, N);
     std::default_random_engine generator;
     std::uniform_real_distribution<T> distribution(-1, 1);
     vector<T> S(N);
@@ -377,7 +380,7 @@ void test_periodic_new2(void** data) {
     s1 = s;
     {
         auto t1 = steady_clock::now();
-        ft.pFFT_1_old(&S[0], &s1[0], 1.0);
+        ft_old.pFFT_1(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -665,7 +668,7 @@ int main(int argc, char** argv) {
     c.rewrite(argc, argv);
 
     const struct CMUnitTest tests[] = {
-        /*cmocka_unit_test(test_periodic),
+        cmocka_unit_test(test_periodic),
         cmocka_unit_test(test_periodic_new_double),
         cmocka_unit_test(test_periodic_new_float),
         cmocka_unit_test(test_sin_double),
@@ -681,12 +684,12 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_periodic_new2_float, &c),
         cmocka_unit_test_prestate(test_complex_float, &c),
         cmocka_unit_test_prestate(test_complex_double, &c),
-        cmocka_unit_test_prestate(test_sin_omp_float, &c),*/
+        cmocka_unit_test_prestate(test_sin_omp_float, &c),
         cmocka_unit_test_prestate(test_sin_omp_double, &c),
-        /*cmocka_unit_test_prestate(test_cos_omp_float, &c),
+        cmocka_unit_test_prestate(test_cos_omp_float, &c),
         cmocka_unit_test_prestate(test_cos_omp_double, &c),
         cmocka_unit_test_prestate(test_per_omp_float, &c),
-        cmocka_unit_test_prestate(test_per_omp_double, &c),*/
+        cmocka_unit_test_prestate(test_per_omp_double, &c),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

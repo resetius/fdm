@@ -69,6 +69,7 @@ set(SRC
     src/arpack_solver.cpp
     src/sparse.cpp
     src/fft.cpp
+    src/fft_old.cpp
     src/lapl_rect.cpp
     src/lapl_cyl.cpp
     src/lapl_cube.cpp
