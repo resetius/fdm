@@ -4,7 +4,6 @@
 #include "verify.h"
 
 using namespace std;
-using namespace std::chrono;
 
 namespace fdm {
 
