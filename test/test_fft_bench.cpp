@@ -3,6 +3,7 @@
 #include <chrono>
 #include <iostream>
 #include <iomanip>
+#include <math.h>
 
 #include "fft.h"
 
@@ -13,8 +14,8 @@ double compute_percentile(std::vector<double> &data, double percentile) {
     std::vector<double> sorted = data;
     std::sort(sorted.begin(), sorted.end());
     double index = (percentile / 100.0) * (sorted.size() - 1);
-    int lower = static_cast<int>(std::floor(index));
-    int upper = static_cast<int>(std::ceil(index));
+    int lower = static_cast<int>(floor(index));
+    int upper = static_cast<int>(ceil(index));
     double weight = index - lower;
     if (upper >= sorted.size()) return sorted[lower];
     return sorted[lower] * (1.0 - weight) + sorted[upper] * weight;
