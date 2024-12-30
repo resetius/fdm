@@ -257,9 +257,9 @@ int main(int argc, char** argv) {
     c.rewrite(argc, argv);
 
     const struct CMUnitTest tests[] = {
-        //cmocka_unit_test_prestate(test_lapl_cube_double, &c),
-        //cmocka_unit_test_prestate(test_lapl_cube_float, &c),
-        //cmocka_unit_test_prestate(test_lapl_cube_periodic_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cube_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cube_float, &c),
+        cmocka_unit_test_prestate(test_lapl_cube_periodic_double, &c),
         cmocka_unit_test_prestate(test_lapl_cube_periodic_float, &c),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
