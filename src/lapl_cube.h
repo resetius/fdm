@@ -30,11 +30,11 @@ public:
 
     const std::array<int,6> indices;
 
-#ifdef HAVE_FFTW3
-    using FFT_t = FFT_fftw3<T>;
-#else
+//#ifdef HAVE_FFTW3
+//    using FFT_t = FFT_fftw3<T>;
+//#else
     using FFT_t = FFT<T>;
-#endif
+//#endif
 
     FFTTable<T> ft_x_table;
     FFTTable<T> ft_y_table;
@@ -82,15 +82,15 @@ public:
         , ft_x_table(xpoints)
         , ft_y_table((xpoints==ypoints&&xpoints==zpoints)?1:ypoints)
         , ft_z_table((xpoints==ypoints&&xpoints==zpoints)?1:zpoints)
-#ifdef HAVE_FFTW3
-        , ft_x(xpoints)
-        , ft_y_(ypoints)
-        , ft_z_(zpoints)
-#else
+//#ifdef HAVE_FFTW3
+//        , ft_x(xpoints)
+//        , ft_y_(ypoints)
+//        , ft_z_(zpoints)
+//#else
         , ft_x(ft_x_table, xpoints)
         , ft_y_(ft_y_table, ypoints)
         , ft_z_(ft_z_table, zpoints)
-#endif
+//#endif
         , ft_y((xpoints==ypoints&&xpoints==zpoints)?ft_x:ft_y_)
         , ft_z((xpoints==ypoints&&xpoints==zpoints)?ft_x:ft_z_)
         , RHSm(indices)
