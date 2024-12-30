@@ -285,6 +285,80 @@ void test_sin_new_float(void** s) {
 }
 
 template<typename T>
+void test_sin_fftw3(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 256);
+    int verbose = c->get("test", "verbose", 0);
+    FFTTable<T> table(N);
+    fdm::FFT<T> ft(table, N);
+    fdm::FFT_fftw3<T> ft_fftw3(N);
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    vector<T> S(N);
+    vector<T> s(N);
+    vector<T> s1(N);
+    vector<T> S1(N);
+    vector<T> S2(N);
+
+    for (int i = 0; i < N; i++) {
+        s[i] = distribution(generator);
+    }
+
+    s1 = s;
+    if constexpr(is_same<double,T>::value) {
+        auto t1 = steady_clock::now();
+        sFT(&S2[0], &s1[0], 1.0, N);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t1=%f\n", interval.count());
+        }
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft_fftw3.sFFT(&S[0], &s1[0], 1.0);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t2=%f\n", interval.count());
+        }
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft.sFFT(&S1[0], &s1[0], 1.0);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t3=%f\n", interval.count());
+        }
+    }
+
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-3;
+    }
+
+    for (int i = 0; i < N; i++) {
+        assert_float_equal(S1[i], S[i], tol);
+        if (verbose > 1) {
+            printf("%e <> %e <> %e\n", S2[i], S1[i], S[i]);
+        }
+    }
+}
+
+void test_sin_fftw3_double(void** s) {
+    test_sin_fftw3<double>(s);
+}
+
+void test_sin_fftw3_float(void** s) {
+    test_sin_fftw3<float>(s);
+}
+
+template<typename T>
 void test_cos_new(void** data) {
     Config* c = static_cast<Config*>(*data);
     int N = c->get("test", "N", 256);
@@ -318,7 +392,7 @@ void test_cos_new(void** data) {
     s1 = s;
     {
         auto t1 = steady_clock::now();
-        ft.cFFT(&S[0], &s1[0], 1.0);
+        ft_old.cFFT(&S[0], &s1[0], 1.0);
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -356,6 +430,80 @@ void test_cos_new_double(void** s) {
 
 void test_cos_new_float(void** s) {
     test_cos_new<float>(s);
+}
+
+template<typename T>
+void test_cos_fftw3(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 256);
+    int verbose = c->get("test", "verbose", 0);
+    FFTTable<T> table(N);
+    fdm::FFT<T> ft(table, N);
+    fdm::FFT_fftw3<T> ft_fftw3(N);
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    vector<T> S(N+1);
+    vector<T> s(N+1);
+    vector<T> s1(N+1);
+    vector<T> S1(N+1);
+    vector<T> S2(N+1);
+
+    for (int i = 0; i < N+1; i++) {
+        s[i] = distribution(generator);
+    }
+
+    s1 = s;
+    if constexpr(is_same<double,T>::value) {
+        auto t1 = steady_clock::now();
+        cFT(&S2[0], &s[0], 1.0, N);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t1=%f\n", interval.count());
+        }
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft_fftw3.cFFT(&S[0], &s1[0], 1.0);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t2=%f\n", interval.count());
+        }
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft.cFFT(&S1[0], &s1[0], 1.0);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t3=%f\n", interval.count());
+        }
+    }
+
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-3;
+    }
+
+    for (int i = 0; i <= N; i++) {
+        assert_float_equal(S1[i], S[i], tol);
+        if (verbose > 1) {
+            printf("%e <> %e <> %e\n", S2[i], S1[i], S[i]);
+        }
+    }
+}
+
+void test_cos_fftw3_double(void** s) {
+    test_cos_fftw3<double>(s);
+}
+
+void test_cos_fftw3_float(void** s) {
+    test_cos_fftw3<float>(s);
 }
 
 template<typename T>
@@ -824,6 +972,10 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_periodic_fftw3_pFFT_1_double, &c),
         cmocka_unit_test_prestate(test_periodic_fftw3_pFFT_float, &c),
         cmocka_unit_test_prestate(test_periodic_fftw3_pFFT_double, &c),
+        cmocka_unit_test_prestate(test_sin_fftw3_float, &c),
+        cmocka_unit_test_prestate(test_sin_fftw3_double, &c),
+        cmocka_unit_test_prestate(test_cos_fftw3_float, &c),
+        cmocka_unit_test_prestate(test_cos_fftw3_double, &c),
 #endif
     };
 
