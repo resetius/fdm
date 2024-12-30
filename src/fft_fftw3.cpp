@@ -38,6 +38,28 @@ void FFT_fftw3<T>::pFFT(T *S, T *s1, T dx)
     memcpy(S, plan.c2r_out, sizeof(T) * N);
 }
 
+template<typename T>
+void FFT_fftw3<T>::sFFT(T *S, T *s, T dx)
+{
+    memcpy(plan.dst1_in, s+1, sizeof(T) * (N-1));
+    plan.dst1_execute();
+
+    for (int k = 1; k < N; k++) {
+        S[k] = plan.dst1_out[k-1] * dx * 0.5;
+    }
+}
+
+template<typename T>
+void FFT_fftw3<T>::cFFT(T *S, T *s, T dx)
+{
+    memcpy(plan.dct1_in, s, sizeof(T) * (N+1));
+    plan.dct1_execute();
+
+    for (int k = 0; k <= N; k++) {
+        S[k] = plan.dct1_out[k] * dx * 0.5;
+    }
+}
+
 template class FFT_fftw3<double>;
 template class FFT_fftw3<float>;
 
