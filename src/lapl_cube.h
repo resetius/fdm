@@ -31,20 +31,20 @@ public:
     const std::array<int,6> indices;
 
 //#ifdef HAVE_FFTW3
-//    using FFT = FFT_fftw3<T>;
+//    using FFT_t = FFT_fftw3<T>;
 //#else
-    using FFT = FFT<T>;
+    using FFT_t = FFT<T>;
 //#endif
 
     FFTTable<T> ft_x_table;
     FFTTable<T> ft_y_table;
     FFTTable<T> ft_z_table;
-    FFTOmpSafe<T,FFT> ft_x;
-    FFTOmpSafe<T,FFT> ft_y_;
-    FFTOmpSafe<T,FFT> ft_z_;
+    FFTOmpSafe<T,FFT_t> ft_x;
+    FFTOmpSafe<T,FFT_t> ft_y_;
+    FFTOmpSafe<T,FFT_t> ft_z_;
 
-    FFTOmpSafe<T,FFT>& ft_y;
-    FFTOmpSafe<T,FFT>& ft_z;
+    FFTOmpSafe<T,FFT_t>& ft_y;
+    FFTOmpSafe<T,FFT_t>& ft_z;
 
     std::vector<T> lm_y;
     std::vector<T> lm_x_;
