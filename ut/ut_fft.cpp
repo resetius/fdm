@@ -284,6 +284,7 @@ void test_sin_new_float(void** s) {
     test_sin_new<float>(s);
 }
 
+#ifdef HAVE_FFTW3
 template<typename T>
 void test_sin_fftw3(void** data) {
     Config* c = static_cast<Config*>(*data);
@@ -357,6 +358,7 @@ void test_sin_fftw3_double(void** s) {
 void test_sin_fftw3_float(void** s) {
     test_sin_fftw3<float>(s);
 }
+#endif
 
 template<typename T>
 void test_cos_new(void** data) {
@@ -432,6 +434,7 @@ void test_cos_new_float(void** s) {
     test_cos_new<float>(s);
 }
 
+#ifdef HAVE_FFTW3
 template<typename T>
 void test_cos_fftw3(void** data) {
     Config* c = static_cast<Config*>(*data);
@@ -505,6 +508,7 @@ void test_cos_fftw3_double(void** s) {
 void test_cos_fftw3_float(void** s) {
     test_cos_fftw3<float>(s);
 }
+#endif
 
 template<typename T>
 void test_periodic_new2(void** data) {
