@@ -103,6 +103,10 @@ struct FFT_fftw3_plan<double> {
     fftw_complex* c2r_in;
     fftw_plan c2r_plan;
 
+    double* dst1_in;
+    double* dst1_out;
+    fftw_plan dst1_plan;
+
     FFT_fftw3_plan(int N)
         : r2c_out(new fftw_complex[N/2+1])
         , r2c_in(new double[N])
@@ -114,6 +118,11 @@ struct FFT_fftw3_plan<double> {
         , c2r_plan(fftw_plan_dft_c2r_1d(
             N, c2r_in, c2r_out, FFTW_ESTIMATE
         ))
+        , dst1_in(new double[N])
+        , dst1_out(new double[N])
+        , dst1_plan(fftw_plan_r2r_1d(
+            N-1, &dst1_in[1], &dst1_out[1], FFTW_RODFT00, FFTW_ESTIMATE
+        ))
     { }
 
     ~FFT_fftw3_plan() {
@@ -124,6 +133,10 @@ struct FFT_fftw3_plan<double> {
         fftw_destroy_plan(c2r_plan);
         delete [] c2r_out;
         delete [] c2r_in;
+
+        fftw_destroy_plan(dst1_plan);
+        delete [] dst1_out;
+        delete [] dst1_in;
     }
 
     void c2r_execute() {
@@ -132,6 +145,10 @@ struct FFT_fftw3_plan<double> {
 
     void r2c_execute() {
         fftw_execute(r2c_plan);
+    }
+
+    void dst1_execute() {
+        fftw_execute(dst1_plan);
     }
 };
 
@@ -145,6 +162,10 @@ struct FFT_fftw3_plan<float> {
     fftwf_complex* c2r_in;
     fftwf_plan c2r_plan;
 
+    float* dst1_in;
+    float* dst1_out;
+    fftwf_plan dst1_plan;
+
     FFT_fftw3_plan(int N)
         : r2c_out(new fftwf_complex[N/2+1])
         , r2c_in(new float[N])
@@ -156,6 +177,11 @@ struct FFT_fftw3_plan<float> {
         , c2r_plan(fftwf_plan_dft_c2r_1d(
             N, c2r_in, c2r_out, FFTW_ESTIMATE
         ))
+        , dst1_in(new float[N])
+        , dst1_out(new float[N])
+        , dst1_plan(fftwf_plan_r2r_1d(
+            N-1, &dst1_in[1], &dst1_out[1], FFTW_RODFT00, FFTW_ESTIMATE
+        ))
     { }
 
     ~FFT_fftw3_plan() {
@@ -166,6 +192,10 @@ struct FFT_fftw3_plan<float> {
         fftwf_destroy_plan(c2r_plan);
         delete [] c2r_out;
         delete [] c2r_in;
+
+        fftwf_destroy_plan(dst1_plan);
+        delete [] dst1_out;
+        delete [] dst1_in;
     }
 
     void c2r_execute() {
@@ -174,6 +204,10 @@ struct FFT_fftw3_plan<float> {
 
     void r2c_execute() {
         fftwf_execute(r2c_plan);
+    }
+
+    void dst1_execute() {
+        fftwf_execute(dst1_plan);
     }
 };
 
@@ -190,6 +224,7 @@ public:
 
     void pFFT_1(T *S, T *s1, T dx);
     void pFFT(T *S, T* s, T dx);
+    void sFFT(T *S, T *s, T dx);
 };
 #endif
 
