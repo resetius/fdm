@@ -24,18 +24,20 @@ template<typename T>
 void FFT_fftw3<T>::pFFT(T *S, T *s1, T dx)
 {
     auto* in = plan.c2r_in;
-    in[0][0] = 2 * s1[0] / dx;
+    in[0][0] = s1[0];
     in[0][1] = 0;
 
     for (int k = 1; k < N/2; k++) {
-        in[k][0] = 2 * s1[k] / dx;
-        in[k][1] = -2 * s1[N-k] / dx;
+        in[k][0] = s1[k];
+        in[k][1] = -s1[N-k];
     }
-    in[N/2][0] = 2 * s1[N/2] / dx;
+    in[N/2][0] = s1[N/2];
     in[N/2][1] = 0;
 
     plan.c2r_execute();
-    memcpy(S, plan.c2r_out, sizeof(T) * N);
+    for (int i = 0; i < N; i++) {
+        S[i] = plan.c2r_out[i] * dx * 0.5;
+    }
 }
 
 template<typename T>
