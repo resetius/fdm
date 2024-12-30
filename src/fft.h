@@ -112,23 +112,23 @@ struct FFT_fftw3_plan<double> {
     fftw_plan dct1_plan;
 
     FFT_fftw3_plan(int N)
-        : r2c_out(new fftw_complex[N/2+1])
-        , r2c_in(new double[N])
+        : r2c_out(fftw_alloc_complex(N/2+1))
+        , r2c_in(fftw_alloc_real(N))
         , r2c_plan(fftw_plan_dft_r2c_1d(
             N, r2c_in, r2c_out, FFTW_ESTIMATE
         ))
-        , c2r_out(new double[N])
-        , c2r_in(new fftw_complex[N/2+1])
+        , c2r_out(fftw_alloc_real(N))
+        , c2r_in(fftw_alloc_complex(N/2+1))
         , c2r_plan(fftw_plan_dft_c2r_1d(
             N, c2r_in, c2r_out, FFTW_ESTIMATE
         ))
-        , dst1_in(new double[N-1])
-        , dst1_out(new double[N-1])
+        , dst1_in(fftw_alloc_real(N-1))
+        , dst1_out(fftw_alloc_real(N-1))
         , dst1_plan(fftw_plan_r2r_1d(
             N-1, dst1_in, dst1_out, FFTW_RODFT00, FFTW_ESTIMATE
         ))
-        , dct1_in(new double[N+1])
-        , dct1_out(new double[N+1])
+        , dct1_in(fftw_alloc_real(N+1))
+        , dct1_out(fftw_alloc_real(N+1))
         , dct1_plan(fftw_plan_r2r_1d(
             N+1, dct1_in, dct1_out, FFTW_REDFT00, FFTW_ESTIMATE
         ))
@@ -136,21 +136,24 @@ struct FFT_fftw3_plan<double> {
 
     ~FFT_fftw3_plan() {
         fftw_destroy_plan(r2c_plan);
-        delete [] r2c_out;
-        delete [] r2c_in;
+        fftw_free(r2c_out);
+        fftw_free(r2c_in);
 
         fftw_destroy_plan(c2r_plan);
-        delete [] c2r_out;
-        delete [] c2r_in;
+        fftw_free(c2r_out);
+        fftw_free(c2r_in);
 
         fftw_destroy_plan(dst1_plan);
-        delete [] dst1_out;
-        delete [] dst1_in;
+        fftw_free(dst1_out);
+        fftw_free(dst1_in);
 
         fftw_destroy_plan(dct1_plan);
-        delete [] dct1_out;
-        delete [] dct1_in;
+        fftw_free(dct1_out);
+        fftw_free(dct1_in);
     }
+
+    FFT_fftw3_plan(const FFT_fftw3_plan&) = delete;
+    FFT_fftw3_plan(FFT_fftw3_plan&&) = default;
 
     void c2r_execute() {
         fftw_execute(c2r_plan);
@@ -188,23 +191,23 @@ struct FFT_fftw3_plan<float> {
     fftwf_plan dct1_plan;
 
     FFT_fftw3_plan(int N)
-        : r2c_out(new fftwf_complex[N/2+1])
-        , r2c_in(new float[N])
+        : r2c_out(fftwf_alloc_complex(N/2+1))
+        , r2c_in(fftwf_alloc_real(N))
         , r2c_plan(fftwf_plan_dft_r2c_1d(
             N, r2c_in, r2c_out, FFTW_ESTIMATE
         ))
-        , c2r_out(new float[N])
-        , c2r_in(new fftwf_complex[N/2+1])
+        , c2r_out(fftwf_alloc_real(N))
+        , c2r_in(fftwf_alloc_complex(N/2+1))
         , c2r_plan(fftwf_plan_dft_c2r_1d(
             N, c2r_in, c2r_out, FFTW_ESTIMATE
         ))
-        , dst1_in(new float[N-1])
-        , dst1_out(new float[N-1])
+        , dst1_in(fftwf_alloc_real(N-1))
+        , dst1_out(fftwf_alloc_real(N-1))
         , dst1_plan(fftwf_plan_r2r_1d(
             N-1, dst1_in, dst1_out, FFTW_RODFT00, FFTW_ESTIMATE
         ))
-        , dct1_in(new float[N+1])
-        , dct1_out(new float[N+1])
+        , dct1_in(fftwf_alloc_real(N+1))
+        , dct1_out(fftwf_alloc_real(N+1))
         , dct1_plan(fftwf_plan_r2r_1d(
             N+1, dct1_in, dct1_out, FFTW_REDFT00, FFTW_ESTIMATE
         ))
@@ -212,21 +215,24 @@ struct FFT_fftw3_plan<float> {
 
     ~FFT_fftw3_plan() {
         fftwf_destroy_plan(r2c_plan);
-        delete [] r2c_out;
-        delete [] r2c_in;
+        fftwf_free(r2c_out);
+        fftwf_free(r2c_in);
 
         fftwf_destroy_plan(c2r_plan);
-        delete [] c2r_out;
-        delete [] c2r_in;
+        fftwf_free(c2r_out);
+        fftwf_free(c2r_in);
 
         fftwf_destroy_plan(dst1_plan);
-        delete [] dst1_out;
-        delete [] dst1_in;
+        fftwf_free(dst1_out);
+        fftwf_free(dst1_in);
 
         fftwf_destroy_plan(dct1_plan);
-        delete [] dct1_out;
-        delete [] dct1_in;
+        fftwf_free(dct1_out);
+        fftwf_free(dct1_in);
     }
+
+    FFT_fftw3_plan(const FFT_fftw3_plan&) = delete;
+    FFT_fftw3_plan(FFT_fftw3_plan&&) = default;
 
     void c2r_execute() {
         fftwf_execute(c2r_plan);
