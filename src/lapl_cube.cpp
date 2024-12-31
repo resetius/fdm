@@ -80,7 +80,7 @@ void LaplCube<T,check,F>::solve(T* ans, T* rhs) {
     }
 
     if (x1 == 0 && y1 == 0 && z1 == 0) {
-        RHSm[0][0][0] = 1;
+        RHSm[0][0][0] = 0;
     }
 
 #pragma omp parallel for
