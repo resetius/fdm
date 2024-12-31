@@ -34,10 +34,10 @@ struct BenchmarkStats {
 template<typename T, typename Func>
 BenchmarkStats benchmark_tdiag(int N, int iterations, Func f)
 {
-    std::vector<double> A1(N-1);
-    std::vector<double> A2(N);
-    std::vector<double> A3(N-1);
-    std::vector<double> B(N);
+    std::vector<T> A1(N-1);
+    std::vector<T> A2(N);
+    std::vector<T> A3(N-1);
+    std::vector<T> B(N);
 
     for (int i = 0; i < N-1; i++) {
         A1[i] = 1.0;
@@ -103,7 +103,7 @@ int main() {
                 solve_tdiag_linear_my(B, A1, A2, A3, N);
             }
         );
-        output(N, stats, "my");
+        output(N, stats, "my(d)");
 
         stats = benchmark_tdiag<double>(N, iterations,
             [](double *A1, double *A2, double *A3, double *B, int N) {
@@ -111,7 +111,22 @@ int main() {
                 lapack::gtsv(N, 1, A1, A2, A3, B, N, &info);
             }
         );
-        output(N, stats, "gtsv");
+        output(N, stats, "gtsv(d)");
+
+        stats = benchmark_tdiag<float>(N, iterations,
+            [](float *A1, float *A2, float *A3, float *B, int N) {
+                solve_tdiag_linearf_my(B, A1, A2, A3, N);
+            }
+        );
+        output(N, stats, "my(f)");
+
+        stats = benchmark_tdiag<float>(N, iterations,
+            [](float *A1, float *A2, float *A3, float *B, int N) {
+                int info = 0;
+                lapack::gtsv(N, 1, A1, A2, A3, B, N, &info);
+            }
+        );
+        output(N, stats, "gtsv(f)");
     }
     return 0;
 }

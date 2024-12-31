@@ -55,6 +55,7 @@ extern "C" {
 	/* решение трехдиаг линейной системы */
 	/* методом гаусса */
 	void solve_tdiag_linear_my(double *Dest, double * Down,double *Middle,double *Up, int n);
+	void solve_tdiag_linearf_my(float *Dest, float * Down,float *Middle,float *Up, int n);
 	void inverse_tdiag_matrix_my(double *Dest, double * Down,double *Middle,double *Up, int n);
 	/* обращение матрицы общего вида */
 	/* методом гаусса */
@@ -73,7 +74,7 @@ extern "C" {
 /* lapack part */
 	void dgesv_(int *n, int *nrhs, double *A, int *lda, int *ipiv, double *X, int *ldb, int *info);
 	void dposv_(char *uplo, int *n, int *nrhs, double *A, int *lda, double *X, int *ldb, int *info);
-	void dgtsv_(int *n, int *nrhs, double *Down, double *Middle, double *Up, double *X, 
+	void dgtsv_(int *n, int *nrhs, double *Down, double *Middle, double *Up, double *X,
 		int *ldb, int *info);
 	void dptsv_(int *n, int *nrhs, double *D, double *Sub_D, double *X, int *ldb, int *info);
 #ifdef __cplusplus

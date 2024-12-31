@@ -122,14 +122,14 @@ int gauss (const double *A_, const double *b_, double *x, int n)
 void inverse_general_matrix_my(double *Dest, double * Source, int n) {
     int i, j, k;
     int r;
-	double * A = (double*) malloc(n * n * sizeof(double)); 
+	double * A = (double*) malloc(n * n * sizeof(double));
 	double * X;
 	int need_to_free_X = 0;
 
 	NOMEM(A);
 	memcpy(A, Source, n * n * sizeof(double));
 
-	
+
 	if (Dest == Source) {
 		load_identity_matrix(&X, n);
 		need_to_free_X = 1;
@@ -186,7 +186,7 @@ void  solve_tdiag_linear_my(double * B, double*A1, double *A2, double *A3, int n
 	int i, j = 0;
 	double a;
 
-	for (j = 0; j < n - 1; j++) {	
+	for (j = 0; j < n - 1; j++) {
 		a = A1[j] / A2[j];
 		A1[j] = 0;
 		A2[j + 1] -= A3[j] * a;
@@ -206,6 +206,27 @@ void  solve_tdiag_linear_my(double * B, double*A1, double *A2, double *A3, int n
 	}
 }
 
+void  solve_tdiag_linearf_my(float * B, float*A1, float *A2, float *A3, int n) {
+	int i, j = 0;
+	float a;
+
+	for (j = 0; j < n - 1; j++) {
+		a = A1[j] / A2[j];
+		A1[j] = 0;
+		A2[j + 1] -= A3[j] * a;
+		B[j + 1] -= B[j] * a;
+	}
+
+	for (j = n - 1; j > 0; j--) {
+		a = A3[j - 1] / A2[j];
+		B[j - 1] -= B[j] * a;
+	}
+
+	for (i = 0; i < n; i++) {
+		B[i] *= 1 / (A2[i]);
+	}
+}
+
 void inverse_tdiag_matrix_my(double *Dest, double * A1,double *A2,double *A3, int n) {
 	int i, j = 0, k;
 	double a;
@@ -213,7 +234,7 @@ void inverse_tdiag_matrix_my(double *Dest, double * A1,double *A2,double *A3, in
 
 	make_identity_matrix(X, n);
 
-	for (j = 0; j < n - 1; j++) {	
+	for (j = 0; j < n - 1; j++) {
 		a = A1[j] / A2[j];
 		A1[j] = 0;
 		A2[j + 1] -= A3[j] * a;
@@ -225,8 +246,8 @@ void inverse_tdiag_matrix_my(double *Dest, double * A1,double *A2,double *A3, in
 			X[(j + 1) * n + k] -= X[j * n + k] * a;
 		//B[j + 1] -= B[j] * a;
 	}
-    
-	for (j = n - 1; j > 0; j--) {	
+
+	for (j = n - 1; j > 0; j--) {
 		a = A3[j - 1] / A2[j];
 		//for (i = j - 1; i >= 0; i--) {
 		//	for (k = n - 1; k >= 0; k--)
@@ -234,7 +255,7 @@ void inverse_tdiag_matrix_my(double *Dest, double * A1,double *A2,double *A3, in
 		//}
 		for (k = n - 1; k >= 0; k--)
 			X[(j - 1) * n + k] -= X[j * n + k] * a;
-		
+
 		//B[j - 1] -= B[j] * a;
 	}
 
@@ -242,7 +263,7 @@ void inverse_tdiag_matrix_my(double *Dest, double * A1,double *A2,double *A3, in
 		for(j = 0; j < n; j++) {
 			X[i * n + j] *= 1.0 / A2[i];
 		}
-	}    
+	}
 	//for (i = 0; i < n; i++)
 	//	B[i] *= 1 / (A2[i]);
 }
