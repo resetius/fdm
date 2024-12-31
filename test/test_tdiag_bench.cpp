@@ -82,6 +82,7 @@ int main() {
               << std::setw(12) << "Class"
               << std::setw(15) << "Min(ms)"
               << std::setw(15) << "Max(ms)"
+              << std::setw(15) << "P50(ms)"
               << std::setw(15) << "P90(ms)"
               << std::endl;
 
@@ -90,6 +91,7 @@ int main() {
                   << std::setw(12) << name
                   << std::setw(15) << stats.min_time
                   << std::setw(15) << stats.max_time
+                  << std::setw(15) << stats.p50
                   << std::setw(15) << stats.p90
                   << std::endl;
     };
