@@ -6,6 +6,10 @@ namespace fdm {
 // Tim Hennes Wichelmann
 // https://www.math.uni-kiel.de/scicom/de/absolventinnen-und-absolventen/tim-wichelmann-bachelorarbeit
 
+// Parallel Computers 2
+// R W Hockney
+// C R Jesshope
+// p 473
 template<typename T>
 void cyclic_reduction(
     T *d, T *e, T *f, T *b,
