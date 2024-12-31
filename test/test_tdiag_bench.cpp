@@ -11,29 +11,21 @@
 
 using namespace fdm;
 
-double compute_percentile(std::vector<double> &data, double percentile) {
+double unixbench_score(std::vector<double>& data) {
     if (data.empty()) return 0.0;
-    std::vector<double> sorted = data;
-    std::sort(sorted.begin(), sorted.end());
-    double index = (percentile / 100.0) * (sorted.size() - 1);
-    int lower = static_cast<int>(floor(index));
-    int upper = static_cast<int>(ceil(index));
-    double weight = index - lower;
-    if (upper >= sorted.size()) return sorted[lower];
-    return sorted[lower] * (1.0 - weight) + sorted[upper] * weight;
+    std::sort(data.begin(), data.end(), std::greater<double>());
+    int keep = (2 * data.size()) / 3;
+    data.resize(keep);
+    double score = 0.0;
+    for (auto d : data) {
+        score += log(d);
+    }
+    score = exp(score / keep);
+    return score;
 }
 
-struct BenchmarkStats {
-    double min_time;
-    double max_time;
-    double p50;
-    double p80;
-    double p90;
-    double p99;
-};
-
 template<typename T, typename Func>
-BenchmarkStats benchmark_tdiag(int N, int iterations, Func f)
+double benchmark_tdiag(int N, int iterations, Func f)
 {
     static constexpr bool debug = false;
     std::vector<T> A1(N-1);
@@ -73,15 +65,7 @@ BenchmarkStats benchmark_tdiag(int N, int iterations, Func f)
         std::cout << std::endl;
     }
 
-    BenchmarkStats stats;
-    stats.min_time = *std::min_element(times.begin(), times.end());
-    stats.max_time = *std::max_element(times.begin(), times.end());
-    stats.p50 = compute_percentile(times, 50.0);
-    stats.p80 = compute_percentile(times, 80.0);
-    stats.p90 = compute_percentile(times, 90.0);
-    stats.p99 = compute_percentile(times, 99.0);
-
-    return stats;
+    return unixbench_score(times);
 }
 
 int main() {
@@ -91,19 +75,13 @@ int main() {
 
     std::cout << std::setw(10) << "N"
               << std::setw(12) << "Class"
-              << std::setw(15) << "Min(ms)"
-              << std::setw(15) << "Max(ms)"
-              << std::setw(15) << "P50(ms)"
-              << std::setw(15) << "P90(ms)"
+              << std::setw(15) << "Score(ms)"
               << std::endl;
 
-    auto output = [](int N, BenchmarkStats stats, const char *name) {
+    auto output = [](int N, double result, const char *name) {
         std::cout << std::setw(10) << N
                   << std::setw(12) << name
-                  << std::setw(15) << stats.min_time
-                  << std::setw(15) << stats.max_time
-                  << std::setw(15) << stats.p50
-                  << std::setw(15) << stats.p90
+                  << std::setw(15) << result
                   << std::endl;
     };
 
