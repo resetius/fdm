@@ -9,30 +9,22 @@
 
 using namespace fdm;
 
-double compute_percentile(std::vector<double> &data, double percentile) {
+double unixbench_score(std::vector<double>& data) {
     if (data.empty()) return 0.0;
-    std::vector<double> sorted = data;
-    std::sort(sorted.begin(), sorted.end());
-    double index = (percentile / 100.0) * (sorted.size() - 1);
-    int lower = static_cast<int>(floor(index));
-    int upper = static_cast<int>(ceil(index));
-    double weight = index - lower;
-    if (upper >= sorted.size()) return sorted[lower];
-    return sorted[lower] * (1.0 - weight) + sorted[upper] * weight;
+    std::sort(data.begin(), data.end(), std::greater<double>());
+    int keep = (2 * data.size()) / 3;
+    data.resize(keep);
+    double score = 0.0;
+    for (auto d : data) {
+        score += log(d);
+    }
+    score = exp(score / keep);
+    return score;
 }
 
-struct BenchmarkStats {
-    double min_time;
-    double max_time;
-    double p50;
-    double p80;
-    double p90;
-    double p99;
-};
-
 struct CombinedBenchmarkStats {
-    BenchmarkStats pFFT_1;
-    BenchmarkStats pFFT;
+    double pFFT_1;
+    double pFFT;
 };
 
 template <typename T, typename FFTClass>
@@ -71,21 +63,8 @@ CombinedBenchmarkStats benchmark_fft(FFTClass& fft, int N, int iterations) {
         times_pFFT.push_back(elapsed.count());
     }
 
-    BenchmarkStats stats_pFFT_1;
-    stats_pFFT_1.min_time = *std::min_element(times_pFFT_1.begin(), times_pFFT_1.end());
-    stats_pFFT_1.max_time = *std::max_element(times_pFFT_1.begin(), times_pFFT_1.end());
-    stats_pFFT_1.p50 = compute_percentile(times_pFFT_1, 50.0);
-    stats_pFFT_1.p80 = compute_percentile(times_pFFT_1, 80.0);
-    stats_pFFT_1.p90 = compute_percentile(times_pFFT_1, 90.0);
-    stats_pFFT_1.p99 = compute_percentile(times_pFFT_1, 99.0);
-
-    BenchmarkStats stats_pFFT;
-    stats_pFFT.min_time = *std::min_element(times_pFFT.begin(), times_pFFT.end());
-    stats_pFFT.max_time = *std::max_element(times_pFFT.begin(), times_pFFT.end());
-    stats_pFFT.p50 = compute_percentile(times_pFFT, 50.0);
-    stats_pFFT.p80 = compute_percentile(times_pFFT, 80.0);
-    stats_pFFT.p90 = compute_percentile(times_pFFT, 90.0);
-    stats_pFFT.p99 = compute_percentile(times_pFFT, 99.0);
+    auto stats_pFFT_1 = unixbench_score(times_pFFT_1);
+    auto stats_pFFT = unixbench_score(times_pFFT);
 
     return CombinedBenchmarkStats{stats_pFFT_1, stats_pFFT};
 }
@@ -98,35 +77,15 @@ int main() {
 
     std::cout << std::setw(10) << "N"
               << std::setw(12) << "Class"
-              << std::setw(15) << "pFFT_1_Min(ms)"
-              << std::setw(15) << "pFFT_1_Max(ms)"
-              //<< std::setw(15) << "pFFT_1_P50(ms)"
-              //<< std::setw(15) << "pFFT_1_P80(ms)"
-              << std::setw(15) << "pFFT_1_P90(ms)"
-              //<< std::setw(15) << "pFFT_1_P99(ms)"
-              << std::setw(15) << "pFFT_Min(ms)"
-              << std::setw(15) << "pFFT_Max(ms)"
-              //<< std::setw(15) << "pFFT_P50(ms)"
-              //<< std::setw(15) << "pFFT_P80(ms)"
-              << std::setw(15) << "pFFT_P90(ms)"
-              //<< std::setw(15) << "pFFT_P99(ms)"
+              << std::setw(15) << "pFFT_1(ms)"
+              << std::setw(15) << "pFFT(ms)"
               << std::endl;
 
     auto output = [&](int N, CombinedBenchmarkStats stats, std::string name) {
         std::cout << std::setw(10) << N
                     << std::setw(12) << name
-                    << std::setw(15) << stats.pFFT_1.min_time
-                    << std::setw(15) << stats.pFFT_1.max_time
-                    //<< std::setw(15) << stats.pFFT_1.p50
-                    //<< std::setw(15) << stats.pFFT_1.p80
-                    << std::setw(15) << stats.pFFT_1.p90
-                    //<< std::setw(15) << stats.pFFT_1.p99
-                    << std::setw(15) << stats.pFFT.min_time
-                    << std::setw(15) << stats.pFFT.max_time
-                    //<< std::setw(15) << stats.pFFT.p50
-                    //<< std::setw(15) << stats.pFFT.p80
-                    << std::setw(15) << stats.pFFT.p90
-                    //<< std::setw(15) << stats.pFFT.p99
+                    << std::setw(15) << stats.pFFT_1
+                    << std::setw(15) << stats.pFFT
                     << std::endl;
     };
 
