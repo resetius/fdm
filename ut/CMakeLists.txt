@@ -31,5 +31,6 @@ ut(mgsch ut_mgsch.cpp)
 ut(interpolate ut_interpolate.cpp)
 ut(nbody ut_nbody.cpp)
 ut(compute ut_compute.cpp)
+ut(tdiag ut_tdiag.cpp)
 
 endif()

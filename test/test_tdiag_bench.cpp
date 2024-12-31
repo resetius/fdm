@@ -124,7 +124,7 @@ BenchmarkStats benchmark_tdiag(int N, int iterations, Func f)
 
 int main() {
     const int min_power = 4;
-    const int max_power = 8;
+    const int max_power = 16;
     const int iterations = 2000;
 
     std::cout << std::setw(10) << "N"
