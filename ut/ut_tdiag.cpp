@@ -98,6 +98,87 @@ void test_gtsv_float(void** s) {
     test_gtsv<float>(s);
 }
 
+template<typename T>
+void test_gttrs(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 255);
+    int verbose = c->get("test", "verbose", 0);
+    vector<T> A1(N);
+    vector<T> A2(N);
+    vector<T> A3(N);
+    vector<T> B(N);
+    vector<T> B1(N);
+    vector<T> B2(N);
+
+    vector<T> DU2(N);
+    vector<int> ipiv(N);
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+
+    for (int i = 0; i < N; i++) {
+        A1[i] = distribution(generator);
+        A2[i] = distribution(generator);
+        A3[i] = distribution(generator);
+        B[i] = distribution(generator);
+    }
+
+    {
+        auto A11 = A1;
+        auto A21 = A2;
+        auto A31 = A3;
+        B1 = B;
+
+        auto t1 = steady_clock::now();
+        if constexpr(std::is_same_v<T, double>) {
+            solve_tdiag_linear_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+        } else {
+            solve_tdiag_linearf_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+        }
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t1=%f\n", interval.count());
+        }
+    }
+
+    {
+        auto A11 = A1;
+        auto A21 = A2;
+        auto A31 = A3;
+        B2 = B;
+        int info = 0;
+        lapack::gttrf(N, A11.data(), A21.data(), A31.data(), DU2.data(), ipiv.data(), &info);
+        auto t1 = steady_clock::now();
+        lapack::gttrs("N", N, 1, A11.data(), A21.data(), A31.data(), DU2.data(), ipiv.data(), B2.data(), N, &info);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t1=%f\n", interval.count());
+        }
+    }
+
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-3;
+    }
+
+    for (int i = 0; i < N; i++) {
+        assert_float_equal(B1[i], B2[i], tol);
+        if (verbose > 1) {
+            printf("%e <> %e\n", B1[i], B2[i]);
+        }
+    }
+}
+
+void test_gttrs_double(void** s) {
+    test_gttrs<double>(s);
+}
+
+void test_gttrs_float(void** s) {
+    test_gttrs<float>(s);
+}
+
 // for power of two
 template<typename T>
 void test_cr(void** data) {
@@ -263,6 +344,8 @@ int main(int argc, char** argv) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_prestate(test_gtsv_float, &c),
         cmocka_unit_test_prestate(test_gtsv_double, &c),
+        cmocka_unit_test_prestate(test_gttrs_float, &c),
+        cmocka_unit_test_prestate(test_gttrs_double, &c),
         cmocka_unit_test_prestate(test_cr_float, &c),
         cmocka_unit_test_prestate(test_cr_double, &c),
         cmocka_unit_test_prestate(test_crg_float, &c),
