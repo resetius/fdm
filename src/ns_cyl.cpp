@@ -446,10 +446,7 @@ void NSCyl<T,check,zflag>::update_uvwp() {
 #pragma omp parallel
     { // omp parallel
 
-#pragma omp single
-    { // omp single
-
-#pragma omp task
+#pragma omp for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) {
             for (int j = 1; j < nr; j++) {
@@ -459,7 +456,7 @@ void NSCyl<T,check,zflag>::update_uvwp() {
         }
     }
 
-#pragma omp task
+#pragma omp for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k < nz /*ok*/; k++) {
             for (int j = 1; j <= nr; j++) {
@@ -469,7 +466,7 @@ void NSCyl<T,check,zflag>::update_uvwp() {
         }
     }
 
-#pragma omp task
+#pragma omp for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) {
             for (int j = 1; j <= nr; j++) {
@@ -479,14 +476,11 @@ void NSCyl<T,check,zflag>::update_uvwp() {
         }
     }
 
-#pragma omp task
+    } // end of omp parallel
+
     {
         p = x;
     }
-
-#pragma omp taskwait
-    } // end of omp single
-    } // end of omp parallel
 }
 
 template class NSCyl<double,true,tensor_flag::none>;
