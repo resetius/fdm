@@ -47,6 +47,12 @@ public:
 
     int time_index = 0;
 
+    // debug
+    std::vector<double> init_bound_times;
+    std::vector<double> fgh_times;
+    std::vector<double> poisson_times;
+    std::vector<double> update_times;
+
     NSCyl(const Config& c)
         : R(c.get("ns", "R", M_PI))
         , r0(c.get("ns", "r", M_PI/2))
@@ -102,6 +108,8 @@ public:
             }
         }
     }
+
+    ~NSCyl();
 
     int size() const {
         return u.size+v.size+w.size+p.size;

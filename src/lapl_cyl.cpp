@@ -11,7 +11,7 @@ template<typename T, bool check, tensor_flag zflag, bool use_cyclic_reduction>
 void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
     RHS.use(rhs); ANS.use(ans);
 
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
     for (int k = z1; k <= zn; k++) {
         for (int j = 1; j <= nr; j++) {
             auto* in = s.data();
@@ -28,7 +28,7 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
         }
     }
 
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int j = 1; j <= nr; j++) {
             auto* in = s.data();
@@ -50,7 +50,7 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
     }
 
     // solve
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) {
             if constexpr (use_cyclic_reduction) {
@@ -71,7 +71,7 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
                 }
 
                 cyclic_reduction_general(D, L, U, &RHSm[i][k][1], nrq, nr);
-                // cyclic_reduction(D, L, U, &RHSm[i][k][1], q, nr);
+                // cyclic_reduction(D, L, U, &RHSm[i][k][1], nrq, nr);
             } else {
                 T* L = &matrices[i][k][0*nr];
                 T* D = &matrices[i][k][1*nr];
@@ -86,7 +86,7 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
         }
     }
 
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int j = 1; j <= nr; j++) {
             auto* in = s.data();
@@ -108,7 +108,7 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
         }
     }
 
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
     for (int k = z1; k <= zn; k++) {
         for (int j = 1; j <= nr; j++) {
             auto* in = s.data();

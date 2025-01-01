@@ -1,4 +1,5 @@
 #include "ns_cyl.h"
+#include "unixbench_score.h"
 
 using namespace std;
 
@@ -6,6 +7,17 @@ using asp::format;
 using asp::sq;
 
 namespace fdm {
+
+template<typename T, bool check, tensor_flag zflag>
+NSCyl<T,check,zflag>::~NSCyl() {
+    if (verbose) {
+        printf("Step times (ms): init_bound=%.2f, FGH=%.2f, poisson=%.2f, update_uvwp=%.2f\n",
+                unixbench_score(init_bound_times),
+                unixbench_score(fgh_times),
+                unixbench_score(poisson_times),
+                unixbench_score(update_times));
+    }
+}
 
 template<typename T, bool check, tensor_flag zflag>
 void NSCyl<T,check,zflag>::step() {
@@ -42,6 +54,11 @@ void NSCyl<T,check,zflag>::step() {
             printf("Step times (ms): init_bound=%.2f, FGH=%.2f, poisson=%.2f, update_uvwp=%.2f\n",
                    init_bound_time, fgh_time, poisson_time, update_time);
         }
+
+        init_bound_times.emplace_back(init_bound_time);
+        fgh_times.emplace_back(fgh_time);
+        poisson_times.emplace_back(poisson_time);
+        update_times.emplace_back(update_time);
     }
 }
 
@@ -157,13 +174,10 @@ void NSCyl<T,check,zflag>::init_bound() {
 template<typename T, bool check, tensor_flag zflag>
 void NSCyl<T,check,zflag>::FGH() {
 #pragma omp parallel
-    { // omp parallel
-
-#pragma omp single
-    { // omp single
+    {
 
     // F (r)
-#pragma omp task
+#pragma omp for collapse(2)
     for (int i = 1; i <= nphi; i++) {
         for (int k = z1; k <= zn; k++) { // 3/2 ..
             for (int j = 0; j <= nr; j++) { // 1/2 ..
@@ -196,7 +210,7 @@ void NSCyl<T,check,zflag>::FGH() {
         }
     }
     // G (z)
-#pragma omp task
+#pragma omp for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int k = z0; k <= zn; k++) {
             for (int j = 1; j <= nr; j++) {
@@ -225,7 +239,7 @@ void NSCyl<T,check,zflag>::FGH() {
         }
     }
     // H (phi)
-#pragma omp task
+#pragma omp for collapse(2)
     for (int i = 0; i < nphi; i++) { // 1/2 ...
         for (int k = z1; k <= zn; k++) {
             for (int j = 1; j <= nr; j++) {
@@ -259,9 +273,6 @@ void NSCyl<T,check,zflag>::FGH() {
         }
     }
 
-#pragma omp taskwait
-
-    } // end of omp single
     } // end of omp parallel
 }
 
@@ -270,11 +281,8 @@ void NSCyl<T,check,zflag>::L_FGH() {
 #pragma omp parallel
     { // omp parallel
 
-#pragma omp single
-    { // omp single
-
     // F (r)
-#pragma omp task
+#pragma omp for collapse(2)
     for (int i = 1; i <= nphi; i++) {
         for (int k = z1; k <= zn; k++) { // 3/2 ..
             for (int j = 0; j <= nr; j++) { // 1/2 ..
@@ -315,7 +323,7 @@ void NSCyl<T,check,zflag>::L_FGH() {
         }
     }
     // G (z)
-#pragma omp task
+#pragma omp for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int k = z0; k <= zn; k++) {
             for (int j = 1; j <= nr; j++) {
@@ -351,7 +359,7 @@ void NSCyl<T,check,zflag>::L_FGH() {
         }
     }
     // H (phi)
-#pragma omp task
+#pragma omp for collapse(2)
     for (int i = 0; i < nphi; i++) { // 1/2 ...
         for (int k = z1; k <= zn; k++) {
             for (int j = 1; j <= nr; j++) {
@@ -393,15 +401,12 @@ void NSCyl<T,check,zflag>::L_FGH() {
         }
     }
 
-#pragma omp taskwait
-
-    } // end of omp single
     } // end of omp parallel
 }
 
 template<typename T, bool check, tensor_flag zflag>
 void NSCyl<T,check,zflag>::poisson() {
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) {
             for (int j = 1; j <= nr; j++) {
