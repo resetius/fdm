@@ -8,21 +8,9 @@
 #include "asp_gauss.h"
 #include "blas.h"
 #include "cyclic_reduction.h"
+#include "unixbench_score.h"
 
 using namespace fdm;
-
-double unixbench_score(std::vector<double>& data) {
-    if (data.empty()) return 0.0;
-    std::sort(data.begin(), data.end(), std::greater<double>());
-    int keep = (2 * data.size()) / 3;
-    data.resize(keep);
-    double score = 0.0;
-    for (auto d : data) {
-        score += log(d);
-    }
-    score = exp(score / keep);
-    return score;
-}
 
 template<typename T, typename Func1, typename Func2>
 double benchmark_tdiag(int N, int iterations, Func1 prep, Func2 f)
