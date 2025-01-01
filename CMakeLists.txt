@@ -81,6 +81,7 @@ set(SRC
     src/ns_cyl.cpp
     src/velocity_plot.cpp
     src/eigenvectors_storage.cpp
+    src/unixbench_score.cpp
     )
 add_library(fdm SHARED ${SRC})
 
@@ -114,6 +115,7 @@ if (MSVC)
 else ()
     target_compile_options(fdm PUBLIC ${PLPLOT_CFLAGS_OTHER} ${FFTW3_FLAGS} "-Wall")
 endif()
+
 target_include_directories(fdm PUBLIC ${PLPLOT_INCLUDE_DIRS} ${BLAS_INCLUDE_DIRS} ${FFTW3_INCLUDE_DIRS} PRIVATE ${NETCDF_INCLUDE_DIRS})
 target_link_directories(fdm PUBLIC ${PLPLOT_LIBRARY_DIRS} ${BLAS_LIBRARY_DIRS} ${LAPACK_LIBRARY_DIRS} ${FFTW3_LIBRARY_DIRS} PRIVATE ${NETCDF_LIBRARY_DIRS})
 target_link_libraries(fdm PUBLIC ${PLPLOT_LIBRARIES} ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES} arpack superlu umfpack ${FFTW3_LIBRARIES} ${FFTW3F_LIBRARIES} PRIVATE ${NETCDF_LIBRARIES})
