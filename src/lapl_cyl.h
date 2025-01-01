@@ -17,6 +17,7 @@ struct LaplCyl3Data {
 
     const int zpoints;
     const int nr, nz, nphi;
+    const int nrq;
     const int z1, zn;
 
     LaplCyl3Data(double dr, double dz,
@@ -28,6 +29,7 @@ struct LaplCyl3Data {
         , r0(r0), lr(lr), lz(lz), slz(sqrt(2./lz))
         , zpoints(zflag==tensor_flag::none?nz+1:nz)
         , nr(nr), nz(nz), nphi(nphi)
+        , nrq(std::ceil(std::log2(nr+1)))
         , z1(zflag==tensor_flag::none?1:0)
         , zn(zflag==tensor_flag::none?nz:nz-1)
     { }
@@ -160,7 +162,7 @@ private:
     }
 };
 
-template<typename T, bool check, tensor_flag zflag=tensor_flag::none>
+template<typename T, bool check, tensor_flag zflag=tensor_flag::none, bool use_cyclic_reduction=false>
 class LaplCyl3FFT2: public LaplCyl3Data {
 public:
     constexpr static T SQRT_M_1_PI = 0.56418958354775629;

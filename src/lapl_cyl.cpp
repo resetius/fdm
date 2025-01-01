@@ -1,13 +1,14 @@
 #include <cmath>
 
 #include "lapl_cyl.h"
+#include "cyclic_reduction.h"
 
 using namespace asp;
 
 namespace fdm {
 
-template<typename T, bool check, tensor_flag zflag>
-void LaplCyl3FFT2<T,check,zflag>::solve(T* ans, T* rhs) {
+template<typename T, bool check, tensor_flag zflag, bool use_cyclic_reduction>
+void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
     RHS.use(rhs); ANS.use(ans);
 
 #pragma omp parallel for
@@ -48,15 +49,36 @@ void LaplCyl3FFT2<T,check,zflag>::solve(T* ans, T* rhs) {
 #pragma omp parallel for
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) {
-            T* L = &matrices[i][k][0*nr];
-            T* D = &matrices[i][k][1*nr];
-            T* U = &matrices[i][k][2*nr];
-            T* U2 = &matrices[i][k][3*nr];
-            int* ipiv = &ipivs[i][k][0];
+            if constexpr (use_cyclic_reduction) {
+                int li, di, ui; li = di = ui = 0;
+                T* L = &matrices[i][k][0*nr];
+                T* D = &matrices[i][k][1*nr];
+                T* U = &matrices[i][k][2*nr];
 
-            int info;
-            lapack::gttrs("N", nr, 1, L, D, U, U2, ipiv, &RHSm[i][k][1], nr, &info);
-            verify(info == 0);
+                for (int j = 1; j <= nr; j++) {
+                    double r = r0+j*dr;
+                    D[di++] = -2/dr2-lm_phi[i]/r/r-lm_z[k];
+                    if (j > 1) {
+                        L[li++] = (r-0.5*dr)/dr2/r;
+                    }
+                    if (j < nr) {
+                        U[ui++] = (r+0.5*dr)/dr2/r;
+                    }
+                }
+
+                cyclic_reduction_general(D, L, U, &RHSm[i][k][1], nrq, nr);
+                // cyclic_reduction(D, L, U, &RHSm[i][k][1], q, nr);
+            } else {
+                T* L = &matrices[i][k][0*nr];
+                T* D = &matrices[i][k][1*nr];
+                T* U = &matrices[i][k][2*nr];
+                T* U2 = &matrices[i][k][3*nr];
+                int* ipiv = &ipivs[i][k][0];
+
+                int info;
+                lapack::gttrs("N", nr, 1, L, D, U, U2, ipiv, &RHSm[i][k][1], nr, &info);
+                verify(info == 0);
+            }
         }
     }
 
@@ -95,8 +117,8 @@ void LaplCyl3FFT2<T,check,zflag>::solve(T* ans, T* rhs) {
     }
 }
 
-template<typename T, bool check,tensor_flag zflag>
-void LaplCyl3FFT2<T,check,zflag>::init_solver() {
+template<typename T, bool check,tensor_flag zflag, bool use_cyclic_reduction>
+void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::init_solver() {
     for (int i = 0; i < nphi; i++) {
         lm_phi[i] = 4.0/dphi2*sq(sin(i*dphi*0.5));
     }
