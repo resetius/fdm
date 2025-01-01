@@ -24,8 +24,8 @@ double unixbench_score(std::vector<double>& data) {
     return score;
 }
 
-template<typename T, typename Func>
-double benchmark_tdiag(int N, int iterations, Func f)
+template<typename T, typename Func1, typename Func2>
+double benchmark_tdiag(int N, int iterations, Func1 prep, Func2 f)
 {
     static constexpr bool debug = false;
     std::vector<T> A1(N-1);
@@ -44,6 +44,8 @@ double benchmark_tdiag(int N, int iterations, Func f)
         B[N-1] = 1.0;
     };
 
+    auto data = prep(A1.data(), A2.data(), A3.data(), N);
+
     std::vector<double> times;
     times.reserve(iterations);
 
@@ -51,7 +53,7 @@ double benchmark_tdiag(int N, int iterations, Func f)
         init();
 
         auto start = std::chrono::high_resolution_clock::now();
-        f(A1.data(), A2.data(), A3.data(), B.data(), N);
+        f(data, A1.data(), A2.data(), A3.data(), B.data(), N);
         auto end = std::chrono::high_resolution_clock::now();
 
         std::chrono::duration<double, std::milli> elapsed = end - start;
@@ -88,58 +90,132 @@ int main() {
     for(int power = min_power; power <= max_power; ++power) {
         int N = (1 << power) - 1;
         auto stats = benchmark_tdiag<double>(N, iterations,
-            [](double *A1, double *A2, double *A3, double *B, int N) {
+            [](double *A1, double *A2, double *A3, int N) -> void* {
+                return nullptr;
+            },
+            [](void*, double *A1, double *A2, double *A3, double *B, int N) {
                 solve_tdiag_linear_my(B, A1, A2, A3, N);
             }
         );
         output(N, stats, "my(d)");
 
         stats = benchmark_tdiag<double>(N, iterations,
-            [](double *A1, double *A2, double *A3, double *B, int N) {
+            [](double *A1, double *A2, double *A3, int N) -> void* {
+                return nullptr;
+            },
+            [](void*, double *A1, double *A2, double *A3, double *B, int N) {
                 int info = 0;
                 lapack::gtsv(N, 1, A1, A2, A3, B, N, &info);
             }
         );
         output(N, stats, "gtsv(d)");
 
+        struct gttrf_data {
+            std::vector<double> DU2;
+            std::vector<int> ipiv;
+        };
+
         stats = benchmark_tdiag<double>(N, iterations,
-            [&](double *A1, double *A2, double *A3, double *B, int N) {
+            [](double *A1, double *A2, double *A3, int N) {
+                gttrf_data data;
+                data.DU2.resize(N);
+                data.ipiv.resize(N);
+                auto& DU2 = data.DU2;
+                auto& ipiv = data.ipiv;
+                int info = 0;
+                lapack::gttrf(N, A1, A2, A3, DU2.data(), ipiv.data(), &info);
+                return data;
+            },
+            [](gttrf_data& data, double *A1, double *A2, double *A3, double *B, int N) {
+                int info = 0;
+                auto& DU2 = data.DU2;
+                auto& ipiv = data.ipiv;
+                lapack::gttrs("N", N, 1, A1, A2, A3, DU2.data(), ipiv.data(), B, N, &info);
+            }
+        );
+        output(N, stats, "gttrs(d)");
+
+        stats = benchmark_tdiag<double>(N, iterations,
+            [](double *A1, double *A2, double *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
                 cyclic_reduction(A2, A1, A3, B, power, N);
             }
         );
         output(N, stats, "cr(d)");
 
         stats = benchmark_tdiag<double>(N, iterations,
-            [&](double *A1, double *A2, double *A3, double *B, int N) {
+            [](double *A1, double *A2, double *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
                 cyclic_reduction_general(A2, A1, A3, B, power, N);
             }
         );
         output(N, stats, "crg(d)");
 
         stats = benchmark_tdiag<float>(N, iterations,
-            [](float *A1, float *A2, float *A3, float *B, int N) {
+            [](float *A1, float *A2, float *A3, int N) -> void* {
+                return nullptr;
+            },
+            [](void*, float *A1, float *A2, float *A3, float *B, int N) {
                 solve_tdiag_linearf_my(B, A1, A2, A3, N);
             }
         );
         output(N, stats, "my(f)");
 
         stats = benchmark_tdiag<float>(N, iterations,
-            [](float *A1, float *A2, float *A3, float *B, int N) {
+            [](float *A1, float *A2, float *A3, int N) -> void* {
+                return nullptr;
+            },
+            [](void*, float *A1, float *A2, float *A3, float *B, int N) {
                 int info = 0;
                 lapack::gtsv(N, 1, A1, A2, A3, B, N, &info);
             }
         );
         output(N, stats, "gtsv(f)");
 
+        struct gttrf_dataf {
+            std::vector<float> DU2;
+            std::vector<int> ipiv;
+        };
+
         stats = benchmark_tdiag<float>(N, iterations,
-            [&](float *A1, float *A2, float *A3, float *B, int N) {
+            [](float *A1, float *A2, float *A3, int N) {
+                gttrf_dataf data;
+                data.DU2.resize(N);
+                data.ipiv.resize(N);
+                auto& DU2 = data.DU2;
+                auto& ipiv = data.ipiv;
+                int info = 0;
+                lapack::gttrf(N, A1, A2, A3, DU2.data(), ipiv.data(), &info);
+                return data;
+            },
+            [](gttrf_dataf& data, float *A1, float *A2, float *A3, float *B, int N) {
+                int info = 0;
+                auto& DU2 = data.DU2;
+                auto& ipiv = data.ipiv;
+                lapack::gttrs("N", N, 1, A1, A2, A3, DU2.data(), ipiv.data(), B, N, &info);
+            }
+        );
+        output(N, stats, "gttrs(f)");
+
+        stats = benchmark_tdiag<float>(N, iterations,
+            [](float *A1, float *A2, float *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
                 cyclic_reduction(A2, A1, A3, B, power, N);
             }
         );
         output(N, stats, "cr(f)");
 
         stats = benchmark_tdiag<float>(N, iterations,
-            [&](float *A1, float *A2, float *A3, float *B, int N) {
+            [](float *A1, float *A2, float *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
                 cyclic_reduction_general(A2, A1, A3, B, power, N);
             }
         );
