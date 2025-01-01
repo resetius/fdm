@@ -6,21 +6,9 @@
 #include <math.h>
 
 #include "fft.h"
+#include "unixbench_score.h"
 
 using namespace fdm;
-
-double unixbench_score(std::vector<double>& data) {
-    if (data.empty()) return 0.0;
-    std::sort(data.begin(), data.end(), std::greater<double>());
-    int keep = (2 * data.size()) / 3;
-    data.resize(keep);
-    double score = 0.0;
-    for (auto d : data) {
-        score += log(d);
-    }
-    score = exp(score / keep);
-    return score;
-}
 
 struct CombinedBenchmarkStats {
     double pFFT_1;
