@@ -14,14 +14,16 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
 #pragma omp parallel for
     for (int k = z1; k <= zn; k++) {
         for (int j = 1; j <= nr; j++) {
+            auto* in = s.data();
+            auto* out = S.data();
             for (int i = 0; i < nphi; i++) {
-                s[k*nphi+i] = RHS[i][k][j];
+                in[i] = RHS[i][k][j];
             }
 
-            ft_phi.pFFT_1(&S[k*nphi], &s[k*nphi], dphi*SQRT_M_1_PI);
+            ft_phi.pFFT_1(out, in, dphi*SQRT_M_1_PI);
 
             for (int i = 0; i < nphi; i++) {
-                RHSm[i][k][j] = S[k*nphi+i];
+                RHSm[i][k][j] = out[i];
             }
         }
     }
@@ -29,18 +31,20 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
 #pragma omp parallel for
     for (int i = 0; i < nphi; i++) {
         for (int j = 1; j <= nr; j++) {
+            auto* in = s.data();
+            auto* out = S.data();
             for (int k = z1; k <= zn; k++) {
-                s[i*zpoints+k] = RHSm[i][k][j];
+                in[k] = RHSm[i][k][j];
             }
 
             if constexpr(zflag==tensor_flag::none) {
-                ft_z.sFFT(&S[i*zpoints], &s[i*zpoints], dz*slz);
+                ft_z.sFFT(out, in, dz*slz);
             } else {
-                ft_z.pFFT_1(&S[i*zpoints], &s[i*zpoints], dz*slz);
+                ft_z.pFFT_1(out, in, dz*slz);
             }
 
             for (int k = z1; k <= zn; k++) {
-                RHSm[i][k][j] = S[i*zpoints+k];
+                RHSm[i][k][j] = out[k];
             }
         }
     }
@@ -85,18 +89,21 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
 #pragma omp parallel for
     for (int i = 0; i < nphi; i++) {
         for (int j = 1; j <= nr; j++) {
+            auto* in = s.data();
+            auto* out = S.data();
+
             for (int k = z1; k <= zn; k++) {
-                s[i*zpoints+k] = RHSm[i][k][j];
+                in[k] = RHSm[i][k][j];
             }
 
             if constexpr(zflag==tensor_flag::none) {
-                ft_z.sFFT(&S[i*zpoints], &s[i*zpoints], slz);
+                ft_z.sFFT(out, in, slz);
             } else {
-                ft_z.pFFT(&S[i*zpoints], &s[i*zpoints], slz);
+                ft_z.pFFT(out, in, slz);
             }
 
             for (int k = z1; k <= zn; k++) {
-                ANS[i][k][j] = S[i*zpoints+k];
+                ANS[i][k][j] = out[k];
             }
         }
     }
@@ -104,14 +111,17 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
 #pragma omp parallel for
     for (int k = z1; k <= zn; k++) {
         for (int j = 1; j <= nr; j++) {
+            auto* in = s.data();
+            auto* out = S.data();
+
             for (int i = 0; i < nphi; i++) {
-                s[k*nphi+i] = ANS[i][k][j];
+                in[i] = ANS[i][k][j];
             }
 
-            ft_phi.pFFT(&S[k*nphi], &s[k*nphi], SQRT_M_1_PI);
+            ft_phi.pFFT(out, in, SQRT_M_1_PI);
 
             for (int i = 0; i < nphi; i++) {
-                ANS[i][k][j] = S[k*nphi+i];
+                ANS[i][k][j] = out[i];
             }
         }
     }

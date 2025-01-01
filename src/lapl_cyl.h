@@ -3,6 +3,7 @@
 #include "sparse.h"
 #include "tensor.h"
 #include "fft.h"
+#include "vector.h"
 #include "asp_misc.h"
 #include "verify.h"
 
@@ -44,7 +45,7 @@ public:
 
     std::array<int,6> indices;
     tensor RHS, ANS, RHSm, RHSx;
-    std::vector<T> s, S;
+    OmpSafeTmpVector<T> s, S;
 
 #ifdef HAVE_FFTW3
     using FFT_t = FFT_fftw3<T>;
@@ -63,7 +64,7 @@ public:
         : LaplCyl3Data(dr, dz, r0, lr, lz, nr, nz, nphi)
         , indices({0, nphi-1, 1, nz, 1, nr})
         , RHS(indices), ANS(indices), RHSm(indices), RHSx(indices)
-        , s((nz+1)*nphi), S((nz+1)*nphi)
+        , s(nphi), S(nphi)
         , solver(nphi)
         , ft_table(nphi)
 #ifdef HAVE_FFTW3
@@ -85,14 +86,17 @@ public:
 #pragma omp parallel for
         for (int k = 1; k <= nz; k++) {
             for (int j = 1; j <= nr; j++) {
+                auto* in = s.data();
+                auto* out = S.data();
+
                 for (int i = 0; i < nphi; i++) {
-                    s[k*nphi+i] = RHS[i][k][j];
+                    in[i] = RHS[i][k][j];
                 }
 
-                ft.pFFT_1(&S[k*nphi], &s[k*nphi], dphi*SQRT_M_1_PI);
+                ft.pFFT_1(out, in, dphi*SQRT_M_1_PI);
 
                 for (int i = 0; i < nphi; i++) {
-                    RHSm[i][k][j] = S[k*nphi+i];
+                    RHSm[i][k][j] = out[i];
                 }
             }
         }
@@ -105,14 +109,17 @@ public:
 #pragma omp parallel for
         for (int k = 1; k <= nz; k++) {
             for (int j = 1; j <= nr; j++) {
+                auto* in = s.data();
+                auto* out = S.data();
+
                 for (int i = 0; i < nphi; i++) {
-                    s[k*nphi+i] = RHSx[i][k][j];
+                    in[i] = RHSx[i][k][j];
                 }
 
-                ft.pFFT(&S[k*nphi], &s[k*nphi], SQRT_M_1_PI);
+                ft.pFFT(out, in, SQRT_M_1_PI);
 
                 for (int i = 0; i < nphi; i++) {
-                    ANS[i][k][j] = S[k*nphi+i];
+                    ANS[i][k][j] = out[i];
                 }
             }
         }
@@ -173,7 +180,7 @@ public:
     tensor RHS, ANS, RHSm;
 
     int lds;
-    std::vector<T> s, S;
+    OmpSafeTmpVector<T> s, S;
 
 #ifdef HAVE_FFTW3
     using FFT_t = FFT_fftw3<T>;
@@ -208,7 +215,7 @@ public:
         : LaplCyl3Data(dr, dz, r0, lr, lz, nr, nz, nphi, zflag)
         , indices({0, nphi-1, z1, zn, 1, nr})
         , RHS(indices), ANS(indices), RHSm(indices)
-        , s(zpoints*nphi), S(zpoints*nphi)
+        , s(std::max(nphi, zn+1)), S(std::max(nphi, zn+1))
 
         , ft_phi_table(nphi)
         , ft_z_table_(nphi == zpoints ? 1 : zpoints)

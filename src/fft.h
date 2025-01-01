@@ -350,7 +350,7 @@ class FFTOmpSafe
 {
     std::vector<U> instances;
 
-    int thread_count() {
+    static int thread_count() {
 #ifdef _OPENMP
         return omp_get_max_threads();
 #else
@@ -358,7 +358,7 @@ class FFTOmpSafe
 #endif
     }
 
-    int thread_id() {
+    static int thread_id() {
 #ifdef _OPENMP
         return omp_get_thread_num();
 #else
