@@ -44,10 +44,16 @@ public:
     tensor RHS, ANS, RHSm, RHSx;
     std::vector<T> s, S;
 
+#ifdef HAVE_FFTW3
+    using FFT_t = FFT_fftw3<T>;
+#else
+    using FFT_t = FFT<T>;
+#endif
+
     // strange
     std::vector<Solver<T>> solver;
     FFTTable<T> ft_table;
-    FFTOmpSafe<T,FFT<T>> ft;
+    FFTOmpSafe<T,FFT_t> ft;
 
     LaplCyl3FFT1(double dr, double dz,
              double r0, double lr, double lz,
@@ -58,7 +64,11 @@ public:
         , s((nz+1)*nphi), S((nz+1)*nphi)
         , solver(nphi)
         , ft_table(nphi)
+#ifdef HAVE_FFTW3
+        , ft(nphi)
+#else
         , ft(ft_table, nphi)
+#endif
     {
         init_solver();
     }
@@ -163,12 +173,18 @@ public:
     int lds;
     std::vector<T> s, S;
 
+#ifdef HAVE_FFTW3
+    using FFT_t = FFT_fftw3<T>;
+#else
+    using FFT_t = FFT<T>;
+#endif
+
     FFTTable<T> ft_phi_table;
     FFTTable<T> ft_z_table_;
     FFTTable<T>* ft_z_table;
-    FFTOmpSafe<T,FFT<T>> ft_phi;
-    FFTOmpSafe<T,FFT<T>> ft_z_;
-    FFTOmpSafe<T,FFT<T>>& ft_z;
+    FFTOmpSafe<T,FFT_t> ft_phi;
+    FFTOmpSafe<T,FFT_t> ft_z_;
+    FFTOmpSafe<T,FFT_t>& ft_z;
     std::vector<T> lm_phi, lm_z;
 
     fdm::tensor<T,3,check> matrices;
@@ -196,8 +212,13 @@ public:
         , ft_z_table_(nphi == zpoints ? 1 : zpoints)
         , ft_z_table(nphi == zpoints ? &ft_phi_table : &ft_z_table_)
 
+#ifdef HAVE_FFTW3
+        , ft_phi(nphi)
+        , ft_z_(zpoints)
+#else
         , ft_phi(ft_phi_table, nphi)
         , ft_z_(*ft_z_table, zpoints)
+#endif
 
         , ft_z(nphi == zpoints ? ft_phi : ft_z_)
 
