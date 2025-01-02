@@ -125,11 +125,8 @@ void NSCube<T,check>::FGH() {
 #pragma omp parallel
     { // omp parallel
 
-#pragma omp single
-    { // omp single
-
     // F (r)
-#pragma omp task
+#pragma omp for collapse(2) schedule(static)
     for (int i = 1; i <= nz; i++) {
         for (int k = 1; k <= ny; k++) { // 3/2 ..
             for (int j = 0; j <= nx; j++) { // 1/2 ..
@@ -152,7 +149,7 @@ void NSCube<T,check>::FGH() {
         }
     }
     // G (z)
-#pragma omp task
+#pragma omp for collapse(2) schedule(static)
     for (int i = 1; i <= nz; i++) {
         for (int k = 0; k <= ny; k++) {
             for (int j = 1; j <= nx; j++) {
@@ -175,7 +172,7 @@ void NSCube<T,check>::FGH() {
         }
     }
     // H (phi)
-#pragma omp task
+#pragma omp for collapse(2) schedule(static)
     for (int i = 0; i <= nz; i++) { // 1/2 ...
         for (int k = 1; k <= ny; k++) {
             for (int j = 1; j <= nx; j++) {
@@ -197,15 +194,13 @@ void NSCube<T,check>::FGH() {
         }
     }
 
-#pragma omp taskwait
-
-    } // end of omp single
     } // end of omp parallel
 }
 
 
 template<typename T, bool check>
 void NSCube<T,check>::poisson() {
+#pragma omp parallel for collapse(2)
     for (int i = 1; i <= nz; i++) {
         for (int k = 1; k <= ny; k++) {
             for (int j = 1; j <= nx; j++) {
@@ -245,10 +240,7 @@ void NSCube<T,check>::update_uvwp() {
 #pragma omp parallel
     { // omp parallel
 
-#pragma omp single
-    { // omp single
-
-#pragma omp task
+#pragma omp for collapse(2) schedule(static)
     for (int i = 1; i <= nz; i++) {
         for (int k = 1; k <= ny; k++) {
             for (int j = 1; j < nx; j++) {
@@ -257,7 +249,7 @@ void NSCube<T,check>::update_uvwp() {
             }
         }
     }
-#pragma omp task
+#pragma omp for collapse(2) schedule(static)
     for (int i = 1; i <= nz; i++) {
         for (int k = 1; k < ny; k++) {
             for (int j = 1; j <= nx; j++) {
@@ -266,7 +258,7 @@ void NSCube<T,check>::update_uvwp() {
             }
         }
     }
-#pragma omp task
+#pragma omp for collapse(2) schedule(static)
     for (int i = 1; i < nz; i++) {
         for (int k = 1; k <= ny; k++) {
             for (int j = 1; j <= nx; j++) {
@@ -274,14 +266,12 @@ void NSCube<T,check>::update_uvwp() {
             }
         }
     }
-#pragma omp task
+
+    } // end of omp parallel
+
     {
         p = x;
     }
-
-#pragma omp taskwait
-    } // end of omp single
-    } // end of omp parallel
 }
 
 template class NSCube<double,true>;
