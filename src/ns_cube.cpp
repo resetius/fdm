@@ -1,6 +1,8 @@
 #include "ns_cube.h"
 #include "unixbench_score.h"
 
+#include <chrono>
+
 using namespace std;
 using namespace fdm;
 
