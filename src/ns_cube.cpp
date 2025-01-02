@@ -1,4 +1,5 @@
 #include "ns_cube.h"
+#include "unixbench_score.h"
 
 using namespace std;
 using namespace fdm;
@@ -9,15 +10,53 @@ using asp::sq;
 namespace fdm {
 
 template<typename T, bool check>
+NSCube<T,check>::~NSCube()
+{
+    if (verbose) {
+        printf("Step times (ms): init_bound=%.2f, FGH=%.2f, poisson=%.2f, update_uvwp=%.2f\n",
+                unixbench_score(init_bound_times),
+                unixbench_score(fgh_times),
+                unixbench_score(poisson_times),
+                unixbench_score(update_times));
+    }
+}
+
+template<typename T, bool check>
 void NSCube<T,check>::step() {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    auto end_time = start_time;
+    double init_bound_time, fgh_time, poisson_time, update_time;
+
     init_bound();
+    end_time = std::chrono::high_resolution_clock::now();
+    init_bound_time = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+    start_time = end_time;
+
     FGH();
+    end_time = std::chrono::high_resolution_clock::now();
+    fgh_time = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+    start_time = end_time;
+
     poisson();
+    end_time = std::chrono::high_resolution_clock::now();
+    poisson_time = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+    start_time = end_time;
+
     update_uvwp();
+    end_time = std::chrono::high_resolution_clock::now();
+    update_time = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+
     time_index++;
-    printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
-           dt*time_index, p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
-           RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
+    if (verbose) {
+        printf("%.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e %.1e \n",
+               dt*time_index, p.maxabs(), u.maxabs(), v.maxabs(), w.maxabs(), x.maxabs(),
+               RHS.maxabs(), F.maxabs(), G.maxabs(), H.maxabs());
+
+        init_bound_times.emplace_back(init_bound_time);
+        fgh_times.emplace_back(fgh_time);
+        poisson_times.emplace_back(poisson_time);
+        update_times.emplace_back(update_time);
+    }
 }
 
 template<typename T, bool check>

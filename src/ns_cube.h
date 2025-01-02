@@ -24,6 +24,8 @@ public:
     const double dt;
 
     const int nx, ny, nz;
+    int verbose;
+
     const double dx, dy, dz;
     const double dx2, dy2, dz2;
 
@@ -34,6 +36,12 @@ public:
     LaplCube<T,check> lapl_solver;
 
     int time_index = 0;
+
+    // debug
+    std::vector<double> init_bound_times;
+    std::vector<double> fgh_times;
+    std::vector<double> poisson_times;
+    std::vector<double> update_times;
 
     NSCube(const Config& c)
         : x1(c.get("ns", "x1", -M_PI))
@@ -49,6 +57,8 @@ public:
         , nx(c.get("ns", "nx", 32))
         , ny(c.get("ns", "nx", 32))
         , nz(c.get("ns", "nz", 32))
+
+        , verbose(c.get("ns", "verbose", 0))
 
         , dx((x2-x1)/nx), dy((y2-y1)/ny), dz((z2-z1)/nz)
         , dx2(dx*dx), dy2(dy*dy), dz2(dz*dz)
@@ -66,6 +76,8 @@ public:
 
         , lapl_solver(dx, dy, dz, x2-x1+dx, y2-y1+dy, z2-z1+dz, nx, ny, nz)
     { }
+
+    ~NSCube();
 
     void step();
 
