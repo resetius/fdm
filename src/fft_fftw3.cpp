@@ -1,5 +1,6 @@
 #ifdef HAVE_FFTW3
 #include "fft.h"
+#include <cstring>
 
 namespace fdm {
 
