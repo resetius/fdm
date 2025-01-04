@@ -56,6 +56,7 @@ add_subdirectory(deps/arpack)
 endif ()
 
 set(SRC
+    src/cyclic_reduction.cpp
     src/sds_bar.cpp
     src/asp_sphere_lapl.cpp
     src/asp_gauss.cpp
