@@ -328,11 +328,11 @@ void test_crg(void** data) {
 }
 
 void test_crg_double(void** s) {
-    test_cr<double>(s);
+    test_crg<double>(s);
 }
 
 void test_crg_float(void** s) {
-    test_cr<float>(s);
+    test_crg<float>(s);
 }
 
 int main(int argc, char** argv) {
