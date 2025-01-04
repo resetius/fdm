@@ -104,6 +104,15 @@ if (VULKAN_FOUND)
 
 endif ()
 
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+    if (COMPILER_SUPPORTS_AVX2)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
+        add_definitions(-D__AVX2__)
+    endif()
+endif()
+
 if (FFTW3_FOUND)
     set(FFTW3_FLAGS "-DHAVE_FFTW3")
 else ()
