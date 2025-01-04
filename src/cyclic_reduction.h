@@ -67,6 +67,7 @@ void cyclic_reduction_general(
     T *d, T *e, T *f, T *b,
     int q, int n)
 {
+/*
 #ifdef __AVX2__
     if constexpr(std::is_same_v<T,float>) {
         return cyclic_reduction_general_avx_float(d, e, f, b, q, n);
@@ -75,6 +76,7 @@ void cyclic_reduction_general(
         return cyclic_reduction_general_avx_double(d, e, f, b, q, n);
     }
 #endif
+*/
     T alpha, gamma;
     int l, j, s, h;
 
