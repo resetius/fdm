@@ -13,16 +13,6 @@ namespace fdm {
 // C R Jesshope
 // p 473
 
-#ifdef __AVX2__
-void cyclic_reduction_general_avx_float(
-    float *d, float *e, float *f, float *b,
-    int q, int n);
-
-void cyclic_reduction_general_avx_double(
-    double *d, double *e, double *f, double *b,
-    int q, int n);
-#endif
-
 template<typename T>
 void cyclic_reduction(
     T *d, T *e, T *f, T *b,
@@ -67,16 +57,6 @@ void cyclic_reduction_general(
     T *d, T *e, T *f, T *b,
     int q, int n)
 {
-/*
-#ifdef __AVX2__
-    if constexpr(std::is_same_v<T,float>) {
-        return cyclic_reduction_general_avx_float(d, e, f, b, q, n);
-    }
-    if constexpr(std::is_same_v<T,double>) {
-        return cyclic_reduction_general_avx_double(d, e, f, b, q, n);
-    }
-#endif
-*/
     T alpha, gamma;
     int l, j, s, h;
 
