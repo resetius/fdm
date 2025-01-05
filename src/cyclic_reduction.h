@@ -105,5 +105,71 @@ void cyclic_reduction_general(
     }
 }
 
+// requires 2x memory
+// effective for large n
+// supports simd
+template<typename T>
+void cyclic_reduction_kershaw(
+    T *d, T *e, T *f, T *b,
+    int q, int n)
+{
+    T alpha, gamma;
+    int j, k, l, n_curr, n_next, n_new, off, offj, offk;
+
+    off = 0;
+
+    e = e - 1; // e indices start from 1
+    for (l = 1; l < q; l++) {
+        n_curr = n >> (l-1);
+        n_next = n >> l;
+
+        for (j = 0; j < n_next; j++) {
+            k = 2 * j;
+            offj = off + n_curr + j;
+            offk = off + k;
+
+            alpha = - e[offk+1] / d[offk];
+            gamma = - f[offk+1] / d[offk+2];
+            d[offj] = d[offk+1] + alpha * f[offk] + gamma * e[off + k+2];
+            b[offj] = b[offk+1] + alpha * b[offk] + gamma * b[offk+2];
+            e[offj] = alpha * e[offk];
+            f[offj] = gamma * f[offk+2];
+        }
+        off += n_curr;
+    }
+
+    b[off] = b[off] / d[off];
+    n_curr = 1;
+
+    for (l = q-1; l > 0; l--) {
+        n_next = n >> (l-1);
+        n_new = n_next - n_curr;
+
+        offk = off - n_next;
+        b[offk] = (b[offk] - f[offk] * b[off]) / d[offk];
+        b[offk + 1] = b[off];
+
+        for (j = 1; j < n_new - 1; j++) {
+            k = 2 * j;
+            offj = off + j;
+            offk = off - n_next + k;
+            b[offk] = (b[offk] - e[offk] * b[offj - 1] - f[offk] * b[offj]) / d[offk];
+            b[offk + 1] = b[off + j];
+        }
+
+        j = n_new - 1;
+        k = 2 * j;
+        offj = off + j;
+        offk = off - n_next + k;
+
+        b[offk] = (b[offk] - e[offk] * b[offj - 1]- f[offk] * b[offj]) / d[offk];
+        b[offk + 1] = b[offj];
+
+        off -= n_next;
+        n_curr = n_next;
+    }
+    return;
+}
+
 
 } // namespace fdm

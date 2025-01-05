@@ -16,10 +16,10 @@ template<typename T, typename Func1, typename Func2>
 double benchmark_tdiag(int N, int iterations, Func1 prep, Func2 f)
 {
     static constexpr bool debug = false;
-    std::vector<T> A1(N-1);
-    std::vector<T> A2(N);
-    std::vector<T> A3(N-1);
-    std::vector<T> B(N);
+    std::vector<T> A1(2*N-1);
+    std::vector<T> A2(2*N);
+    std::vector<T> A3(2*N-1);
+    std::vector<T> B(2*N);
 
     auto init = [&] () {
         for (int i = 0; i < N-1; i++) {
@@ -60,8 +60,8 @@ double benchmark_tdiag(int N, int iterations, Func1 prep, Func2 f)
 
 int main() {
     const int min_power = 4;
-    const int max_power = 16;
-    const int iterations = 2000;
+    const int max_power = 18;
+    const int iterations = 200;
 
     std::cout << std::setw(10) << "N"
               << std::setw(12) << "Class"
@@ -138,6 +138,16 @@ int main() {
                 return nullptr;
             },
             [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cyclic_reduction_kershaw(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crk(d)");
+
+        stats = benchmark_tdiag<double>(N, iterations,
+            [](double *A1, double *A2, double *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
                 cyclic_reduction_general(A2, A1, A3, B, power, N);
             }
         );
@@ -198,6 +208,16 @@ int main() {
             }
         );
         output(N, stats, "cr(f)");
+
+        stats = benchmark_tdiag<float>(N, iterations,
+            [](float *A1, float *A2, float *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                cyclic_reduction_kershaw(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crk(f)");
 
         stats = benchmark_tdiag<float>(N, iterations,
             [](float *A1, float *A2, float *A3, int N) -> void* {
