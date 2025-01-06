@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <iostream>
 
 namespace fdm {
 
@@ -110,7 +111,7 @@ void cyclic_reduction_general(
 // supports simd
 template<typename T>
 void cyclic_reduction_kershaw(
-    T *d, T *e, T *f, T *b,
+    T *__restrict d, T *__restrict e, T *__restrict f, T *__restrict b,
     int q, int n)
 {
     T alpha, gamma;
@@ -139,12 +140,11 @@ void cyclic_reduction_kershaw(
     }
 
     b[off] = b[off] / d[off];
-    n_curr = 1;
 
+    n_curr = 1;
     for (l = q-1; l > 0; l--) {
         n_next = n >> (l-1);
         n_new = n_next - n_curr;
-
         offk = off - n_next;
         b[offk] = (b[offk] - f[offk] * b[off]) / d[offk];
         b[offk + 1] = b[off];
@@ -154,7 +154,7 @@ void cyclic_reduction_kershaw(
             offj = off + j;
             offk = off - n_next + k;
             b[offk] = (b[offk] - e[offk] * b[offj - 1] - f[offk] * b[offj]) / d[offk];
-            b[offk + 1] = b[off + j];
+            b[offk + 1] = b[offj];
         }
 
         j = n_new - 1;
@@ -162,8 +162,7 @@ void cyclic_reduction_kershaw(
         offj = off + j;
         offk = off - n_next + k;
 
-        b[offk] = (b[offk] - e[offk] * b[offj - 1]- f[offk] * b[offj]) / d[offk];
-        b[offk + 1] = b[offj];
+        b[offk] = (b[offk] - e[offk] * b[offj - 1]) / d[offk];
 
         off -= n_next;
         n_curr = n_next;
@@ -171,5 +170,74 @@ void cyclic_reduction_kershaw(
     return;
 }
 
+template<typename T>
+void cyclic_reduction_kershaw_general(
+    T *__restrict d, T *__restrict e, T *__restrict f, T *__restrict b,
+    int q, int n)
+{
+    T alpha, gamma;
+    int j, l, n_curr, n_next, off, dst, mask;
+
+    off = 0;
+
+    n_curr = n;
+
+    e = e - 1; // e indices start from 1
+    for (l = 1; l < q; l++) {
+        n_next = (n_curr - n_curr % 2) / 2;
+
+        for (j = off + 1, dst = off + n_curr; j + 1 < off + n_curr; j += 2, dst++)
+        {
+            alpha = -e[j] / d[j - 1];
+            gamma = -f[j] / d[j + 1];
+            d[dst] = d[j] + alpha * f[j - 1] + gamma * e[j + 1];
+            b[dst] = b[j] + alpha * b[j - 1] + gamma * b[j + 1];
+            e[dst] = alpha * e[j - 1];
+            f[dst] = gamma * f[j + 1];
+        }
+
+        // for n != 2^q-1
+        for (; j < off + n_curr; j += 2, dst++) {
+            alpha = -e[j] / d[j - 1];
+            d[dst] = d[j] + alpha * f[j - 1];
+            b[dst] = b[j] + alpha * b[j - 1];
+            e[dst] = alpha * e[j - 1];
+        }
+
+        off += n_curr;
+        n_curr = n_next;
+    }
+
+    b[off] = b[off] / d[off];
+    n_curr = 1;
+
+    for (mask = (1 << (q - 1)) >> 1; mask > 0; mask >>= 1) {
+        if (n & mask) {
+            n_next = n_curr * 2 + 1;
+        } else {
+            n_next = n_curr * 2;
+        }
+
+        for (j = off, dst = off-n_next + 1; j < off+n_curr; j++, dst += 2) {
+            b[dst] = b[j];
+        }
+
+        j = off - n_next;
+        b[j] = (b[j] - f[j] * b[j + 1]) / d[j]; j += 2;
+
+        for (; j + 1 < off; j += 2) {
+            b[j] = (b[j] - e[j] * b[j - 1] - f[j] * b[j + 1]) / d[j];
+        }
+
+        for (; j < off; j += 2) {
+            b[j] = (b[j] - e[j] * b[j - 1]) / d[j];
+        }
+
+        off -= n_next;
+        n_curr = n_next;
+    }
+
+    return;
+}
 
 } // namespace fdm

@@ -153,6 +153,16 @@ int main() {
         );
         output(N, stats, "crg(d)");
 
+        stats = benchmark_tdiag<double>(N, iterations,
+            [](double *A1, double *A2, double *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cyclic_reduction_kershaw_general(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkg(d)");
+
         stats = benchmark_tdiag<float>(N, iterations,
             [](float *A1, float *A2, float *A3, int N) -> void* {
                 return nullptr;
@@ -228,6 +238,16 @@ int main() {
             }
         );
         output(N, stats, "crg(f)");
+
+        stats = benchmark_tdiag<float>(N, iterations,
+            [](float *A1, float *A2, float *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                cyclic_reduction_kershaw_general(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkg(f)");
     }
     return 0;
 }
