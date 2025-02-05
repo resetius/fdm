@@ -60,7 +60,7 @@ double benchmark_tdiag(int N, int iterations, Func1 prep, Func2 f)
 
 int main() {
     const int min_power = 4;
-    const int max_power = 18;
+    const int max_power = 21;
     const int iterations = 200;
 
     std::cout << std::setw(10) << "N"
@@ -163,6 +163,18 @@ int main() {
         );
         output(N, stats, "crkg(d)");
 
+        stats = benchmark_tdiag<double>(N, iterations,
+            [&](double *A1, double *A2, double *A3, int N) -> void* {
+                std::vector<double> tmp(2*N);
+                cyclic_reduction_kershaw_general(A2, A1, A3, tmp.data(), power, N);
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cyclic_reduction_kershaw_general_continue(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkgc(d)");
+
         stats = benchmark_tdiag<float>(N, iterations,
             [](float *A1, float *A2, float *A3, int N) -> void* {
                 return nullptr;
@@ -248,6 +260,19 @@ int main() {
             }
         );
         output(N, stats, "crkg(f)");
+
+
+        stats = benchmark_tdiag<float>(N, iterations,
+            [&](float *A1, float *A2, float *A3, int N) -> void* {
+                std::vector<float> tmp(2*N);
+                cyclic_reduction_kershaw_general(A2, A1, A3, tmp.data(), power, N);
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                cyclic_reduction_kershaw_general_continue(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkgc(f)");
     }
     return 0;
 }

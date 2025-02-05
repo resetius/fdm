@@ -240,4 +240,70 @@ void cyclic_reduction_kershaw_general(
     return;
 }
 
+// use precomputed d,e,f by cyclic_reduction_kershaw_general
+template<typename T>
+void cyclic_reduction_kershaw_general_continue(
+    T *__restrict d, T *__restrict e, T *__restrict f, T *__restrict b,
+    int q, int n)
+{
+    T alpha, gamma;
+    int j, l, n_curr, n_next, off, dst, mask;
+
+    off = 0;
+
+    n_curr = n;
+
+    e = e - 1; // e indices start from 1
+    for (l = 1; l < q; l++) {
+        n_next = (n_curr - n_curr % 2) / 2;
+
+        for (j = off + 1, dst = off + n_curr; j + 1 < off + n_curr; j += 2, dst++)
+        {
+            alpha = -e[j] / d[j - 1];
+            gamma = -f[j] / d[j + 1];
+            b[dst] = b[j] + alpha * b[j - 1] + gamma * b[j + 1];
+        }
+
+        // for n != 2^q-1
+        for (; j < off + n_curr; j += 2, dst++) {
+            alpha = -e[j] / d[j - 1];
+            b[dst] = b[j] + alpha * b[j - 1];
+        }
+
+        off += n_curr;
+        n_curr = n_next;
+    }
+
+    b[off] = b[off] / d[off];
+    n_curr = 1;
+
+    for (mask = (1 << (q - 1)) >> 1; mask > 0; mask >>= 1) {
+        if (n & mask) {
+            n_next = n_curr * 2 + 1;
+        } else {
+            n_next = n_curr * 2;
+        }
+
+        for (j = off, dst = off-n_next + 1; j < off+n_curr; j++, dst += 2) {
+            b[dst] = b[j];
+        }
+
+        j = off - n_next;
+        b[j] = (b[j] - f[j] * b[j + 1]) / d[j]; j += 2;
+
+        for (; j + 1 < off; j += 2) {
+            b[j] = (b[j] - e[j] * b[j - 1] - f[j] * b[j + 1]) / d[j];
+        }
+
+        for (; j < off; j += 2) {
+            b[j] = (b[j] - e[j] * b[j - 1]) / d[j];
+        }
+
+        off -= n_next;
+        n_curr = n_next;
+    }
+
+    return;
+}
+
 } // namespace fdm
