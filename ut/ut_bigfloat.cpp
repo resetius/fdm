@@ -8,6 +8,7 @@
 #include <type_traits>
 #include <chrono>
 #include <iostream>
+#include <complex>
 
 #include "big_float.h"
 
@@ -128,6 +129,31 @@ void test_to_double(void** s) {
     assert_double_equal(a.ToDouble(), 2.01, 1e-15);
 }
 
+template<typename T>
+int mandelbrot(std::complex<T> c) {
+    std::complex<T> z = {0.0, 0.0};
+    for (int i = 0; i < 1000; i++) {
+        if (std::abs(z) > T(2.0)) return i;
+        z = z * z;
+        z = z + c;
+    }
+    return 1000;
+}
+
+void test_mandelbrot(void** s) {
+    int iters1, iters2;
+    {
+        using T = BigFloat<4>;
+        iters1 = mandelbrot(std::complex<T>(-1.2, 0.0));
+    }
+    {
+        using T = double;
+        iters2 = mandelbrot(std::complex<T>(-1.2, 0.0));
+    }
+
+    assert_int_equal(iters1, iters2);
+}
+
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_strings),
@@ -136,6 +162,7 @@ int main() {
         cmocka_unit_test(test_long),
         cmocka_unit_test(test_from_double),
         cmocka_unit_test(test_to_double),
+        cmocka_unit_test(test_mandelbrot),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

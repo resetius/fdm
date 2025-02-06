@@ -37,6 +37,10 @@ public:
 
         val.d = number;
 
+        if (val.u == 0) {
+            return {};
+        }
+
         uint64_t bits = val.u;
         result.sign = (bits >> 63) & 0x1;
 
@@ -56,6 +60,10 @@ public:
     }
 
     double ToDouble() const {
+        if (IsZero()) {
+            return 0.0;
+        }
+
         union {
             double d;
             uint64_t u;
