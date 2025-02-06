@@ -278,7 +278,9 @@ public:
             result.mantissa[i] = temp[i + blocks];
         }
 
+        result.exponent += blocks * 32 - 1;
         result.normalize();
+        result.sign = sign != other.sign;
         return result;
     }
 

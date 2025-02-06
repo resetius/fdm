@@ -75,14 +75,37 @@ void test_mul(void** s) {
     auto a = BigFloat<2>::FromString("0.2");
     auto b = BigFloat<2>::FromString("0.3");
     auto c = a*b;
-    assert_string_equal(c.ToString().c_str(), "-3.09999999999999999999");
+    assert_string_equal(c.ToString().c_str(), "0.05999999999999999998");
+
+    a = BigFloat<2>::FromString("-0.2");
+    b = BigFloat<2>::FromString("0.3");
+    c = a*b;
+    assert_string_equal(c.ToString().c_str(), "-0.05999999999999999998");
+
+    a = BigFloat<2>::FromString("0.5");
+    b = BigFloat<2>::FromString("1.1");
+    c = a*b;
+    assert_string_equal(c.ToString().c_str(), "0.54999999999999999995");
+}
+
+void test_long(void** s) {
+    auto a = BigFloat<128>::FromString("0.2");
+    auto b = BigFloat<128>::FromString("0.3");
+    auto c = a*b;
+    assert_string_equal(c.ToString().c_str(), "0.05999999999999999999");
+
+    a = BigFloat<128>::FromString("0.0000002");
+    b = BigFloat<128>::FromString("0.3");
+    c = a*b;
+    assert_string_equal(c.ToString().c_str(), "0.00000005999999999999");
 }
 
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_strings),
         cmocka_unit_test(test_sum),
-        cmocka_unit_test(test_mul)
+        cmocka_unit_test(test_mul),
+        cmocka_unit_test(test_long),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
