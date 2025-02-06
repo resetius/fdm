@@ -187,6 +187,11 @@ public:
         return result;
     }
 
+    BigFloat& operator+=(const BigFloat& other) {
+        *this = *this + other;
+        return *this;
+    }
+
     BigFloat operator+(const BigFloat& other) {
         if (other.IsZero()) {
             return *this;
