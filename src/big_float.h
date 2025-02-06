@@ -452,12 +452,4 @@ private:
             carry = next_carry;
         }
     }
-
-    void alignExponent(int32_t diff) {
-        while (diff > 0) {
-            shiftMantissaRight();
-            exponent++;
-            diff--;
-        }
-    }
 };
