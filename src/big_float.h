@@ -12,6 +12,14 @@ public:
 
     BigFloat() = default;
 
+    BigFloat(double number)
+        : BigFloat(FromDouble(number))
+    { }
+
+    BigFloat(const std::string& str)
+        : BigFloat(FromString(str))
+    { }
+
     static BigFloat FromDouble(double number) {
         BigFloat result;
         union {
