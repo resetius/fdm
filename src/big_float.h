@@ -3,8 +3,6 @@
 #include <array>
 #include <limits>
 
-namespace fdm {
-
 template<int blocks>
 class BigFloat {
 public:
@@ -463,5 +461,3 @@ private:
         }
     }
 };
-
-}

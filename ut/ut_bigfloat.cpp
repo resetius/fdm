@@ -16,8 +16,6 @@ extern "C" {
 #include <cmocka.h>
 }
 
-using namespace fdm;
-
 void test_strings(void** s) {
     auto f = BigFloat<2>::FromString("1");
     assert_string_equal(f.ToString().c_str(), "1");
