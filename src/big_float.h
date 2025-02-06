@@ -8,7 +8,7 @@ namespace fdm {
 template<int blocks>
 class BigFloat {
 public:
-    static_assert(blocks > 0, "blocks must be greater than 0");
+    static_assert(blocks > 1, "blocks must be greater than 1");
 
     BigFloat() = default;
 
@@ -19,6 +19,14 @@ public:
     BigFloat(const std::string& str)
         : BigFloat(FromString(str))
     { }
+
+    operator std::string() const {
+        return ToString();
+    }
+
+    operator double() const {
+        return ToDouble();
+    }
 
     static BigFloat FromDouble(double number) {
         BigFloat result;
@@ -34,21 +42,38 @@ public:
 
         int exponent_raw = (bits >> 52) & 0x7FF;
         int exponent = exponent_raw - 1023;
-        uint64_t mantissa = bits & 0xFFFFFFFFFFFFF;
+        uint64_t mantissa = bits & 0xFFFFFFFFFFFFFULL;
+
         mantissa |= (1ULL << 52);
         mantissa <<= 63-52;
 
-        if constexpr(blocks == 1) {
-            result.mantissa[0] = static_cast<uint32_t>(mantissa >> 32);
-        } else {
-            result.mantissa[blocks-1] = static_cast<uint32_t>(mantissa >> 32);
-            result.mantissa[blocks-2] = static_cast<uint32_t>(mantissa);
-        }
+        result.mantissa[blocks-1] = static_cast<uint32_t>(mantissa >> 32);
+        result.mantissa[blocks-2] = static_cast<uint32_t>(mantissa);
 
-        // std::cerr << exponent << " " << mantissa << "\n";
         result.exponent = exponent - (blocks*32-1);
 
         return result;
+    }
+
+    double ToDouble() const {
+        union {
+            double d;
+            uint64_t u;
+        } val;
+
+        val.u = 0;
+
+        int exponent_raw = exponent + (blocks*32-1) + 1023;
+
+        val.u |= static_cast<uint64_t>(exponent_raw) << 52;
+        uint64_t mantissa_raw = mantissa[blocks-1];
+        mantissa_raw <<= 32;
+        mantissa_raw |= mantissa[blocks-2];
+        mantissa_raw >>= 63-52;
+        val.u |= mantissa_raw & 0xFFFFFFFFFFFFFULL;
+        val.u |= static_cast<uint64_t>(sign) << 63;
+
+        return val.d;
     }
 
     static BigFloat FromString(const std::string& str) {
@@ -338,12 +363,8 @@ private:
         uint64_t value = std::stoll(intPart);
         // TODO: handle overflow
 
-        if constexpr(blocks == 1) {
-            result.mantissa[0] = static_cast<uint32_t>(value);
-        } else {
-            result.mantissa[0] = static_cast<uint32_t>(value & 0xFFFFFFFF);
-            result.mantissa[1] = static_cast<uint32_t>(value >> 32);
-        }
+        result.mantissa[0] = static_cast<uint32_t>(value & 0xFFFFFFFF);
+        result.mantissa[1] = static_cast<uint32_t>(value >> 32);
 
         result.normalize();
         return result;
