@@ -131,6 +131,12 @@ public:
             return other;
         }
 
+        if (sign != other.sign) {
+            BigFloat temp = other;
+            temp.sign = !temp.sign;
+            return *this - temp;
+        }
+
         BigFloat result;
         auto exp_diff = exponent - other.exponent;
 
@@ -158,12 +164,79 @@ public:
         }
 
         result.exponent = a.exponent;
+        result.sign = sign;
 
         if (carry) {
             shiftMantissaRight(result.mantissa);
             result.mantissa[blocks-1] |= (carry << 31);
             result.exponent++;
         }
+
+        result.normalize();
+        return result;
+    }
+
+    BigFloat operator-(const BigFloat& other) {
+        if (other.IsZero()) {
+            return *this;
+        }
+        if (IsZero()) {
+            BigFloat result = other;
+            result.sign = !result.sign;
+            return result;
+        }
+
+        if (sign != other.sign) {
+            BigFloat temp = other;
+            temp.sign = !temp.sign;
+            return *this + temp;
+        }
+
+        BigFloat result;
+        auto exp_diff = exponent - other.exponent;
+
+        BigFloat a = *this;
+        BigFloat b = other;
+
+        if (exp_diff > 0) {
+            for (int i = 0; i < exp_diff; ++i) {
+                shiftMantissaRight(b.mantissa);
+            }
+            b.exponent += exp_diff;
+        } else if (exp_diff < 0) {
+            for (int i = 0; i < -exp_diff; ++i) {
+                shiftMantissaRight(a.mantissa);
+            }
+            a.exponent -= exp_diff;
+        }
+
+        bool swapped = false;
+        for (int i = blocks - 1; i >= 0; --i) {
+            if (a.mantissa[i] < b.mantissa[i]) {
+                std::swap(a, b);
+                swapped = true;
+                break;
+            }
+            if (a.mantissa[i] > b.mantissa[i]) {
+                break;
+            }
+        }
+
+        int64_t borrow = 0;
+        for (size_t i = 0; i < blocks; ++i) {
+            int64_t diff = static_cast<int64_t>(a.mantissa[i]) -
+                        static_cast<int64_t>(b.mantissa[i]) - borrow;
+            if (diff < 0) {
+                diff += (1ULL << 32);
+                borrow = 1;
+            } else {
+                borrow = 0;
+            }
+            result.mantissa[i] = static_cast<uint32_t>(diff);
+        }
+
+        result.exponent = a.exponent;
+        result.sign = swapped ? !sign : sign;
 
         result.normalize();
         return result;

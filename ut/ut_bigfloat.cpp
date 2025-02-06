@@ -44,45 +44,45 @@ void test_strings(void** s) {
 }
 
 void test_sum(void** s) {
-    auto a = BigFloat<64>::FromString("0.2");
-    auto b = BigFloat<64>::FromString("0.3");
+    auto a = BigFloat<2>::FromString("0.2");
+    auto b = BigFloat<2>::FromString("0.3");
     auto c = a+b;
-    assert_string_equal(c.ToString().c_str(), "0.49999999999999999999");
+    assert_string_equal(c.ToString().c_str(), "0.49999999999999999994");
 
-    a = BigFloat<64>::FromString("1.2");
-    b = BigFloat<64>::FromString("4.3");
+    a = BigFloat<2>::FromString("1.2");
+    b = BigFloat<2>::FromString("4.3");
     c = a+b;
-    assert_string_equal(c.ToString().c_str(), "5.49999999999999999999");
+    assert_string_equal(c.ToString().c_str(), "5.49999999999999999956");
 
-
-    a = BigFloat<64>::FromString("-1.2");
-    b = BigFloat<64>::FromString("4.3");
+    a = BigFloat<2>::FromString("-1.2");
+    b = BigFloat<2>::FromString("4.3");
     c = b+a;
-    assert_string_equal(c.ToString().c_str(), "3.1");
+    assert_string_equal(c.ToString().c_str(), "3.09999999999999999991");
 
-    //auto f = BigFloat<64>::FromString("0.000000012");
-    //std::cerr << f.ToString() << "\n";
+    a = BigFloat<2>::FromString("1.2");
+    b = BigFloat<2>::FromString("4.3");
+    c = b-a;
+    assert_string_equal(c.ToString().c_str(), "3.09999999999999999991");
 
-    //f = BigFloat<64>::FromString("0.00000001");
-    //std::cerr << f.ToString() << "\n";
+    a = BigFloat<2>::FromString("1.2");
+    b = BigFloat<2>::FromString("4.3");
+    c = a-b;
+    assert_string_equal(c.ToString().c_str(), "-3.09999999999999999991");
 
-    //f = BigFloat<64>::FromString("0.3");
-    //std::cerr << f.ToString() << "\n";
+}
 
-    //f = BigFloat<64>::FromString("0.000000012");
-    //std::cerr << f.ToString() << "\n";
-
-    //auto f = BigFloat<64>::FromString("1.01");
-    //std::cerr << "1:" << f.ToString() << "\n";
-
-    //c = a*b;
-    //std::cerr << c.ToString() << "\n";
+void test_mul(void** s) {
+    auto a = BigFloat<2>::FromString("0.2");
+    auto b = BigFloat<2>::FromString("0.3");
+    auto c = a*b;
+    assert_string_equal(c.ToString().c_str(), "-3.09999999999999999999");
 }
 
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_strings),
-        cmocka_unit_test(test_sum)
+        cmocka_unit_test(test_sum),
+        cmocka_unit_test(test_mul)
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
