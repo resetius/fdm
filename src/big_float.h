@@ -155,8 +155,8 @@ public:
             auto value = mantissa;
             uint64_t carry = 0;
 
-            for (int i = 0; i < blocks * 32 - std::abs(exponent); i++) {
-                shiftMantissaLeft(value);
+            if (blocks * 32 - std::abs(exponent) > 0) {
+                shiftMantissaLeft(value, blocks * 32 - std::abs(exponent));
             }
 
             int32_t effectiveExp = exponent + (blocks*32-1);
@@ -407,31 +407,53 @@ private:
     }
 
     void normalize() {
-        while (!isNormalized()) {
-            shiftMantissaLeft(mantissa);
-            exponent--;
+        if (isNormalized()) {
+            return;
         }
+        int shift = 0;
+        for (int i = blocks - 1; i >= 0; --i) {
+            if (mantissa[i] == 0) {
+                shift += 32;
+            } else {
+                shift += __builtin_clz(mantissa[i]);
+                break;
+            }
+        }
+
+        exponent -= shift;
+        shiftMantissaLeft(mantissa, shift);
     }
 
     bool isNormalized() const {
         return IsZero() || (mantissa.back() & (1U << 31)) != 0;
     }
 
-    void shiftMantissaLeft() {
-        shiftMantissaLeft(mantissa);
-    }
-
-    void shiftMantissaLeft(std::array<uint32_t, blocks>& mantissa) const {
+    void shiftMantissaLeft(std::array<uint32_t, blocks>& mantissa, int shift = 1) const {
         uint32_t carry = 0;
-        for (size_t i = 0; i < blocks; ++i) {
-            uint32_t next_carry = (mantissa[i] & (1U << 31)) ? 1 : 0;
-            mantissa[i] = (mantissa[i] << 1) | carry;
+        int blockShift = shift / 32;
+        int bitShift = shift % 32;
+
+        if (blockShift > 0) {
+            // blockShift = 1
+            // [0, 1, 2, 3, 4] -> [1, 2, 3, 4, 0]
+            //  ^  ^  ^  ^  ^
+            //  4  3  2  1  0
+            int i = blocks - 1;
+            for (i = blocks - 1; i >= blockShift; --i) {
+                mantissa[i] = mantissa[i - blockShift];
+            }
+            for (; i >= 0; --i) {
+                mantissa[i] = 0;
+            }
+        }
+
+        uint32_t mask = (1U << bitShift) - 1;
+
+        for (size_t i = blockShift; i < blocks; ++i) {
+            uint32_t next_carry = (mantissa[i] & (mask << (32 - bitShift))) >> (32 - bitShift);
+            mantissa[i] = (mantissa[i] << bitShift) | carry;
             carry = next_carry;
         }
-    }
-
-    void shiftMantissaRight() {
-        shiftMantissaRight(mantissa);
     }
 
     void shiftMantissaRight(std::array<uint32_t, blocks>& mantissa, int shift = 1) const {
@@ -457,7 +479,7 @@ private:
 
         for (int i = blocks - blockShift - 1; i >= 0; --i) {
             uint32_t next_carry = mantissa[i] & mask;
-            mantissa[i] = (mantissa[i] >> shift) | (carry << (32 - shift));
+            mantissa[i] = (mantissa[i] >> bitShift) | (carry << (32 - bitShift));
             carry = next_carry;
         }
     }
