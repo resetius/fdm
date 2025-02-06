@@ -12,6 +12,37 @@ public:
 
     BigFloat() = default;
 
+    static BigFloat FromDouble(double number) {
+        BigFloat result;
+        union {
+            double d;
+            uint64_t u;
+        } val;
+
+        val.d = number;
+
+        uint64_t bits = val.u;
+        result.sign = (bits >> 63) & 0x1;
+
+        int exponent_raw = (bits >> 52) & 0x7FF;
+        int exponent = exponent_raw - 1023;
+        uint64_t mantissa = bits & 0xFFFFFFFFFFFFF;
+        mantissa |= (1ULL << 52);
+        mantissa <<= 63-52;
+
+        if constexpr(blocks == 1) {
+            result.mantissa[0] = static_cast<uint32_t>(mantissa >> 32);
+        } else {
+            result.mantissa[blocks-1] = static_cast<uint32_t>(mantissa >> 32);
+            result.mantissa[blocks-2] = static_cast<uint32_t>(mantissa);
+        }
+
+        // std::cerr << exponent << " " << mantissa << "\n";
+        result.exponent = exponent - (blocks*32-1);
+
+        return result;
+    }
+
     static BigFloat FromString(const std::string& str) {
         BigFloat result;
 
