@@ -319,7 +319,7 @@ public:
 
         if (carry) {
             shiftMantissaRight(result.mantissa);
-            result.mantissa[blocks-1] |= (carry << 31);
+            result.mantissa[blocks-1] |= (carry << (blockBits-1));
             result.exponent++;
         }
 
@@ -425,7 +425,7 @@ public:
             result.mantissa[i] = temp[i + blocks];
         }
 
-        result.exponent += blocks * 32 - 1;
+        result.exponent += blocks * blockBits - 1;
         result.normalize();
         result.sign = sign != other.sign;
         return result;
@@ -439,6 +439,7 @@ private:
     std::array<uint32_t, blocks> mantissa = {0};
     int32_t exponent = 0;
     bool sign = false;
+    static constexpr int blockBits = sizeof(uint32_t) * 8;
 
     static BigFloat IntFromString(const std::string& intPart) {
         BigFloat result;
@@ -495,7 +496,7 @@ private:
         int shift = 0;
         for (int i = blocks - 1; i >= 0; --i) {
             if (mantissa[i] == 0) {
-                shift += 32;
+                shift += blockBits;
             } else {
                 shift += __builtin_clz(mantissa[i]);
                 break;
@@ -507,13 +508,13 @@ private:
     }
 
     bool isNormalized() const {
-        return IsZero() || (mantissa.back() & (1U << 31)) != 0;
+        return IsZero() || (mantissa.back() & (1U << (blockBits-1))) != 0;
     }
 
     void shiftMantissaLeft(std::array<uint32_t, blocks>& mantissa, int shift = 1) const {
         uint32_t carry = 0;
-        int blockShift = shift / 32;
-        int bitShift = shift % 32;
+        int blockShift = shift / blockBits;
+        int bitShift = shift % blockBits;
 
         if (blockShift > 0) {
             // blockShift = 1
@@ -532,7 +533,7 @@ private:
         uint32_t mask = (1U << bitShift) - 1;
 
         for (size_t i = blockShift; i < blocks; ++i) {
-            uint32_t next_carry = (mantissa[i] & (mask << (32 - bitShift))) >> (32 - bitShift);
+            uint32_t next_carry = (mantissa[i] & (mask << (blockBits - bitShift))) >> (blockBits - bitShift);
             mantissa[i] = (mantissa[i] << bitShift) | carry;
             carry = next_carry;
         }
@@ -540,8 +541,8 @@ private:
 
     void shiftMantissaRight(std::array<uint32_t, blocks>& mantissa, int shift = 1) const {
         uint32_t carry = 0;
-        int blockShift = shift / 32;
-        int bitShift = shift % 32;
+        int blockShift = shift / blockBits;
+        int bitShift = shift % blockBits;
 
         if (blockShift > 0) {
             // blockShift = 1
@@ -561,22 +562,8 @@ private:
 
         for (int i = blocks - blockShift - 1; i >= 0; --i) {
             uint32_t next_carry = mantissa[i] & mask;
-            mantissa[i] = (mantissa[i] >> bitShift) | (carry << (32 - bitShift));
+            mantissa[i] = (mantissa[i] >> bitShift) | (carry << (blockBits - bitShift));
             carry = next_carry;
         }
     }
 };
-
-namespace std {
-
-template<int blocks>
-inline bool isnan(const ::BigFloat<blocks>& a) noexcept {
-    return false;
-}
-
-template<int blocks>
-inline bool isinf(const ::BigFloat<blocks>& a) noexcept {
-    return false;
-}
-
-} // std
