@@ -36,16 +36,50 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 https://github.com/resetius/fdm/blob/master/src/big_float.h
 */
 
+/*
+M1 benchmark for 32bit block size
+
+sum BigFloat<2> : 0.0257841
+sum BigFloat<4> : 0.0213832
+sum BigFloat<8> : 0.0296356
+sum BigFloat<16> : 0.0519466
+sum float : 4.2e-08
+sum double : 1.67e-07
+mul BigFloat<2> : 0.0107144
+mul BigFloat<4> : 0.0233051
+mul BigFloat<8> : 0.0918952
+mul BigFloat<16> : 0.183747
+mul float : 0
+mul double : 0
+
+64bit block size
+sum BigFloat<2> : 0.0190474
+sum BigFloat<4> : 0.0202527
+sum BigFloat<8> : 0.0277267
+sum BigFloat<16> : 0.0608131
+sum float : 0
+sum double : 4.2e-08
+mul BigFloat<2> : 0.0107325
+mul BigFloat<4> : 0.0219723
+mul BigFloat<8> : 0.0752863
+mul BigFloat<16> : 0.210909
+mul float : 0
+mul double : 0
+
+*/
+
 #include <array>
 #include <limits>
 #include <string>
 #include <iostream>
 
-template<int blocks>
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
+
+template<int blocks, typename BlockType = uint64_t>
 class BigFloat {
 public:
-    static_assert(blocks > 1, "blocks must be greater than 1");
-
     BigFloat() = default;
 
     BigFloat(double number)
@@ -131,10 +165,14 @@ public:
         mantissa |= (1ULL << 52);
         mantissa <<= 63-52;
 
-        result.mantissa[blocks-1] = static_cast<uint32_t>(mantissa >> 32);
-        result.mantissa[blocks-2] = static_cast<uint32_t>(mantissa);
+        if constexpr(std::is_same_v<BlockType, uint64_t>) {
+            result.mantissa[blocks-1] = mantissa;
+        } else {
+            result.mantissa[blocks-1] = static_cast<uint32_t>(mantissa >> 32);
+            result.mantissa[blocks-2] = static_cast<uint32_t>(mantissa);
+        }
 
-        result.exponent = exponent - (blocks*32-1);
+        result.exponent = exponent - (blocks*blockBits-1);
 
         return result;
     }
@@ -151,12 +189,17 @@ public:
 
         val.u = 0;
 
-        int exponent_raw = exponent + (blocks*32-1) + 1023;
+        int exponent_raw = exponent + (blocks*blockBits-1) + 1023;
 
         val.u |= static_cast<uint64_t>(exponent_raw) << 52;
-        uint64_t mantissa_raw = mantissa[blocks-1];
-        mantissa_raw <<= 32;
-        mantissa_raw |= mantissa[blocks-2];
+        uint64_t mantissa_raw;
+        if constexpr(std::is_same_v<BlockType,uint32_t>) {
+            mantissa_raw = mantissa[blocks-1];
+            mantissa_raw <<= 32;
+            mantissa_raw |= mantissa[blocks-2];
+        } else {
+            mantissa_raw = mantissa[blocks-1];
+        }
         mantissa_raw >>= 63-52;
         val.u |= mantissa_raw & 0xFFFFFFFFFFFFFULL;
         val.u |= static_cast<uint64_t>(sign) << 63;
@@ -212,7 +255,7 @@ public:
         std::string intPart = "";
         std::string fracPart = "";
 
-        if (exponent >= - (blocks * 32 - 1)) {
+        if (exponent >= - (blocks * blockBits - 1)) {
             // integer part
             auto value = mantissa;
             shiftMantissaRight(value, std::abs(exponent));
@@ -235,25 +278,26 @@ public:
 
         if (1) {
             auto value = mantissa;
-            uint64_t carry = 0;
+            WideType carry = 0;
 
-            if (blocks * 32 - std::abs(exponent) > 0) {
-                shiftMantissaLeft(value, blocks * 32 - std::abs(exponent));
+            if (blocks * blockBits - std::abs(exponent) > 0) {
+                shiftMantissaLeft(value, blocks * blockBits - std::abs(exponent));
             }
 
-            int32_t effectiveExp = exponent + (blocks*32-1);
+            int32_t effectiveExp = exponent + (blocks*blockBits-1);
 
-            while (value != std::array<uint32_t,blocks>{} && fracPart.size() < 20) {
+            while (value != std::array<BlockType,blocks>{} && fracPart.size() < 18) {
                 carry = 0;
+
                 for (size_t i = 0; i < value.size(); i++) {
-                    uint64_t current = static_cast<uint64_t>(value[i]) * 10ULL + carry;
-                    value[i] = static_cast<uint32_t>(current);
-                    carry = current >> 32;
+                    WideType current = static_cast<WideType>(value[i]) * 10ULL + carry;
+                    value[i] = static_cast<BlockType>(current);
+                    carry = current >> blockBits;
                 }
 
                 for (int i = 0; i < 4 && effectiveExp < -1; ++i) {
                     shiftMantissaRight(value);
-                    value.back() |= (carry & 1) << 31;
+                    value.back() |= (carry & 1) << (blockBits - 1);
                     effectiveExp++;
                     carry >>= 1;
                 }
@@ -306,12 +350,13 @@ public:
             a.exponent -= exp_diff;
         }
 
-        uint64_t carry = 0;
+        WideType carry = 0;
+
         for (size_t i = 0; i < blocks; ++i) {
-            uint64_t sum = static_cast<uint64_t>(a.mantissa[i]) +
-                        static_cast<uint64_t>(b.mantissa[i]) + carry;
-            result.mantissa[i] = static_cast<uint32_t>(sum);
-            carry = sum >> 32;
+            WideType sum = static_cast<WideType>(a.mantissa[i]) +
+                        static_cast<WideType>(b.mantissa[i]) + carry;
+            result.mantissa[i] = static_cast<BlockType>(sum);
+            carry = sum >> blockBits;
         }
 
         result.exponent = a.exponent;
@@ -369,17 +414,17 @@ public:
             }
         }
 
-        int64_t borrow = 0;
+        SignedWideType borrow = 0;
         for (size_t i = 0; i < blocks; ++i) {
-            int64_t diff = static_cast<int64_t>(a.mantissa[i]) -
-                        static_cast<int64_t>(b.mantissa[i]) - borrow;
+            SignedWideType diff = static_cast<SignedWideType>(a.mantissa[i]) -
+                        static_cast<SignedWideType>(b.mantissa[i]) - borrow;
             if (diff < 0) {
                 diff += (1ULL << 32);
                 borrow = 1;
             } else {
                 borrow = 0;
             }
-            result.mantissa[i] = static_cast<uint32_t>(diff);
+            result.mantissa[i] = static_cast<BlockType>(diff);
         }
 
         result.exponent = a.exponent;
@@ -398,26 +443,26 @@ public:
 
         result.exponent = exponent + other.exponent + 1;
 
-        std::array<uint32_t, blocks * 2> temp{0};
+        std::array<BlockType, blocks * 2> temp{0};
 
         for (size_t i = 0; i < blocks; ++i) {
-            uint64_t carry = 0;
+            WideType carry = 0;
 
             for (size_t j = 0; j < blocks; ++j) {
                 size_t pos = i + j;
 
-                uint64_t prod = static_cast<uint64_t>(mantissa[i]) *
-                            static_cast<uint64_t>(other.mantissa[j]) +
-                            static_cast<uint64_t>(temp[pos]) +
+                WideType prod = static_cast<WideType>(mantissa[i]) *
+                            static_cast<WideType>(other.mantissa[j]) +
+                            static_cast<WideType>(temp[pos]) +
                             carry;
 
-                temp[pos] = static_cast<uint32_t>(prod);
+                temp[pos] = static_cast<BlockType>(prod);
 
-                carry = prod >> 32;
+                carry = prod >> blockBits;
             }
 
             if (carry && i + blocks < temp.size()) {
-                temp[i + blocks] = static_cast<uint32_t>(carry);
+                temp[i + blocks] = static_cast<BlockType>(carry);
             }
         }
 
@@ -432,14 +477,19 @@ public:
     }
 
     bool IsZero() const {
-        return mantissa == std::array<uint32_t, blocks>{0};
+        return mantissa == std::array<BlockType, blocks>{0};
     }
 
 private:
-    std::array<uint32_t, blocks> mantissa = {0};
+    using WideType = std::conditional_t<std::is_same_v<BlockType, uint64_t>, unsigned __int128, uint64_t>;
+    using SignedWideType = std::conditional_t<std::is_same_v<BlockType, uint64_t>, unsigned __int128, uint64_t>;
+
+    std::array<BlockType, blocks> mantissa = {0};
     int32_t exponent = 0;
     bool sign = false;
-    static constexpr int blockBits = sizeof(uint32_t) * 8;
+    static constexpr int blockBits = sizeof(BlockType) * 8;
+    static_assert(std::is_same_v<BlockType,uint64_t> || blocks > 1, "blocks must be greater than 1");
+    static_assert(std::is_same_v<BlockType,uint64_t> || std::is_same_v<BlockType,uint32_t>);
 
     static BigFloat IntFromString(const std::string& intPart) {
         BigFloat result;
@@ -447,8 +497,12 @@ private:
         uint64_t value = std::stoll(intPart);
         // TODO: handle overflow
 
-        result.mantissa[0] = static_cast<uint32_t>(value & 0xFFFFFFFF);
-        result.mantissa[1] = static_cast<uint32_t>(value >> 32);
+        if constexpr(std::is_same_v<BlockType,uint32_t>) {
+            result.mantissa[0] = static_cast<uint32_t>(value & 0xFFFFFFFF);
+            result.mantissa[1] = static_cast<uint32_t>(value >> 32);
+        } else {
+            result.mantissa[0] = static_cast<uint32_t>(value);
+        }
 
         result.normalize();
         return result;
@@ -458,17 +512,17 @@ private:
         BigFloat result;
 
         int mult = 10;
-        result.exponent = - (int)blocks*32;
+        result.exponent = - blocks*blockBits;
         for (size_t i = 0; i < fracPart.size()-1; i++) {
             mult *= 10;
         }
         // todo:
-        uint64_t frac = std::stoll(fracPart) & (0xffffffffU);
+        WideType frac = std::stoll(fracPart);
         int blockId = blocks-1;
-        int bitId = 31;
+        int bitId = blockBits-1;
         frac *= 2;
         while (frac != 0) {
-            uint32_t bit = frac >= mult;
+            BlockType bit = frac >= mult;
             if (bit) {
                 frac -= mult;
             }
@@ -476,7 +530,7 @@ private:
             result.mantissa[blockId] |= (bit << bitId);
             bitId -= 1;
             if (bitId < 0) {
-                bitId = 31;
+                bitId = blockBits - 1;
                 blockId --;
             }
             if (blockId < 0) {
@@ -498,7 +552,11 @@ private:
             if (mantissa[i] == 0) {
                 shift += blockBits;
             } else {
-                shift += __builtin_clz(mantissa[i]);
+                if constexpr(std::is_same_v<BlockType, uint32_t>) {
+                    shift += __builtin_clz(mantissa[i]);
+                } else {
+                    shift += __builtin_clzll(mantissa[i]);
+                }
                 break;
             }
         }
@@ -508,11 +566,11 @@ private:
     }
 
     bool isNormalized() const {
-        return IsZero() || (mantissa.back() & (1U << (blockBits-1))) != 0;
+        return IsZero() || (mantissa.back() & ((BlockType)1U << (blockBits-1))) != 0;
     }
 
-    void shiftMantissaLeft(std::array<uint32_t, blocks>& mantissa, int shift = 1) const {
-        uint32_t carry = 0;
+    void shiftMantissaLeft(std::array<BlockType, blocks>& mantissa, int shift = 1) const {
+        BlockType carry = 0;
         int blockShift = shift / blockBits;
         int bitShift = shift % blockBits;
 
@@ -530,17 +588,17 @@ private:
             }
         }
 
-        uint32_t mask = (1U << bitShift) - 1;
+        BlockType mask = (1ULL << bitShift) - 1ULL;
 
         for (size_t i = blockShift; i < blocks; ++i) {
-            uint32_t next_carry = (mantissa[i] & (mask << (blockBits - bitShift))) >> (blockBits - bitShift);
+            BlockType next_carry = (mantissa[i] & (mask << (blockBits - bitShift))) >> (blockBits - bitShift);
             mantissa[i] = (mantissa[i] << bitShift) | carry;
             carry = next_carry;
         }
     }
 
-    void shiftMantissaRight(std::array<uint32_t, blocks>& mantissa, int shift = 1) const {
-        uint32_t carry = 0;
+    void shiftMantissaRight(std::array<BlockType, blocks>& mantissa, int shift = 1) const {
+        BlockType carry = 0;
         int blockShift = shift / blockBits;
         int bitShift = shift % blockBits;
 
@@ -558,10 +616,10 @@ private:
             }
         }
 
-        uint32_t mask = (1U << bitShift) - 1;
+        BlockType mask = (1ULL << bitShift) - 1ULL;
 
         for (int i = blocks - blockShift - 1; i >= 0; --i) {
-            uint32_t next_carry = mantissa[i] & mask;
+            BlockType next_carry = mantissa[i] & mask;
             mantissa[i] = (mantissa[i] >> bitShift) | (carry << (blockBits - bitShift));
             carry = next_carry;
         }
