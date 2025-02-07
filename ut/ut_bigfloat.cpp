@@ -128,6 +128,36 @@ void test_to_double(void** s) {
     assert_double_equal(a.ToDouble(), 2.01, 1e-15);
 }
 
+void test_comparison(void** s) {
+    auto a = BigFloat<2>::FromDouble(0.2);
+    auto b = BigFloat<2>::FromDouble(0.3);
+    assert_true(a < b);
+    assert_true(b > a);
+    assert_false(a > b);
+    assert_false(b < a);
+
+    a = BigFloat<2>::FromDouble(0.2);
+    b = BigFloat<2>::FromDouble(0.2);
+    assert_false(a < b);
+    assert_false(b > a);
+    assert_false(a > b);
+    assert_false(b < a);
+
+    a = BigFloat<2>::FromDouble(-0.2);
+    b = BigFloat<2>::FromDouble(0.2);
+    assert_true(a < b);
+    assert_true(b > a);
+    assert_false(a > b);
+    assert_false(b < a);
+
+    a = BigFloat<2>::FromDouble(-0.2);
+    b = BigFloat<2>::FromDouble(-0.3);
+    assert_false(a < b);
+    assert_false(b > a);
+    assert_true(a > b);
+    assert_true(b < a);
+}
+
 template<typename T>
 int mandelbrot(T ca, T cb) {
     T za = 0.0;
@@ -193,6 +223,7 @@ int main() {
         cmocka_unit_test(test_long),
         cmocka_unit_test(test_from_double),
         cmocka_unit_test(test_to_double),
+        cmocka_unit_test(test_comparison),
         cmocka_unit_test(test_mandelbrot),
         cmocka_unit_test(test_eps),
     };
