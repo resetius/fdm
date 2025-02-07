@@ -215,6 +215,54 @@ void test_eps(void** s) {
     }
 }
 
+template<typename T>
+void bench_sum(const std::string& name)
+{
+    T a = 0.2;
+    T b = 0.3;
+    T c = 0.0;
+
+    auto t1 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 1000000; i++) {
+        c = c + a + b;
+    }
+    auto t2 = std::chrono::steady_clock::now();
+    auto interval = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+    std::cerr << name << " : " << interval.count() << std::endl;
+}
+
+template<typename T>
+void bench_mul(const std::string& name)
+{
+    T a = 0.2;
+    T b = 0.3;
+    T c = 0.0;
+
+    auto t1 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 1000000; i++) {
+        c = c + a * b;
+    }
+    auto t2 = std::chrono::steady_clock::now();
+    auto interval = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+    std::cerr << name << " : " << interval.count() << std::endl;
+}
+
+void test_microbench(void**) {
+    bench_sum<BigFloat<2>>("sum BigFloat<2>");
+    bench_sum<BigFloat<4>>("sum BigFloat<4>");
+    bench_sum<BigFloat<8>>("sum BigFloat<8>");
+    bench_sum<BigFloat<16>>("sum BigFloat<16>");
+    bench_sum<float>("sum float");
+    bench_sum<double>("sum double");
+
+    bench_mul<BigFloat<2>>("mul BigFloat<2>");
+    bench_mul<BigFloat<4>>("mul BigFloat<4>");
+    bench_mul<BigFloat<8>>("mul BigFloat<8>");
+    bench_mul<BigFloat<16>>("mul BigFloat<16>");
+    bench_mul<float>("mul float");
+    bench_mul<double>("mul double");
+}
+
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_strings),
@@ -226,6 +274,7 @@ int main() {
         cmocka_unit_test(test_comparison),
         cmocka_unit_test(test_mandelbrot),
         cmocka_unit_test(test_eps),
+        cmocka_unit_test(test_microbench),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
