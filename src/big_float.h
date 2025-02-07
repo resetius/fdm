@@ -419,11 +419,12 @@ public:
             SignedWideType diff = static_cast<SignedWideType>(a.mantissa[i]) -
                         static_cast<SignedWideType>(b.mantissa[i]) - borrow;
             if (diff < 0) {
-                diff += (1ULL << 32);
+                diff += (WideType(1ULL) << blockBits);
                 borrow = 1;
             } else {
                 borrow = 0;
             }
+
             result.mantissa[i] = static_cast<BlockType>(diff);
         }
 
@@ -461,9 +462,7 @@ public:
                 carry = prod >> blockBits;
             }
 
-            if (carry && i + blocks < temp.size()) {
-                temp[i + blocks] = static_cast<BlockType>(carry);
-            }
+            temp[i + blocks] += static_cast<BlockType>(carry);
         }
 
         normalize(temp, result.exponent);
@@ -475,13 +474,9 @@ public:
         return result;
     }
 
-    BigFloat operator/(const BigFloat& other) {
-        return (*this) * other.Inv();
-    }
-
 private:
     using WideType = std::conditional_t<std::is_same_v<BlockType, uint64_t>, unsigned __int128, uint64_t>;
-    using SignedWideType = std::conditional_t<std::is_same_v<BlockType, uint64_t>, unsigned __int128, uint64_t>;
+    using SignedWideType = std::conditional_t<std::is_same_v<BlockType, uint64_t>, __int128, int64_t>;
 
     std::array<BlockType, blocks> mantissa = {0};
     int32_t exponent = 0;
@@ -643,4 +638,6 @@ private:
             carry = next_carry;
         }
     }
+
+    friend void test_precision(void**);
 };

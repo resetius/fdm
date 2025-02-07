@@ -96,6 +96,7 @@ void test_mul(void** s) {
     assert_string_equal(c.ToString().c_str(), "0.549999999999999999");
 }
 
+/*
 template<typename T>
 void test_div(void** s) {
     auto a = BigFloat<2,T>::FromString("0.5");
@@ -126,6 +127,7 @@ void test_div(void** s) {
     c = a/b;
     assert_string_equal(c.ToString().c_str(), "0.549999999999999999");
 }
+*/
 
 template<typename T>
 void test_long(void** s) {
@@ -309,6 +311,39 @@ void test_microbench(void**) {
     bench_mul<double>("mul double");
 }
 
+void test_precision(void**)
+{
+    // AdditionPrecision
+    {
+        BigFloat<2,uint32_t> a, b;
+        a.mantissa[1] = 1; // 2^32
+        a.exponent = 0;
+        a.normalize();
+
+        b.mantissa[0] = 1; // 1
+        b.exponent = -31;  // Сдвинем вправо
+        b.normalize();
+
+        BigFloat<2,uint32_t> sum = a + b;
+        assert_true(sum.mantissa[1] == 1U<<31 && sum.mantissa[0] == 1);
+    }
+    // BorrowHandling
+    {
+        BigFloat<2,uint32_t> a, b;
+        a.mantissa[1] = 1; // 2^32
+        a.exponent = 0;
+        a.normalize();
+
+        b.mantissa[0] = 0xFFFFFFFF;
+        b.exponent = 0;
+        b.normalize();
+
+        BigFloat<2,uint32_t> diff = a - b;
+
+        assert_true(diff.mantissa[1] == 1U<<31 && diff.mantissa[0] == 0);
+    }
+}
+
 #define my_unit_test2(f, a, b) \
     { #f "(" #a ")", f<a>, NULL, NULL, NULL }, \
     { #f "(" #b ")", f<b>, NULL, NULL, NULL }
@@ -328,6 +363,7 @@ int main() {
         my_unit(test_mandelbrot),
         my_unit(test_eps),
         my_unit(test_microbench),
+        cmocka_unit_test(test_precision),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
