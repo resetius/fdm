@@ -1,3 +1,5 @@
+#include "big_float.h"
+
 #include <stdarg.h>
 #include <stddef.h>
 #include <setjmp.h>
@@ -8,9 +10,8 @@
 #include <type_traits>
 #include <chrono>
 #include <iostream>
-#include <complex>
 
-#include "big_float.h"
+#include <complex>
 
 extern "C" {
 #include <cmocka.h>
@@ -128,28 +129,60 @@ void test_to_double(void** s) {
 }
 
 template<typename T>
-int mandelbrot(std::complex<T> c) {
-    std::complex<T> z = {0.0, 0.0};
+int mandelbrot(T ca, T cb) {
+    T za = 0.0;
+    T zb = 0.0;
     for (int i = 0; i < 1000; i++) {
-        if (std::abs(z) > T(2.0)) return i;
-        z = z * z;
-        z = z + c;
+        if ((za*za + zb*zb) > T(4.0)) {
+            return i;
+        }
+        T za_new = za*za - zb*zb + ca;
+        zb = T(2.0)*za*zb + cb;
+        za = za_new;
     }
     return 1000;
 }
 
 void test_mandelbrot(void** s) {
-    int iters1, iters2;
+    int iters1 = 0, iters2 = 0;
     {
         using T = BigFloat<4>;
-        iters1 = mandelbrot(std::complex<T>(-1.2, 0.0));
+        iters1 = mandelbrot<T>(-1.2, 0.0);
     }
     {
         using T = double;
-        iters2 = mandelbrot(std::complex<T>(-1.2, 0.0));
+        iters2 = mandelbrot<T>(-1.2, 0.0);
     }
 
     assert_int_equal(iters1, iters2);
+}
+
+void test_eps(void** s) {
+    {
+        auto one = BigFloat<2>::FromDouble(1.0);
+        auto eps = BigFloat<2>::FromDouble(1.0);
+
+        int i = 0;
+        while (one + eps > one) {
+            eps = BigFloat<2>::FromDouble(0.5) * eps;
+            i++;
+        }
+
+        assert_int_equal(i, 64);
+    }
+
+    {
+        auto one = BigFloat<4>::FromDouble(1.0);
+        auto eps = BigFloat<4>::FromDouble(1.0);
+
+        int i = 0;
+        while (one + eps > one) {
+            eps = BigFloat<4>::FromDouble(0.5) * eps;
+            i++;
+        }
+
+        assert_int_equal(i, 128);
+    }
 }
 
 int main() {
@@ -161,6 +194,7 @@ int main() {
         cmocka_unit_test(test_from_double),
         cmocka_unit_test(test_to_double),
         cmocka_unit_test(test_mandelbrot),
+        cmocka_unit_test(test_eps),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

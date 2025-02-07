@@ -2,6 +2,8 @@
 
 #include <array>
 #include <limits>
+#include <string>
+#include <iostream>
 
 template<int blocks>
 class BigFloat {
@@ -18,12 +20,56 @@ public:
         : BigFloat(FromString(str))
     { }
 
-    operator std::string() const {
-        return ToString();
+    //operator std::string() const {
+    //    return ToString();
+    //}
+
+    //operator double() const {
+    //    return ToDouble();
+    //}
+
+    BigFloat operator-() const {
+        BigFloat result = *this;
+        result.sign = !result.sign;
+        return result;
     }
 
-    operator double() const {
-        return ToDouble();
+    bool operator<(const BigFloat& other) const {
+        if (IsZero()) {
+            return !other.sign;
+        }
+
+        if (other.IsZero()) {
+            return sign;
+        }
+
+        if (sign != other.sign) {
+            return sign;
+        }
+
+        if (sign) {
+            return -other < -*this;
+        }
+
+        if (exponent != other.exponent) {
+            return exponent < other.exponent;
+        }
+
+        for (int i = 0; i < blocks; i++) {
+            if (mantissa[i] != other.mantissa[i]) {
+                return mantissa[i] < other.mantissa[i];
+            }
+        }
+
+        return false;
+    }
+
+    bool operator>(const BigFloat& other) const {
+        return other < *this;
+    }
+
+    bool operator==(const BigFloat& other) const {
+        return sign == other.sign && exponent == other.exponent && mantissa == other.mantissa;
     }
 
     static BigFloat FromDouble(double number) {
@@ -484,3 +530,17 @@ private:
         }
     }
 };
+
+namespace std {
+
+template<int blocks>
+inline bool isnan(const ::BigFloat<blocks>& a) noexcept {
+    return false;
+}
+
+template<int blocks>
+inline bool isinf(const ::BigFloat<blocks>& a) noexcept {
+    return false;
+}
+
+} // std
