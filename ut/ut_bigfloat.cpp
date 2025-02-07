@@ -97,6 +97,37 @@ void test_mul(void** s) {
 }
 
 template<typename T>
+void test_div(void** s) {
+    auto a = BigFloat<2,T>::FromString("0.5");
+    auto b = BigFloat<2,T>::FromString("2");
+    assert_string_equal(b.Inv().ToString().c_str(), "0.5");
+
+    b = BigFloat<2,T>::FromString("4");
+    assert_string_equal(b.Inv().ToString().c_str(), "0.25");
+
+    b = BigFloat<2,T>::FromString("8");
+    assert_string_equal(b.Inv().ToString().c_str(), "0.125");
+
+    auto c = a/b;
+    assert_string_equal(c.ToString().c_str(), "0.0625");
+
+    a = BigFloat<2,T>::FromString("0.2");
+    b = BigFloat<2,T>::FromString("0.3");
+    c = a/b;
+    assert_string_equal(c.ToString().c_str(), "0.059999999999999999");
+
+    a = BigFloat<2,T>::FromString("-0.2");
+    b = BigFloat<2,T>::FromString("0.3");
+    c = a/b;
+    assert_string_equal(c.ToString().c_str(), "-0.059999999999999999");
+
+    a = BigFloat<2,T>::FromString("0.5");
+    b = BigFloat<2,T>::FromString("1.1");
+    c = a/b;
+    assert_string_equal(c.ToString().c_str(), "0.549999999999999999");
+}
+
+template<typename T>
 void test_long(void** s) {
     auto a = BigFloat<128,T>::FromString("0.2");
     auto b = BigFloat<128,T>::FromString("0.3");
@@ -289,6 +320,7 @@ int main() {
         my_unit(test_strings),
         my_unit(test_sum),
         my_unit(test_mul),
+        //my_unit(test_div),
         my_unit(test_long),
         my_unit(test_from_double),
         my_unit(test_to_double),

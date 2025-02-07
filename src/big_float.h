@@ -466,18 +466,17 @@ public:
             }
         }
 
+        normalize(temp, result.exponent);
         for (size_t i = 0; i < blocks; ++i) {
             result.mantissa[i] = temp[i + blocks];
         }
-
         result.exponent += blocks * blockBits - 1;
-        result.normalize();
         result.sign = sign != other.sign;
         return result;
     }
 
-    bool IsZero() const {
-        return mantissa == std::array<BlockType, blocks>{0};
+    BigFloat operator/(const BigFloat& other) {
+        return (*this) * other.Inv();
     }
 
 private:
@@ -490,6 +489,15 @@ private:
     static constexpr int blockBits = sizeof(BlockType) * 8;
     static_assert(std::is_same_v<BlockType,uint64_t> || blocks > 1, "blocks must be greater than 1");
     static_assert(std::is_same_v<BlockType,uint64_t> || std::is_same_v<BlockType,uint32_t>);
+
+    bool IsZero() const {
+        return IsZero(mantissa);
+    }
+
+    template<size_t array_blocks>
+    static bool IsZero(const std::array<BlockType, array_blocks>& array) {
+        return array == std::array<BlockType, array_blocks>{0};
+    }
 
     static BigFloat IntFromString(const std::string& intPart) {
         BigFloat result;
@@ -544,32 +552,43 @@ private:
     }
 
     void normalize() {
-        if (isNormalized()) {
+        normalize(mantissa, exponent);
+    }
+
+    template<size_t array_blocks>
+    static void normalize(std::array<BlockType, array_blocks>& array, int& exp) {
+        if (isNormalized(array)) {
             return;
         }
         int shift = 0;
-        for (int i = blocks - 1; i >= 0; --i) {
-            if (mantissa[i] == 0) {
+        for (int i = array_blocks - 1; i >= 0; --i) {
+            if (array[i] == 0) {
                 shift += blockBits;
             } else {
                 if constexpr(std::is_same_v<BlockType, uint32_t>) {
-                    shift += __builtin_clz(mantissa[i]);
+                    shift += __builtin_clz(array[i]);
                 } else {
-                    shift += __builtin_clzll(mantissa[i]);
+                    shift += __builtin_clzll(array[i]);
                 }
                 break;
             }
         }
 
-        exponent -= shift;
-        shiftMantissaLeft(mantissa, shift);
+        exp -= shift;
+        shiftMantissaLeft(array, shift);
     }
 
     bool isNormalized() const {
-        return IsZero() || (mantissa.back() & ((BlockType)1U << (blockBits-1))) != 0;
+        return isNormalized(mantissa);
     }
 
-    void shiftMantissaLeft(std::array<BlockType, blocks>& mantissa, int shift = 1) const {
+    template<size_t array_blocks>
+    static bool isNormalized(const std::array<BlockType, array_blocks>& array) {
+        return (array.back() & ((BlockType)1U << (blockBits-1))) != 0 || IsZero(array);
+    }
+
+    template<size_t array_blocks>
+    static void shiftMantissaLeft(std::array<BlockType, array_blocks>& mantissa, int shift = 1) {
         BlockType carry = 0;
         int blockShift = shift / blockBits;
         int bitShift = shift % blockBits;
@@ -579,8 +598,8 @@ private:
             // [0, 1, 2, 3, 4] -> [1, 2, 3, 4, 0]
             //  ^  ^  ^  ^  ^
             //  4  3  2  1  0
-            int i = blocks - 1;
-            for (i = blocks - 1; i >= blockShift; --i) {
+            int i = array_blocks - 1;
+            for (i = array_blocks - 1; i >= blockShift; --i) {
                 mantissa[i] = mantissa[i - blockShift];
             }
             for (; i >= 0; --i) {
@@ -590,7 +609,7 @@ private:
 
         BlockType mask = (1ULL << bitShift) - 1ULL;
 
-        for (size_t i = blockShift; i < blocks; ++i) {
+        for (size_t i = blockShift; i < array_blocks; ++i) {
             BlockType next_carry = (mantissa[i] & (mask << (blockBits - bitShift))) >> (blockBits - bitShift);
             mantissa[i] = (mantissa[i] << bitShift) | carry;
             carry = next_carry;
