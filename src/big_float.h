@@ -90,13 +90,13 @@ public:
         : BigFloat(FromString(str))
     { }
 
-    //operator std::string() const {
-    //    return ToString();
-    //}
+    explicit operator std::string() const {
+        return ToString();
+    }
 
-    //operator double() const {
-    //    return ToDouble();
-    //}
+    explicit operator double() const {
+        return ToDouble();
+    }
 
     BigFloat operator-() const {
         BigFloat result = *this;
@@ -350,21 +350,13 @@ public:
             a.exponent -= exp_diff;
         }
 
-        WideType carry = 0;
-
-        for (size_t i = 0; i < blocks; ++i) {
-            WideType sum = static_cast<WideType>(a.mantissa[i]) +
-                        static_cast<WideType>(b.mantissa[i]) + carry;
-            result.mantissa[i] = static_cast<BlockType>(sum);
-            carry = sum >> blockBits;
-        }
-
+        auto carry = sumWithCarry(result.mantissa, a.mantissa, b.mantissa);
         result.exponent = a.exponent;
         result.sign = sign;
 
         if (carry) {
             shiftMantissaRight(result.mantissa);
-            result.mantissa[blocks-1] |= (carry << (blockBits-1));
+            result.mantissa[blocks-1] |= carry << (blockBits - 1);
             result.exponent++;
         }
 
@@ -435,7 +427,13 @@ public:
         return result;
     }
 
-    BigFloat operator*(const BigFloat& other) {
+    BigFloat Mul2() const {
+        BigFloat result = *this;
+        result.exponent++;
+        return result;
+    }
+
+    BigFloat operator*(const BigFloat& other) const {
         if (IsZero() || other.IsZero()) {
             return BigFloat();
         }
@@ -560,17 +558,38 @@ private:
             if (array[i] == 0) {
                 shift += blockBits;
             } else {
-                if constexpr(std::is_same_v<BlockType, uint32_t>) {
-                    shift += __builtin_clz(array[i]);
-                } else {
-                    shift += __builtin_clzll(array[i]);
-                }
+                shift += clz(array[i]);
                 break;
             }
         }
 
         exp -= shift;
         shiftMantissaLeft(array, shift);
+    }
+
+    static int clz(uint32_t a) {
+        return __builtin_clz(a);
+    }
+
+    static int clz(uint64_t a) {
+        return __builtin_clzll(a);
+    }
+
+    static BlockType sumWithCarry(
+        std::array<BlockType, blocks>& result,
+        const std::array<BlockType, blocks>& a,
+        const std::array<BlockType, blocks>& b)
+    {
+        BlockType carry = 0;
+        for (size_t i = 0; i < blocks; ++i) {
+            BlockType temp = a[i] + carry;
+            bool overflow1 = temp < carry;
+            BlockType sum = temp + b[i];
+            bool overflow2 = sum < temp;
+            result[i] = sum;
+            carry = overflow1 | overflow2;
+        }
+        return carry;
     }
 
     bool isNormalized() const {
@@ -611,7 +630,7 @@ private:
         }
     }
 
-    void shiftMantissaRight(std::array<BlockType, blocks>& mantissa, int shift = 1) const {
+    static void shiftMantissaRight(std::array<BlockType, blocks>& mantissa, int shift = 1) {
         BlockType carry = 0;
         int blockShift = shift / blockBits;
         int bitShift = shift % blockBits;

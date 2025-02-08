@@ -320,8 +320,8 @@ void test_precision(void**)
         a.exponent = 0;
         a.normalize();
 
-        b.mantissa[0] = 1; // 1
-        b.exponent = -31;  // Сдвинем вправо
+        b.mantissa[0] = 1;
+        b.exponent = -31;
         b.normalize();
 
         BigFloat<2,uint32_t> sum = a + b;
