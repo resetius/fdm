@@ -443,25 +443,7 @@ public:
         result.exponent = exponent + other.exponent + 1;
 
         std::array<BlockType, blocks * 2> temp{0};
-
-        for (size_t i = 0; i < blocks; ++i) {
-            WideType carry = 0;
-
-            for (size_t j = 0; j < blocks; ++j) {
-                size_t pos = i + j;
-
-                WideType prod = static_cast<WideType>(mantissa[i]) *
-                            static_cast<WideType>(other.mantissa[j]) +
-                            static_cast<WideType>(temp[pos]) +
-                            carry;
-
-                temp[pos] = static_cast<BlockType>(prod);
-
-                carry = prod >> blockBits;
-            }
-
-            temp[i + blocks] += static_cast<BlockType>(carry);
-        }
+        mulWithCarry(temp, mantissa, other.mantissa);
 
         normalize(temp, result.exponent);
         for (size_t i = 0; i < blocks; ++i) {
@@ -590,6 +572,32 @@ private:
             carry = overflow1 | overflow2;
         }
         return carry;
+    }
+
+    static void mulWithCarry(
+        std::array<BlockType, 2*blocks>& result,
+        const std::array<BlockType, blocks>& a,
+        const std::array<BlockType, blocks>& b)
+    {
+        for (size_t i = 0; i < blocks; ++i)
+        {
+            WideType carry = 0;
+
+            for (size_t j = 0; j < blocks; ++j) {
+                size_t pos = i + j;
+
+                WideType prod = static_cast<WideType>(a[i]) *
+                            static_cast<WideType>(b[j]) +
+                            static_cast<WideType>(result[pos]) +
+                            carry;
+
+                result[pos] = static_cast<BlockType>(prod);
+
+                carry = prod >> blockBits;
+            }
+
+            result[i + blocks] += static_cast<BlockType>(carry);
+        }
     }
 
     bool isNormalized() const {
