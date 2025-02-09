@@ -81,8 +81,63 @@ public:
     BigFloat() = default;
 
     BigFloat(double number)
-        : BigFloat(FromDouble(number))
-    { }
+    {
+        union {
+            double d;
+            uint64_t u;
+        } val;
+
+        val.d = number;
+
+        if (val.u == 0) {
+            return;
+        }
+
+        uint64_t bits = val.u;
+        sign = (bits >> 63) & 0x1;
+
+        int exponent_raw = (bits >> 52) & 0x7FF;
+        exponent = exponent_raw - 1023;
+        uint64_t mantissa_value = bits & 0xFFFFFFFFFFFFFULL;
+
+        mantissa_value |= (1ULL << 52);
+        mantissa_value <<= 63-52;
+
+        if constexpr(std::is_same_v<BlockType, uint64_t>) {
+            mantissa[blocks-1] = mantissa_value;
+        } else {
+            mantissa[blocks-1] = static_cast<uint32_t>(mantissa_value >> 32);
+            mantissa[blocks-2] = static_cast<uint32_t>(mantissa_value);
+        }
+
+        exponent = exponent - (blocks*blockBits-1);
+    }
+
+    BigFloat(long long number)
+    {
+        if (number == 0) {
+            return;
+        }
+        sign = number < 0;
+        uint64_t value = std::abs(number);
+        if constexpr(std::is_same_v<BlockType, uint64_t>) {
+            mantissa[blocks-1] = value;
+            exponent = exponent - ((blocks-1)*blockBits);
+        } else {
+            mantissa[blocks-1] = static_cast<uint32_t>(value >> 32);
+            mantissa[blocks-2] = static_cast<uint32_t>(value);
+            exponent = exponent - ((blocks-2)*blockBits);
+        }
+        normalize();
+    }
+
+    BigFloat(int number)
+        : BigFloat((long long)number)
+    {}
+
+    BigFloat(long number)
+        : BigFloat((long long)number)
+    {}
 
     BigFloat(const std::string& str)
         : BigFloat(FromString(str))
@@ -138,41 +193,6 @@ public:
 
     bool operator==(const BigFloat& other) const {
         return sign == other.sign && exponent == other.exponent && mantissa == other.mantissa;
-    }
-
-    static BigFloat FromDouble(double number) {
-        BigFloat result;
-        union {
-            double d;
-            uint64_t u;
-        } val;
-
-        val.d = number;
-
-        if (val.u == 0) {
-            return {};
-        }
-
-        uint64_t bits = val.u;
-        result.sign = (bits >> 63) & 0x1;
-
-        int exponent_raw = (bits >> 52) & 0x7FF;
-        int exponent = exponent_raw - 1023;
-        uint64_t mantissa = bits & 0xFFFFFFFFFFFFFULL;
-
-        mantissa |= (1ULL << 52);
-        mantissa <<= 63-52;
-
-        if constexpr(std::is_same_v<BlockType, uint64_t>) {
-            result.mantissa[blocks-1] = mantissa;
-        } else {
-            result.mantissa[blocks-1] = static_cast<uint32_t>(mantissa >> 32);
-            result.mantissa[blocks-2] = static_cast<uint32_t>(mantissa);
-        }
-
-        result.exponent = exponent - (blocks*blockBits-1);
-
-        return result;
     }
 
     double ToDouble() const {

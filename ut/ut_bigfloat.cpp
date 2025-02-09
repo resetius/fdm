@@ -144,59 +144,59 @@ void test_long(void** s) {
 
 template<typename T>
 void test_from_double(void** s) {
-    auto a = BigFloat<2,T>::FromDouble(0.2);
+    auto a = BigFloat<2,T>(0.2);
     assert_string_equal(a.ToString().c_str(), "0.200000000000000011");
 
-    a = BigFloat<2,T>::FromDouble(2);
+    a = BigFloat<2,T>(2);
     assert_string_equal(a.ToString().c_str(), "2");
 
-    a = BigFloat<2,T>::FromDouble(-2);
+    a = BigFloat<2,T>(-2);
     assert_string_equal(a.ToString().c_str(), "-2");
 
-    a = BigFloat<2,T>::FromDouble(2.01);
+    a = BigFloat<2,T>(2.01);
     assert_string_equal(a.ToString().c_str(), "2.009999999999999786");
 }
 
 template<typename T>
 void test_to_double(void** s) {
-    auto a = BigFloat<2,T>::FromDouble(0.2);
+    auto a = BigFloat<2,T>(0.2);
     assert_double_equal(a.ToDouble(), 0.2, 1e-15);
 
-    a = BigFloat<2,T>::FromDouble(2);
+    a = BigFloat<2,T>(2.0);
     assert_double_equal(a.ToDouble(), 2, 1e-15);
 
-    a = BigFloat<2,T>::FromDouble(-2);
+    a = BigFloat<2,T>(-2L);
     assert_double_equal(a.ToDouble(), -2, 1e-15);
 
-    a = BigFloat<2,T>::FromDouble(2.01);
+    a = BigFloat<2,T>(2.01);
     assert_double_equal(a.ToDouble(), 2.01, 1e-15);
 }
 
 template<typename T>
 void test_comparison(void** s) {
-    auto a = BigFloat<2,T>::FromDouble(0.2);
-    auto b = BigFloat<2,T>::FromDouble(0.3);
+    auto a = BigFloat<2,T>(0.2);
+    auto b = BigFloat<2,T>(0.3);
     assert_true(a < b);
     assert_true(b > a);
     assert_false(a > b);
     assert_false(b < a);
 
-    a = BigFloat<2,T>::FromDouble(0.2);
-    b = BigFloat<2,T>::FromDouble(0.2);
+    a = BigFloat<2,T>(0.2);
+    b = BigFloat<2,T>(0.2);
     assert_false(a < b);
     assert_false(b > a);
     assert_false(a > b);
     assert_false(b < a);
 
-    a = BigFloat<2,T>::FromDouble(-0.2);
-    b = BigFloat<2,T>::FromDouble(0.2);
+    a = BigFloat<2,T>(-0.2);
+    b = BigFloat<2,T>(0.2);
     assert_true(a < b);
     assert_true(b > a);
     assert_false(a > b);
     assert_false(b < a);
 
-    a = BigFloat<2,T>::FromDouble(-0.2);
-    b = BigFloat<2,T>::FromDouble(-0.3);
+    a = BigFloat<2,T>(-0.2);
+    b = BigFloat<2,T>(-0.3);
     assert_false(a < b);
     assert_false(b > a);
     assert_true(a > b);
@@ -236,12 +236,12 @@ void test_mandelbrot(void** s) {
 template<typename T>
 void test_eps(void** s) {
     {
-        auto one = BigFloat<2,T>::FromDouble(1.0);
-        auto eps = BigFloat<2,T>::FromDouble(1.0);
+        auto one = BigFloat<2,T>(1.0);
+        auto eps = BigFloat<2,T>(1.0);
 
         int i = 0;
         while (one + eps > one) {
-            eps = BigFloat<2,T>::FromDouble(0.5) * eps;
+            eps = BigFloat<2,T>(0.5) * eps;
             i++;
         }
 
@@ -249,12 +249,12 @@ void test_eps(void** s) {
     }
 
     {
-        auto one = BigFloat<4,T>::FromDouble(1.0);
-        auto eps = BigFloat<4,T>::FromDouble(1.0);
+        auto one = BigFloat<4,T>(1.0);
+        auto eps = BigFloat<4,T>(1.0);
 
         int i = 0;
         while (one + eps > one) {
-            eps = BigFloat<4,T>::FromDouble(0.5) * eps;
+            eps = BigFloat<4,T>(0.5) * eps;
             i++;
         }
 
