@@ -453,6 +453,12 @@ private:
     static_assert(std::is_same_v<BlockType,uint64_t> || blocks > 1, "blocks must be greater than 1");
     static_assert(std::is_same_v<BlockType,uint64_t> || std::is_same_v<BlockType,uint32_t>);
 
+#if defined(__aarch64__) || defined(_M_ARM64)
+    static constexpr bool arm64 = true;
+#else
+    static constexpr bool arm64 = false;
+#endif
+
     bool IsZero() const {
         return IsZero(mantissa);
     }
@@ -572,33 +578,92 @@ private:
             BlockType subtrahend = b[i] + borrow;
             bool overflow = (subtrahend < b[i]);
             result[i] = a[i] - subtrahend;
-            borrow = (a[i] < subtrahend) | overflow;
+            borrow = (a[i] < subtrahend)  | overflow;
         }
     }
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+    static inline uint64_t arm64_mulx_u64(uint64_t a, uint64_t b, uint64_t* high) {
+        uint64_t low;
+        __asm__ volatile (
+            "mul %0, %1, %2\n"
+            : "=r"(low)
+            : "r"(a), "r"(b)
+        );
+        __asm__ volatile (
+            "umulh %0, %1, %2\n"
+            : "=r"(*high)
+            : "r"(a), "r"(b)
+        );
+        return low;
+    }
+
+
+    static inline unsigned char addcarry_u64_arm(
+        unsigned char carry_in,
+        uint64_t src1,
+        uint64_t src2,
+        uint64_t* sum_out)
+    {
+        uint64_t res;
+        unsigned int c;
+        __asm__ volatile (
+            "adds    %0, %2, %3\n\t"
+            "adc     %0, %0, %4\n\t"
+            "cset    %1, cs\n\t"
+            : "=&r"(res), "=&r"(c)
+            : "r"(src1), "r"(src2), "r"((uint64_t)carry_in)
+            : "cc"
+        );
+        *sum_out = res;
+        return (unsigned char)c;
+    }
+
+#endif
 
     static void mulWithCarry(
         std::array<BlockType, 2*blocks>& result,
         const std::array<BlockType, blocks>& a,
         const std::array<BlockType, blocks>& b)
     {
-        for (size_t i = 0; i < blocks; ++i)
-        {
-            WideType carry = 0;
+        if constexpr(arm64 && std::is_same_v<BlockType,uint64_t>) {
+            for (size_t i = 0; i < blocks; ++i)
+            {
+                uint64_t carry = 0;
+                for (size_t j = 0; j < blocks; ++j)
+                {
+                    size_t pos = i + j;
+                    uint64_t high, low;
+                    low = arm64_mulx_u64(a[i], b[j], &high);
 
-            for (size_t j = 0; j < blocks; ++j) {
-                size_t pos = i + j;
+                    uint64_t sum;
+                    unsigned char c = addcarry_u64_arm((unsigned char)carry, result[pos], low, &sum);
+                    result[pos] = sum;
 
-                WideType prod = static_cast<WideType>(a[i]) *
-                            static_cast<WideType>(b[j]) +
-                            static_cast<WideType>(result[pos]) +
-                            carry;
-
-                result[pos] = static_cast<BlockType>(prod);
-
-                carry = prod >> blockBits;
+                    carry = high + c;
+                }
+                result[i + blocks] += carry;
             }
+        } else {
+            for (size_t i = 0; i < blocks; ++i)
+            {
+                WideType carry = 0;
 
-            result[i + blocks] += static_cast<BlockType>(carry);
+                for (size_t j = 0; j < blocks; ++j) {
+                    size_t pos = i + j;
+
+                    WideType prod = static_cast<WideType>(a[i]) *
+                                static_cast<WideType>(b[j]) +
+                                static_cast<WideType>(result[pos]) +
+                                carry;
+
+                    result[pos] = static_cast<BlockType>(prod);
+
+                    carry = prod >> blockBits;
+                }
+
+                result[i + blocks] += static_cast<BlockType>(carry);
+            }
         }
     }
 
