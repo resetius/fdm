@@ -451,12 +451,6 @@ private:
     static_assert(std::is_same_v<BlockType,uint64_t> || blocks > 1, "blocks must be greater than 1");
     static_assert(std::is_same_v<BlockType,uint64_t> || std::is_same_v<BlockType,uint32_t>);
 
-#if defined(__aarch64__) || defined(_M_ARM64) || defined(__x86_64__) || defined(_M_X64)
-    static constexpr bool useMulx = true;
-#else
-    static constexpr bool useMulx = false;
-#endif
-
     bool IsZero() const {
         return IsZero(mantissa);
     }
