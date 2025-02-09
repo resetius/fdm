@@ -12,16 +12,6 @@ using namespace std;
 using namespace asp;
 using namespace SDS;
 
-#ifdef WIN32
-#include <float.h>
-#define isnan _isnan
-inline bool isinf(double x)
-{
-	int c = _fpclass(x);
-	return (c == _FPCLASS_NINF || c == _FPCLASS_PINF);
-}
-#endif
-
 double u1_t (double x, double y, double t)
 {
 	return x*sin(y+t)*ipow(cos(x),4);
@@ -200,17 +190,6 @@ double u0(double phi, double lambda)
 
 #define  pOff(i, j) ( i ) * conf.n_la + ( j )
 
-#ifdef WIN32
-#include <windows.h>
-#include <float.h>
-void set_fpe_except()
-{
-	int cw = _controlfp(0, 0);
-	cw &=~(EM_OVERFLOW|EM_UNDERFLOW|EM_ZERODIVIDE|EM_DENORMAL);
-	_controlfp(cw, MCW_EM);
-}
-#endif
-
 template < typename T >
 void proj(double * u, Baroclin & bv, BaroclinConf & conf, T rp, double t)
 {
@@ -323,6 +302,5 @@ int main(int argc, char ** argv)
 		fprintf(stderr, "%s ", argv[i]);
 	}
 	fprintf(stderr, "\n");
-	//set_fpe_except();
 	test_barvortex();
 }

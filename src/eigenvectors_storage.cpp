@@ -1,5 +1,6 @@
 #include <netcdf.h>
 #include <string.h>
+#include <stdexcept>
 
 #include "asp_misc.h"
 #include "verify.h"
@@ -8,6 +9,12 @@
 using namespace asp;
 using std::vector;
 using std::is_same;
+
+#ifdef _WIN32
+static FILE* fmemopen(void* ptr, size_t size, const char* mode) {
+    throw std::runtime_error("Unimplemented");
+}
+#endif
 
 #define nc_call(expr) do {                        \
         int code = expr;                          \

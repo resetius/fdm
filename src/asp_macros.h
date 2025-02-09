@@ -49,15 +49,15 @@
 #define M_PI2 6.28318530717958648
 #endif
 
-#ifdef WIN32
-#if defined(FDM_LIBRARY_EXPORT)
-#define FDM_API   __declspec( dllexport ) 
-#else
-#define FDM_API   __declspec( dllimport ) 
-#endif
-#else
+//#ifdef WIN32
+//#if defined(FDM_LIBRARY_EXPORT)
+//#define FDM_API   __declspec( dllexport ) 
+//#else
+//#define FDM_API   __declspec( dllimport ) 
+//#endif
+//#else
 #define FDM_API
-#endif
+//#endif
 
 #ifdef _WIN32
 #define isNaN _isnan

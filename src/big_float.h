@@ -72,6 +72,8 @@ mul double : 0
 #include <limits>
 #include <string>
 #include <iostream>
+#include <cstdint>
+#include <algorithm>
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
@@ -488,7 +490,7 @@ private:
     static BigFloat FracFromString(const std::string& fracPart) {
         BigFloat result;
 
-        int mult = 10;
+        WideType mult = 10;
         result.exponent = - blocks*blockBits;
         for (size_t i = 0; i < fracPart.size()-1; i++) {
             mult *= 10;

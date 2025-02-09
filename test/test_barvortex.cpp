@@ -20,17 +20,6 @@ using namespace SDS;
 
 #undef max
 
-#ifdef WIN32
-#include <float.h>
-#define isnan _isnan
-#define snprintf _snprintf
-inline bool isinf(double x)
-{
-	int c = _fpclass(x);
-	return (c == _FPCLASS_NINF || c == _FPCLASS_PINF);
-}
-#endif
-
 double zero_rp(double phi, double lambda, double t, const BarVortex::Conf * conf)
 {
 	return 0;
@@ -89,17 +78,6 @@ double u1(double phi, double lambda)
 }
 
 #define  pOff(i, j) ( i ) * conf.n_la + ( j )
-
-#ifdef WIN32
-#include <windows.h>
-#include <float.h>
-void set_fpe_except()
-{
-	int cw = _controlfp(0, 0);
-	cw &=~(EM_OVERFLOW|EM_UNDERFLOW|EM_ZERODIVIDE|EM_DENORMAL);
-	_controlfp(cw, MCW_EM);
-}
-#endif
 
 void calc_barvortex_right_part()
 {
@@ -643,7 +621,6 @@ int main(int argc, char ** argv)
 		fprintf(stderr, "%s ", argv[i]);
 	}
 	fprintf(stderr, "\n");
-	//set_fpe_except();
 //	if (argc < 3) {
 //		fprintf(stderr, "calc\n");
 		//test_barvortex();

@@ -69,7 +69,7 @@ struct ReliefLoader::Data {
 #ifdef WIN32
 		fd_ = CreateFile(path, GENERIC_READ, NULL, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
-		if (fd_ < 0) {
+		if (fd_ == (file_t) -1) {
 			return false;
 		}
 

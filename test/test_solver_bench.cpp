@@ -21,6 +21,13 @@ using namespace fdm;
 using asp::format;
 using asp::sq;
 
+static uint32_t rand_(uint32_t* seed) {
+    *seed ^= *seed << 13;
+    *seed ^= *seed >> 17;
+    *seed ^= *seed << 5;
+    return *seed;
+}
+
 template<typename T, typename Solver, bool check=true>
 class Benchmark {
 public:
@@ -104,7 +111,7 @@ public:
         for (int i = 1; i <= nz; i++) {
             for (int k = 1; k <= ny; k++) {
                 for (int j = 1; j <= nx; j++) {
-                    RHS[i][k][j] = 0.1 * (double) rand_r(&seed) / (double)RAND_MAX;
+                    RHS[i][k][j] = 0.1 * (double) rand_(&seed) / (double)RAND_MAX;
                 }
             }
         }

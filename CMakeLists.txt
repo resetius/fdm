@@ -11,7 +11,7 @@ endif ()
 
 pkg_check_modules(NETCDF REQUIRED netcdf)
 pkg_check_modules(PLPLOT REQUIRED plplot)
-pkg_check_modules(VULKAN vulkan)
+# pkg_check_modules(VULKAN vulkan) # remporary disable
 pkg_check_modules(FFTW3 fftw3)
 pkg_check_modules(FFTW3F fftw3f)
 
@@ -84,7 +84,7 @@ set(SRC
     src/eigenvectors_storage.cpp
     src/unixbench_score.cpp
     )
-add_library(fdm SHARED ${SRC})
+add_library(fdm ${SRC})
 
 if (VULKAN_FOUND)
     find_package(glslang CONFIG REQUIRED)

@@ -35,6 +35,12 @@
 
 using namespace std;
 
+#ifdef _WIN32
+static FILE* fmemopen(void* ptr, size_t size, const char* mode) {
+    throw std::runtime_error("Unimplemented");
+}
+#endif
+
 template < typename A, typename B >
 A lexical_cast (const B & b)
 {
