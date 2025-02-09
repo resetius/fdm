@@ -406,19 +406,7 @@ public:
             }
         }
 
-        SignedWideType borrow = 0;
-        for (size_t i = 0; i < blocks; ++i) {
-            SignedWideType diff = static_cast<SignedWideType>(a.mantissa[i]) -
-                        static_cast<SignedWideType>(b.mantissa[i]) - borrow;
-            if (diff < 0) {
-                diff += (WideType(1ULL) << blockBits);
-                borrow = 1;
-            } else {
-                borrow = 0;
-            }
-
-            result.mantissa[i] = static_cast<BlockType>(diff);
-        }
+        subWithBorrow(result.mantissa, a.mantissa, b.mantissa);
 
         result.exponent = a.exponent;
         result.sign = swapped ? !sign : sign;
@@ -572,6 +560,20 @@ private:
             carry = overflow1 | overflow2;
         }
         return carry;
+    }
+
+    static void subWithBorrow(
+        std::array<BlockType, blocks>& result,
+        const std::array<BlockType, blocks>& a,
+        const std::array<BlockType, blocks>& b)
+    {
+        BlockType borrow = 0;
+        for (size_t i = 0; i < blocks; ++i) {
+            BlockType subtrahend = b[i] + borrow;
+            bool overflow = (subtrahend < b[i]);
+            result[i] = a[i] - subtrahend;
+            borrow = (a[i] < subtrahend) | overflow;
+        }
     }
 
     static void mulWithCarry(
