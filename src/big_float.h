@@ -133,11 +133,26 @@ public:
 
     BigFloat(int number)
         : BigFloat((long long)number)
-    {}
+    { }
 
     BigFloat(long number)
         : BigFloat((long long)number)
-    {}
+    { }
+
+    template<int otherBlocks>
+    BigFloat(const BigFloat<otherBlocks, BlockType>& other)
+        : exponent(other.getExponent())
+        , sign(other.getSign())
+    {
+        auto dst = mantissa.rbegin();
+        auto src = other.getMantissa().rbegin();
+        while (dst != mantissa.rend() && src != other.getMantissa().rend()) {
+            *dst++ = *src++;
+        }
+
+        auto diff = (int)std::distance(dst, mantissa.rend()) - (int)std::distance(src, other.getMantissa().rend());
+        exponent -= diff * blockBits;
+    }
 
     BigFloat(const std::string& str)
         : BigFloat(FromString(str))
@@ -458,6 +473,18 @@ public:
         result.exponent += blocks * blockBits - 1;
         result.sign = sign != other.sign;
         return result;
+    }
+
+    int getSign() const {
+        return sign;
+    }
+
+    int getExponent() const {
+        return exponent;
+    }
+
+    auto& getMantissa() const {
+        return mantissa;
     }
 
 private:

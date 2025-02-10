@@ -302,6 +302,7 @@ void test_microbench(void**) {
     bench_sum<BigFloat<16,T>>("sum BigFloat<16>");
     bench_sum<float>("sum float");
     bench_sum<double>("sum double");
+    bench_sum<_Float128>("sum float128");
 
     bench_mul<BigFloat<2,T>>("mul BigFloat<2>");
     bench_mul<BigFloat<4,T>>("mul BigFloat<4>");
@@ -309,6 +310,18 @@ void test_microbench(void**) {
     bench_mul<BigFloat<16,T>>("mul BigFloat<16>");
     bench_mul<float>("mul float");
     bench_mul<double>("mul double");
+    bench_mul<_Float128>("mul float128");
+}
+
+template<typename T>
+void test_construct(void**) {
+    BigFloat<2,T> v1(123.456);
+    BigFloat<4,T> v2(v1);
+    assert_double_equal((double)v2, (double)v1, 1e-15);
+
+    BigFloat<3,T> v3(123.456);
+    BigFloat<2,T> v4(v3);
+    assert_double_equal((double)v3, (double)v4, 1e-15);
 }
 
 void test_precision(void**)
@@ -363,6 +376,7 @@ int main() {
         my_unit(test_mandelbrot),
         my_unit(test_eps),
         my_unit(test_microbench),
+        my_unit(test_construct),
         cmocka_unit_test(test_precision),
     };
 
