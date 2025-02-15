@@ -454,6 +454,25 @@ public:
         return result;
     }
 
+    BigFloat Square() const {
+        if (IsZero()) {
+            return {};
+        }
+
+        BigFloat result;
+
+        result.exponent = 2 * exponent + blocks * blockBits;
+
+        std::array<BlockType, blocks * 2> temp{0};
+        square(temp, mantissa);
+
+        normalize(temp, result.exponent);
+        for (size_t i = 0; i < blocks; ++i) {
+            result.mantissa[i] = temp[i + blocks];
+        }
+        return result;
+    }
+
     BigFloat operator*(const BigFloat& other) const {
         if (IsZero() || other.IsZero()) {
             return BigFloat();
@@ -461,7 +480,7 @@ public:
 
         BigFloat result;
 
-        result.exponent = exponent + other.exponent + 1;
+        result.exponent = exponent + other.exponent + blocks * blockBits;
 
         std::array<BlockType, blocks * 2> temp{0};
         mulWithCarry(temp, mantissa, other.mantissa);
@@ -470,7 +489,6 @@ public:
         for (size_t i = 0; i < blocks; ++i) {
             result.mantissa[i] = temp[i + blocks];
         }
-        result.exponent += blocks * blockBits - 1;
         result.sign = sign != other.sign;
         return result;
     }
@@ -644,6 +662,41 @@ private:
             }
 
             result[i + blocks] += static_cast<BlockType>(carry);
+        }
+    }
+
+    static void square(std::array<BlockType, 2*blocks>& result,
+                    const std::array<BlockType, blocks>& a)
+    {
+        for (size_t i = 0; i < blocks; ++i) {
+            WideType carry = 0;
+            for (size_t j = i + 1; j < blocks; ++j) {
+                size_t pos = i + j;
+
+                WideType prod = static_cast<WideType>(a[i]) * static_cast<WideType>(a[j]);
+                prod <<= 1;  // prod *= 2;
+
+                WideType sum = static_cast<WideType>(result[pos]) + prod + carry;
+                result[pos] = static_cast<BlockType>(sum);
+                carry = sum >> blockBits;
+            }
+            result[i + blocks] += static_cast<BlockType>(carry);
+        }
+
+        for (size_t i = 0; i < blocks; ++i) {
+            size_t pos = 2 * i;
+            WideType prod = static_cast<WideType>(a[i]) * static_cast<WideType>(a[i]);
+            WideType sum = static_cast<WideType>(result[pos]) + prod;
+            result[pos] = static_cast<BlockType>(sum);
+            WideType carry = sum >> blockBits;
+
+            size_t k = pos + 1;
+            while (carry && k < result.size()) {
+                sum = static_cast<WideType>(result[k]) + carry;
+                result[k] = static_cast<BlockType>(sum);
+                carry = sum >> blockBits;
+                ++k;
+            }
         }
     }
 

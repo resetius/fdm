@@ -96,6 +96,16 @@ void test_mul(void** s) {
     assert_string_equal(c.ToString().c_str(), "0.549999999999999999");
 }
 
+template<typename T>
+void test_square(void** s) {
+    auto a = BigFloat<2,T>::FromString("0.5");
+    auto b = a.Square();
+    assert_string_equal(b.ToString().c_str(), "0.25");
+    a = BigFloat<2,T>::FromString("0.3");
+    b = a.Square();
+    assert_string_equal(b.ToString().c_str(), "0.089999999999999999");
+}
+
 /*
 template<typename T>
 void test_div(void** s) {
@@ -295,6 +305,21 @@ void bench_mul(const std::string& name)
 }
 
 template<typename T>
+void bench_square(const std::string& name)
+{
+    T b = 0.3;
+    T c = 0.0;
+
+    auto t1 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 1000000; i++) {
+        c = c + b * b;
+    }
+    auto t2 = std::chrono::steady_clock::now();
+    auto interval = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+    std::cerr << name << " : " << interval.count() << std::endl;
+}
+
+template<typename T>
 void test_microbench(void**) {
     bench_sum<BigFloat<2,T>>("sum BigFloat<2>");
     bench_sum<BigFloat<4,T>>("sum BigFloat<4>");
@@ -311,6 +336,14 @@ void test_microbench(void**) {
     bench_mul<float>("mul float");
     bench_mul<double>("mul double");
     bench_mul<_Float128>("mul float128");
+
+    bench_square<BigFloat<2,T>>("sq BigFloat<2>");
+    bench_square<BigFloat<4,T>>("sq BigFloat<4>");
+    bench_square<BigFloat<8,T>>("sq BigFloat<8>");
+    bench_square<BigFloat<16,T>>("sq BigFloat<16>");
+    bench_square<float>("sq float");
+    bench_square<double>("sq double");
+    bench_square<_Float128>("sq float128");
 }
 
 template<typename T>
@@ -377,6 +410,7 @@ int main() {
         my_unit(test_eps),
         my_unit(test_microbench),
         my_unit(test_construct),
+        my_unit(test_square),
         cmocka_unit_test(test_precision),
     };
 
