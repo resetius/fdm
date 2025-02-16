@@ -327,7 +327,7 @@ void test_microbench(void**) {
     bench_sum<BigFloat<16,T>>("sum BigFloat<16>");
     bench_sum<float>("sum float");
     bench_sum<double>("sum double");
-    bench_sum<_Float128>("sum float128");
+    //bench_sum<_Float128>("sum float128");
 
     bench_mul<BigFloat<2,T>>("mul BigFloat<2>");
     bench_mul<BigFloat<4,T>>("mul BigFloat<4>");
@@ -335,7 +335,7 @@ void test_microbench(void**) {
     bench_mul<BigFloat<16,T>>("mul BigFloat<16>");
     bench_mul<float>("mul float");
     bench_mul<double>("mul double");
-    bench_mul<_Float128>("mul float128");
+    //bench_mul<_Float128>("mul float128");
 
     bench_square<BigFloat<2,T>>("sq BigFloat<2>");
     bench_square<BigFloat<4,T>>("sq BigFloat<4>");
@@ -343,7 +343,7 @@ void test_microbench(void**) {
     bench_square<BigFloat<16,T>>("sq BigFloat<16>");
     bench_square<float>("sq float");
     bench_square<double>("sq double");
-    bench_square<_Float128>("sq float128");
+    //bench_square<_Float128>("sq float128");
 }
 
 template<typename T>
