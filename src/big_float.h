@@ -355,7 +355,7 @@ public:
         return *this;
     }
 
-    BigFloat operator+(const BigFloat& other) {
+    BigFloat operator+(const BigFloat& other) const {
         if (other.IsZero()) {
             return *this;
         }
@@ -397,7 +397,7 @@ public:
         return result;
     }
 
-    BigFloat operator-(const BigFloat& other) {
+    BigFloat operator-(const BigFloat& other) const {
         if (other.IsZero()) {
             return *this;
         }
