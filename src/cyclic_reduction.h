@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <math.h>
 
 namespace fdm {
 
@@ -305,5 +306,234 @@ void cyclic_reduction_kershaw_general_continue(
 
     return;
 }
+
+template<typename T>
+class CyclicReduction {
+public:
+    CyclicReduction(int n)
+        : n(n)
+        , q(ceil(log2(n+1)))
+        , Storage(4*n)
+        , dUp(&Storage[0] - n)
+        , eUp(&Storage[n] - n - 1)
+        , fUp(&Storage[2*n] - n)
+        , bUp(&Storage[3*n] - n)
+    {
+    }
+
+    void prepare(T *__restrict d, T *__restrict e, T *__restrict f)
+    {
+        T alpha, gamma;
+        int j, l, n_curr, n_next, off, dst;
+
+        off = 0;
+
+        n_curr = n;
+
+        e = e - 1; // e indices start from 1
+
+        auto loop = [&](T* d, T* e, T* f) {
+            n_next = (n_curr - n_curr % 2) / 2;
+
+            for (j = off + 1, dst = off + n_curr; j + 1 < off + n_curr; j += 2, dst++)
+            {
+                alpha = -e[j] / d[j - 1];
+                gamma = -f[j] / d[j + 1];
+                dUp[dst] = d[j] + alpha * f[j - 1] + gamma * e[j + 1];
+                eUp[dst] = alpha * e[j - 1];
+                fUp[dst] = gamma * f[j + 1];
+            }
+
+            // for n != 2^q-1
+            for (; j < off + n_curr; j += 2, dst++) {
+                alpha = -e[j] / d[j - 1];
+                dUp[dst] = d[j] + alpha * f[j - 1];
+                eUp[dst] = alpha * e[j - 1];
+            }
+
+            off += n_curr;
+            n_curr = n_next;
+        };
+
+        l = 1;
+        {
+            loop(d, e, f);
+        }
+
+        for (l = 2; l < q; l++) {
+            loop(&dUp[0], &eUp[0], &fUp[0]);
+        }
+    }
+
+    void execute(T *__restrict d, T *__restrict e, T *__restrict f, T*__restrict b) {
+        T alpha, gamma;
+        int j, l, n_curr, n_next, off, dst, mask;
+
+        off = 0;
+
+        n_curr = n;
+
+        e = e - 1;
+
+        auto loop1 = [&](T* d, T* e, T* f, T* b) {
+            n_next = (n_curr - n_curr % 2) / 2;
+
+            for (j = off + 1, dst = off + n_curr; j + 1 < off + n_curr; j += 2, dst++)
+            {
+                alpha = -e[j] / d[j - 1];
+                gamma = -f[j] / d[j + 1];
+                bUp[dst] = b[j] + alpha * b[j - 1] + gamma * b[j + 1];
+            }
+
+            // for n != 2^q-1
+            for (; j < off + n_curr; j += 2, dst++) {
+                alpha = -e[j] / d[j - 1];
+                bUp[dst] = b[j] + alpha * b[j - 1];
+            }
+
+            off += n_curr;
+            n_curr = n_next;
+        };
+
+        l = 1;
+        {
+            loop1(d, e, f, b);
+        }
+
+        for (l = 2; l < q; l++) {
+            loop1(&dUp[0], &eUp[0], &fUp[0], &bUp[0]);
+        }
+
+        bUp[off] = bUp[off] / dUp[off];
+        n_curr = 1;
+
+        auto loop2 = [&](T*d, T*e, T*f, T* b, T* bDst) {
+            if (n & mask) {
+                n_next = n_curr * 2 + 1;
+            } else {
+                n_next = n_curr * 2;
+            }
+
+            for (j = off, dst = off-n_next + 1; j < off+n_curr; j++, dst += 2) {
+                bDst[dst] = b[j];
+            }
+
+            j = off - n_next;
+            b = bDst;
+            b[j] = (b[j] - f[j] * b[j + 1]) / d[j]; j += 2;
+
+            for (; j + 1 < off; j += 2) {
+                b[j] = (b[j] - e[j] * b[j - 1] - f[j] * b[j + 1]) / d[j];
+            }
+
+            for (; j < off; j += 2) {
+                b[j] = (b[j] - e[j] * b[j - 1]) / d[j];
+            }
+
+            off -= n_next;
+            n_curr = n_next;
+        };
+
+        for (mask = (1 << (q - 1)) >> 1; mask > 1; mask >>= 1) {
+            loop2(&dUp[0], &eUp[0], &fUp[0], &bUp[0], &bUp[0]);
+        }
+
+        loop2(d, e, f, &bUp[0], b);
+
+        return;
+    }
+
+    void executePrepare(T *__restrict d, T *__restrict e, T *__restrict f, T*__restrict b) {
+        T alpha, gamma;
+        int j, l, n_curr, n_next, off, dst, mask;
+
+        off = 0;
+
+        n_curr = n;
+
+        e = e - 1;
+
+        auto loop1 = [&](T* d, T* e, T* f, T* b) {
+            n_next = (n_curr - n_curr % 2) / 2;
+
+            for (j = off + 1, dst = off + n_curr; j + 1 < off + n_curr; j += 2, dst++)
+            {
+                alpha = -e[j] / d[j - 1];
+                gamma = -f[j] / d[j + 1];
+                dUp[dst] = d[j] + alpha * f[j - 1] + gamma * e[j + 1];
+                eUp[dst] = alpha * e[j - 1];
+                fUp[dst] = gamma * f[j + 1];
+                bUp[dst] = b[j] + alpha * b[j - 1] + gamma * b[j + 1];
+            }
+
+            // for n != 2^q-1
+            for (; j < off + n_curr; j += 2, dst++) {
+                alpha = -e[j] / d[j - 1];
+                dUp[dst] = d[j] + alpha * f[j - 1];
+                eUp[dst] = alpha * e[j - 1];
+                bUp[dst] = b[j] + alpha * b[j - 1];
+            }
+
+            off += n_curr;
+            n_curr = n_next;
+        };
+
+        l = 1;
+        {
+            loop1(d, e, f, b);
+        }
+
+        for (l = 2; l < q; l++) {
+            loop1(&dUp[0], &eUp[0], &fUp[0], &bUp[0]);
+        }
+
+        bUp[off] = bUp[off] / dUp[off];
+        n_curr = 1;
+
+        auto loop2 = [&](T*d, T*e, T*f, T* b, T* bDst) {
+            if (n & mask) {
+                n_next = n_curr * 2 + 1;
+            } else {
+                n_next = n_curr * 2;
+            }
+
+            for (j = off, dst = off-n_next + 1; j < off+n_curr; j++, dst += 2) {
+                bDst[dst] = b[j];
+            }
+
+            j = off - n_next;
+            b = bDst;
+            b[j] = (b[j] - f[j] * b[j + 1]) / d[j]; j += 2;
+
+            for (; j + 1 < off; j += 2) {
+                b[j] = (b[j] - e[j] * b[j - 1] - f[j] * b[j + 1]) / d[j];
+            }
+
+            for (; j < off; j += 2) {
+                b[j] = (b[j] - e[j] * b[j - 1]) / d[j];
+            }
+
+            off -= n_next;
+            n_curr = n_next;
+        };
+
+        for (mask = (1 << (q - 1)) >> 1; mask > 1; mask >>= 1) {
+            loop2(&dUp[0], &eUp[0], &fUp[0], &bUp[0], &bUp[0]);
+        }
+
+        loop2(d, e, f, &bUp[0], b);
+
+        return;
+    }
+
+private:
+    int n;
+    int q;
+    std::vector<T> Storage;
+    T* dUp;
+    T* eUp;
+    T* fUp;
+    T* bUp;
+};
 
 } // namespace fdm
