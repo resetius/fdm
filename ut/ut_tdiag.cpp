@@ -538,9 +538,9 @@ void test_crkgc(void** data) {
         auto A21 = A2;
         auto A31 = A3;
         B2 = B;
-        auto t1 = steady_clock::now();
         int q = ceil(log2(N+1));
         // stage1: prepare matrix
+        auto t1 = steady_clock::now();
         cyclic_reduction_kershaw_general(A21.data(), A11.data(), A31.data(), B2.data(), q, N);
         B2 = B;
         // stage2: reduce
@@ -624,7 +624,6 @@ void test_crkgC(void** data) {
         auto t1 = steady_clock::now();
         // stage1: prepare matrix
         cr.prepare(A21.data(), A11.data(), A31.data());
-        B2 = B;
         // stage2: reduce
         cr.execute(A21.data(), A11.data(), A31.data(), B2.data());
         auto t2 = steady_clock::now();
@@ -639,10 +638,10 @@ void test_crkgC(void** data) {
         auto A21 = A2;
         auto A31 = A3;
         CyclicReduction<T> cr(N);
-        auto t1 = steady_clock::now();
         B3 = B;
+        auto t1 = steady_clock::now();
         // stage2: reduce
-        //cr.executePrepare(A21.data(), A11.data(), A31.data(), B3.data());
+        cr.executePrepare(A21.data(), A11.data(), A31.data(), B3.data());
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
         if (verbose) {
@@ -660,10 +659,10 @@ void test_crkgC(void** data) {
         if (verbose > 1) {
             printf("%e <> %e\n", B1[i], B2[i]);
         }
-        //assert_float_equal(B1[i], B3[i], tol);
-        //if (verbose > 1) {
-        //    printf("%e <> %e\n", B1[i], B3[i]);
-        //}
+        assert_float_equal(B1[i], B3[i], tol);
+        if (verbose > 1) {
+            printf("%e <> %e\n", B1[i], B3[i]);
+        }
     }
 }
 

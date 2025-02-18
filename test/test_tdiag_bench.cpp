@@ -175,6 +175,18 @@ int main() {
         );
         output(N, stats, "crkgc(d)");
 
+        CyclicReduction<double> cr(N);
+        stats = benchmark_tdiag<double>(N, iterations,
+            [&](double *A1, double *A2, double *A3, int N) -> void* {
+                cr.prepare(A2, A1, A3);
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cr.execute(A2, A1, A3, B);
+            }
+        );
+        output(N, stats, "crkgC(d)");
+
         stats = benchmark_tdiag<float>(N, iterations,
             [](float *A1, float *A2, float *A3, int N) -> void* {
                 return nullptr;
@@ -273,6 +285,18 @@ int main() {
             }
         );
         output(N, stats, "crkgc(f)");
+
+        CyclicReduction<float> crf(N);
+        stats = benchmark_tdiag<float>(N, iterations,
+            [&](float *A1, float *A2, float *A3, int N) -> void* {
+                crf.prepare(A2, A1, A3);
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                crf.execute(A2, A1, A3, B);
+            }
+        );
+        output(N, stats, "crkgC(f)");
     }
     return 0;
 }
