@@ -438,6 +438,7 @@ public:
             loop2(&dUp[0], &eUp[0], &fUp[0], &bUp[0], &bUp[0]);
         }
 
+        mask = 1;
         loop2(d, e, f, &bUp[0], b);
 
         return;
