@@ -18,13 +18,13 @@ namespace fdm {
 
 template<typename T>
 void cyclic_reduction(
-    T *d, T *e, T *f, T *b,
+    T *d /*middle*/, T *e /*lower, e[0] = 0*/, T *f /*upper*/, T *b,
     int q, int n)
 {
     T alpha, gamma;
     int l, j, s, h;
 
-    e = e-1; // e indices start from 1
+    // std::cerr << n << " " << q << "\n";
     for (l = 1; l < q; l++) {
         s = 1 << l;
         h = 1 << (l-1);
@@ -57,13 +57,11 @@ void cyclic_reduction(
 
 template<typename T>
 void cyclic_reduction_general(
-    T *d, T *e, T *f, T *b,
+    T *d /*middle*/, T *e /*lower, e[0] = 0*/, T *f /*upper*/, T *b,
     int q, int n)
 {
     T alpha, gamma;
     int l, j, s, h;
-
-    e = e - 1; // e indices start from 1
 
     for (l = 1; l < q; l++) {
         s = 1 << l;
@@ -121,7 +119,6 @@ void cyclic_reduction_kershaw(
 
     off = 0;
 
-    e = e - 1; // e indices start from 1
     for (l = 1; l < q; l++) {
         n_curr = n >> (l-1);
         n_next = n >> l;
@@ -184,7 +181,6 @@ void cyclic_reduction_kershaw_general(
 
     n_curr = n;
 
-    e = e - 1; // e indices start from 1
     for (l = 1; l < q; l++) {
         n_next = (n_curr - n_curr % 2) / 2;
 
@@ -255,7 +251,6 @@ void cyclic_reduction_kershaw_general_continue(
 
     n_curr = n;
 
-    e = e - 1; // e indices start from 1
     for (l = 1; l < q; l++) {
         n_next = (n_curr - n_curr % 2) / 2;
 
@@ -316,7 +311,7 @@ public:
         , q(ceil(log2(n+1)))
         , Storage(4*n)
         , dUp(&Storage[0] - n)
-        , eUp(&Storage[n] - n - 1)
+        , eUp(&Storage[n] - n)
         , fUp(&Storage[2*n] - n)
         , bUp(&Storage[3*n] - n)
     {
@@ -330,8 +325,6 @@ public:
         off = 0;
 
         n_curr = n;
-
-        e = e - 1; // e indices start from 1
 
         auto loop = [&](T* d, T* e, T* f) {
             n_next = (n_curr - n_curr % 2) / 2;
@@ -373,8 +366,6 @@ public:
         off = 0;
 
         n_curr = n;
-
-        e = e - 1;
 
         auto loop1 = [&](T* d, T* e, T* f, T* b) {
             n_next = (n_curr - n_curr % 2) / 2;
@@ -452,8 +443,6 @@ public:
         off = 0;
 
         n_curr = n;
-
-        e = e - 1;
 
         auto loop1 = [&](T* d, T* e, T* f, T* b) {
             n_next = (n_curr - n_curr % 2) / 2;

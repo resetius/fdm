@@ -201,6 +201,7 @@ void test_cr(void** data) {
         A3[i] = distribution(generator);
         B[i] = distribution(generator);
     }
+    A1[0] = 0;
 
     {
         auto A11 = A1;
@@ -210,9 +211,9 @@ void test_cr(void** data) {
 
         auto t1 = steady_clock::now();
         if constexpr(std::is_same_v<T, double>) {
-            solve_tdiag_linear_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         } else {
-            solve_tdiag_linearf_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         }
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
@@ -263,7 +264,7 @@ void test_crg(void** data) {
     Config* c = static_cast<Config*>(*data);
     int N = c->get("test", "N", 32);
     int verbose = c->get("test", "verbose", 0);
-    vector<T> A1(N+1);
+    vector<T> A1(N);
     vector<T> A2(N);
     vector<T> A3(N);
     vector<T> B(N);
@@ -279,6 +280,7 @@ void test_crg(void** data) {
         A3[i] = distribution(generator);
         B[i] = distribution(generator);
     }
+    A1[0] = 0;
 
     {
         auto A11 = A1;
@@ -288,9 +290,9 @@ void test_crg(void** data) {
 
         auto t1 = steady_clock::now();
         if constexpr(std::is_same_v<T, double>) {
-            solve_tdiag_linear_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         } else {
-            solve_tdiag_linearf_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         }
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
@@ -341,7 +343,7 @@ void test_crk(void** data) {
     Config* c = static_cast<Config*>(*data);
     int N = c->get("test", "N", 63);
     int verbose = c->get("test", "verbose", 0);
-    vector<T> A1(2*N+1);
+    vector<T> A1(2*N);
     vector<T> A2(2*N);
     vector<T> A3(2*N);
     vector<T> B(2*N);
@@ -357,6 +359,7 @@ void test_crk(void** data) {
         A3[i] = distribution(generator);
         B[i] = distribution(generator);
     }
+    A1[0] = 0;
 
     {
         auto A11 = A1;
@@ -366,9 +369,9 @@ void test_crk(void** data) {
 
         auto t1 = steady_clock::now();
         if constexpr(std::is_same_v<T, double>) {
-            solve_tdiag_linear_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         } else {
-            solve_tdiag_linearf_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         }
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
@@ -419,7 +422,7 @@ void test_crkg(void** data) {
     Config* c = static_cast<Config*>(*data);
     int N = c->get("test", "N", 9);
     int verbose = c->get("test", "verbose", 0);
-    vector<T> A1(2*N+1);
+    vector<T> A1(2*N);
     vector<T> A2(2*N);
     vector<T> A3(2*N);
     vector<T> B(2*N);
@@ -435,6 +438,7 @@ void test_crkg(void** data) {
         A3[i] = distribution(generator);
         B[i] = distribution(generator);
     }
+    A1[0] = 0;
 
     {
         auto A11 = A1;
@@ -444,9 +448,9 @@ void test_crkg(void** data) {
 
         auto t1 = steady_clock::now();
         if constexpr(std::is_same_v<T, double>) {
-            solve_tdiag_linear_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         } else {
-            solve_tdiag_linearf_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         }
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
@@ -497,7 +501,7 @@ void test_crkgc(void** data) {
     Config* c = static_cast<Config*>(*data);
     int N = c->get("test", "N", 9);
     int verbose = c->get("test", "verbose", 0);
-    vector<T> A1(2*N+1);
+    vector<T> A1(2*N);
     vector<T> A2(2*N);
     vector<T> A3(2*N);
     vector<T> B(2*N);
@@ -513,6 +517,7 @@ void test_crkgc(void** data) {
         A3[i] = distribution(generator);
         B[i] = distribution(generator);
     }
+    A1[0] = 0;
 
     {
         auto A11 = A1;
@@ -522,9 +527,9 @@ void test_crkgc(void** data) {
 
         auto t1 = steady_clock::now();
         if constexpr(std::is_same_v<T, double>) {
-            solve_tdiag_linear_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         } else {
-            solve_tdiag_linearf_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         }
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
@@ -595,6 +600,7 @@ void test_crkgC(void** data) {
         A3[i] = distribution(generator);
         B[i] = distribution(generator);
     }
+    A1[0] = 0;
 
     {
         auto A11 = A1;
@@ -604,9 +610,9 @@ void test_crkgC(void** data) {
 
         auto t1 = steady_clock::now();
         if constexpr(std::is_same_v<T, double>) {
-            solve_tdiag_linear_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         } else {
-            solve_tdiag_linearf_my(B1.data(), A11.data(), A21.data(), A31.data(), N);
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
         }
         auto t2 = steady_clock::now();
         auto interval = duration_cast<duration<double>>(t2 - t1);
