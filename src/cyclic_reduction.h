@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <vector>
 #include <math.h>
 
 namespace fdm {
