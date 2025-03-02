@@ -137,6 +137,23 @@ static inline unsigned char addcarry_u64(uint64_t a, uint64_t b, uint64_t* sum) 
     return carry_out;
 }
 
+static inline unsigned char subborrow_u64(unsigned char borrow, uint64_t a, uint64_t b, uint64_t* diff) {
+    uint64_t res;
+    unsigned int outBorrow;
+    asm volatile(
+        "mov    w10, #1           \n"
+        "sub    w10, w10, %w[br]   \n"
+        "cmp    w10, #1           \n"
+        "sbcs   %x[res], %x[a], %x[b] \n"
+        "cset   %w[ob], cc        \n"
+        : [res] "=&r" (res), [ob] "=&r" (outBorrow)
+        : [a] "r" (a), [b] "r" (b), [br] "r" ((unsigned int)borrow)
+        : "w10", "cc"
+    );
+    *diff = res;
+    return (unsigned char) outBorrow;
+}
+
 #endif
 
 } // detail
