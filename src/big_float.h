@@ -605,7 +605,12 @@ private:
 
     template<size_t array_blocks>
     static bool IsZero(const std::array<BlockType, array_blocks>& array) {
-        return array == std::array<BlockType, array_blocks>{0};
+        for (size_t i = array_blocks - 1; i >= 0; --i) {
+            if (array[i] != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     static BigFloat IntFromString(const std::string& intPart) {
