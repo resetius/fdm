@@ -719,7 +719,7 @@ private:
         const std::array<BlockType, blocks>& a,
         const std::array<BlockType, blocks>& b)
     {
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__aarch64__)
         constexpr bool use_asm = std::is_same_v<BlockType, uint64_t>;
 #else
         constexpr bool use_asm = false;
