@@ -669,6 +669,8 @@ private:
     {
 #if defined(__x86_64__) || defined(__aarch64__)
         constexpr bool use_asm = std::is_same_v<BlockType, uint64_t>;
+#else
+        constexpr bool use_asm = false;
 #endif
 
         if constexpr(use_asm) {
