@@ -75,6 +75,68 @@ mul double : 0
 #include <cstdint>
 #include <algorithm>
 
+#if defined(__x86_64__)
+#include <x86intrin.h>
+#endif
+
+namespace detail {
+
+static inline int clz(uint32_t a) {
+    return __builtin_clz(a);
+}
+
+static inline int clz(uint64_t a) {
+    return __builtin_clzll(a);
+}
+
+#if defined(__x86_64__)
+static inline unsigned char addcarry_u64(unsigned char carry, uint64_t a, uint64_t b, uint64_t* sum) {
+    return _addcarry_u64(carry, a, b, (unsigned long long*)sum);
+}
+
+static inline unsigned char addcarry_u64(uint64_t a, uint64_t b, uint64_t* sum) {
+    return _addcarry_u64(0, a, b, (unsigned long long*)sum);
+}
+
+#elif defined(__aarch64__)
+
+static inline unsigned char addcarry_u64(unsigned char carry, uint64_t a, uint64_t b, uint64_t* sum) {
+    unsigned char carry_out;
+    uint64_t result;
+
+    asm (
+        "adds xzr, xzr, xzr\n\t"
+        "adcs %[result], %[a], %[b]\n\t"
+        "cset %[carry_out], cs"
+        : [result] "=r" (result), [carry_out] "=r" (carry_out)
+        : [a] "r" (a), [b] "r" (b)
+        : "cc"
+    );
+
+    *sum = result;
+    return carry_out;
+}
+
+static inline unsigned char addcarry_u64(uint64_t a, uint64_t b, uint64_t* sum) {
+    unsigned char carry_out;
+    uint64_t result;
+
+    asm (
+        "adds %[result], %[a], %[b]\n\t"
+        "cset %[carry_out], cs"
+        : [result] "=r" (result), [carry_out] "=r" (carry_out)
+        : [a] "r" (a), [b] "r" (b)
+        : "cc"
+    );
+
+    *sum = result;
+    return carry_out;
+}
+
+#endif
+
+} // detail
+
 template<int blocks, typename BlockType = uint64_t>
 class BigFloat {
 public:
@@ -591,7 +653,7 @@ private:
             if (array[i] == 0) {
                 shift += blockBits;
             } else {
-                shift += clz(array[i]);
+                shift += detail::clz(array[i]);
                 break;
             }
         }
@@ -600,29 +662,33 @@ private:
         shiftMantissaLeft(array, shift);
     }
 
-    static int clz(uint32_t a) {
-        return __builtin_clz(a);
-    }
-
-    static int clz(uint64_t a) {
-        return __builtin_clzll(a);
-    }
-
     static BlockType sumWithCarry(
         std::array<BlockType, blocks>& result,
         const std::array<BlockType, blocks>& a,
         const std::array<BlockType, blocks>& b)
     {
-        BlockType carry = 0;
-        for (size_t i = 0; i < blocks; ++i) {
-            BlockType temp = a[i] + carry;
-            bool overflow1 = temp < carry;
-            BlockType sum = temp + b[i];
-            bool overflow2 = sum < temp;
-            result[i] = sum;
-            carry = overflow1 | overflow2;
+#if defined(__x86_64__) || defined(__aarch64__)
+        constexpr bool use_asm = std::is_same_v<BlockType, uint64_t>;
+#endif
+
+        if constexpr(use_asm) {
+            BlockType carry = detail::addcarry_u64(a[0], b[0], &result[0]);
+            for (size_t i = 1; i < blocks; ++i) {
+                carry = detail::addcarry_u64(carry, a[i], b[i], &result[i]);
+            }
+            return carry;
+        } else {
+            BlockType carry = 0;
+            for (size_t i = 0; i < blocks; ++i) {
+                BlockType temp = a[i] + carry;
+                bool overflow1 = temp < carry;
+                BlockType sum = temp + b[i];
+                bool overflow2 = sum < temp;
+                result[i] = sum;
+                carry = overflow1 | overflow2;
+            }
+            return carry;
         }
-        return carry;
     }
 
     static void subWithBorrow(
