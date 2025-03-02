@@ -787,7 +787,13 @@ private:
                 result[pos] = static_cast<BlockType>(sum);
                 carry = sum >> blockBits;
             }
-            result[i + blocks] += static_cast<BlockType>(carry);
+            size_t pos = i + blocks;
+            while (carry && pos < result.size()) {
+                WideType sum = static_cast<WideType>(result[pos]) + carry;
+                result[pos] = static_cast<BlockType>(sum);
+                carry = sum >> blockBits;
+                ++pos;
+            }
         }
 
         for (size_t i = 0; i < blocks; ++i) {
