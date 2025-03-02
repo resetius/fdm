@@ -703,19 +703,25 @@ private:
         const std::array<BlockType, blocks>& b)
     {
 #if defined(__x86_64__)
-        BlockType borrow = 0;
-        for (size_t i = 0; i < blocks; ++i) {
-            borrow = detail::subborrow_u64(borrow, a[i], b[i], &result[i]);
-        }
+        constexpr bool use_asm = std::is_same_v<BlockType, uint64_t>;
 #else
-        BlockType borrow = 0;
-        for (size_t i = 0; i < blocks; ++i) {
-            BlockType subtrahend = b[i] + borrow;
-            bool overflow = (subtrahend < b[i]);
-            result[i] = a[i] - subtrahend;
-            borrow = (a[i] < subtrahend)  | overflow;
-        }
+        constexpr bool use_asm = false;
 #endif
+
+        if constexpr(use_asm) {
+            BlockType borrow = 0;
+            for (size_t i = 0; i < blocks; ++i) {
+                borrow = detail::subborrow_u64(borrow, a[i], b[i], &result[i]);
+            }
+        } else {
+            BlockType borrow = 0;
+            for (size_t i = 0; i < blocks; ++i) {
+                BlockType subtrahend = b[i] + borrow;
+                bool overflow = (subtrahend < b[i]);
+                result[i] = a[i] - subtrahend;
+                borrow = (a[i] < subtrahend)  | overflow;
+            }
+        }
     }
 
     static void mulWithCarry(
