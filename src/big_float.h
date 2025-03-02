@@ -98,13 +98,17 @@ static inline unsigned char addcarry_u64(uint64_t a, uint64_t b, uint64_t* sum) 
     return _addcarry_u64(0, a, b, (unsigned long long*)sum);
 }
 
+static inline unsigned char subborrow_u64(unsigned char borrow, uint64_t a, uint64_t b, uint64_t* res) {
+    return _subborrow_u64(borrow, a, b, (unsigned long long*)res);
+}
+
 #elif defined(__aarch64__)
 
 static inline unsigned char addcarry_u64(unsigned char carry, uint64_t a, uint64_t b, uint64_t* sum) {
     unsigned char carry_out;
     uint64_t result;
 
-    asm (
+    asm volatile (
         "adds xzr, xzr, xzr\n\t"
         "adcs %[result], %[a], %[b]\n\t"
         "cset %[carry_out], cs"
@@ -121,7 +125,7 @@ static inline unsigned char addcarry_u64(uint64_t a, uint64_t b, uint64_t* sum) 
     unsigned char carry_out;
     uint64_t result;
 
-    asm (
+    asm volatile (
         "adds %[result], %[a], %[b]\n\t"
         "cset %[carry_out], cs"
         : [result] "=r" (result), [carry_out] "=r" (carry_out)
@@ -698,6 +702,12 @@ private:
         const std::array<BlockType, blocks>& a,
         const std::array<BlockType, blocks>& b)
     {
+#if defined(__x86_64__)
+        BlockType borrow = 0;
+        for (size_t i = 0; i < blocks; ++i) {
+            borrow = detail::subborrow_u64(borrow, a[i], b[i], &result[i]);
+        }
+#else
         BlockType borrow = 0;
         for (size_t i = 0; i < blocks; ++i) {
             BlockType subtrahend = b[i] + borrow;
@@ -705,6 +715,7 @@ private:
             result[i] = a[i] - subtrahend;
             borrow = (a[i] < subtrahend)  | overflow;
         }
+#endif
     }
 
     static void mulWithCarry(
