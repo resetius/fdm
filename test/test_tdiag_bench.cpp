@@ -16,10 +16,10 @@ template<typename T, typename Func1, typename Func2>
 double benchmark_tdiag(int N, int iterations, Func1 prep, Func2 f)
 {
     static constexpr bool debug = false;
-    std::vector<T> A1(2*N-1);
-    std::vector<T> A2(2*N);
-    std::vector<T> A3(2*N-1);
-    std::vector<T> B(2*N);
+    std::vector<T> A1(2*N-1); // lower
+    std::vector<T> A2(2*N);   // middle
+    std::vector<T> A3(2*N-1); // upper
+    std::vector<T> B(2*N);    // rhs
 
     auto init = [&] () {
         for (int i = 0; i < N-1; i++) {
@@ -187,6 +187,17 @@ int main() {
         );
         output(N, stats, "crkgC(d)");
 
+        CyclicReduction<double> crr(N);
+        stats = benchmark_tdiag<double>(N, iterations,
+            [&](double *A1, double *A2, double *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cr.executePrepare(A2, A1, A3, B);
+            }
+        );
+        output(N, stats, "crkgCC(d)");
+
         stats = benchmark_tdiag<float>(N, iterations,
             [](float *A1, float *A2, float *A3, int N) -> void* {
                 return nullptr;
@@ -297,6 +308,18 @@ int main() {
             }
         );
         output(N, stats, "crkgC(f)");
+
+
+        CyclicReduction<float> crff(N);
+        stats = benchmark_tdiag<float>(N, iterations,
+            [&](float *A1, float *A2, float *A3, int N) -> void* {
+                 return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                crf.executePrepare(A2, A1, A3, B);
+            }
+        );
+        output(N, stats, "crkgCC(f)");
     }
     return 0;
 }
