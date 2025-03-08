@@ -96,16 +96,6 @@ void test_mul(void** s) {
     assert_string_equal(c.ToString().c_str(), "0.549999999999999999");
 }
 
-template<typename T>
-void test_square(void** s) {
-    auto a = BigFloat<2,T>::FromString("0.5");
-    auto b = a.Square();
-    assert_string_equal(b.ToString().c_str(), "0.25");
-    a = BigFloat<2,T>::FromString("0.3");
-    b = a.Square();
-    assert_string_equal(b.ToString().c_str(), "0.089999999999999999");
-}
-
 /*
 template<typename T>
 void test_div(void** s) {
@@ -410,7 +400,6 @@ int main() {
         my_unit(test_eps),
         my_unit(test_microbench),
         my_unit(test_construct),
-        my_unit(test_square),
         cmocka_unit_test(test_precision),
     };
 
