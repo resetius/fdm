@@ -352,6 +352,7 @@ void test_precision(void**)
     // AdditionPrecision
     {
         BigFloat<2,uint32_t> a, b;
+        a.sign = b.sign = 1;
         a.mantissa[1] = 1; // 2^32
         a.exponent = 0;
         a.normalize();
