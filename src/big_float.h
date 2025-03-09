@@ -588,7 +588,7 @@ private:
 
     template<size_t array_blocks>
     static bool IsZero(const std::array<BlockType, array_blocks>& array) {
-        for (size_t i = array_blocks - 1; i >= 0; --i) {
+        for (int i = (int)array_blocks - 1; i >= 0; --i) {
             if (array[i] != 0) {
                 return false;
             }
