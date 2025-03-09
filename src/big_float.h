@@ -782,12 +782,13 @@ private:
             }
         }
 
-        BlockType mask = (1ULL << bitShift) - 1ULL;
-
-        for (size_t i = blockShift; i < array_blocks; ++i) {
-            BlockType next_carry = (mantissa[i] & (mask << (blockBits - bitShift))) >> (blockBits - bitShift);
-            mantissa[i] = (mantissa[i] << bitShift) | carry;
-            carry = next_carry;
+        if (bitShift > 0) {
+            BlockType mask = (1ULL << bitShift) - 1ULL;
+            for (size_t i = blockShift; i < array_blocks; ++i) {
+                BlockType next_carry = (mantissa[i] & (mask << (blockBits - bitShift))) >> (blockBits - bitShift);
+                mantissa[i] = (mantissa[i] << bitShift) | carry;
+                carry = next_carry;
+            }
         }
     }
 
@@ -810,12 +811,13 @@ private:
             }
         }
 
-        BlockType mask = (1ULL << bitShift) - 1ULL;
-
-        for (int i = blocks - blockShift - 1; i >= 0; --i) {
-            BlockType next_carry = mantissa[i] & mask;
-            mantissa[i] = (mantissa[i] >> bitShift) | (carry << (blockBits - bitShift));
-            carry = next_carry;
+        if (bitShift > 0) {
+            BlockType mask = (1ULL << bitShift) - 1ULL;
+            for (int i = blocks - blockShift - 1; i >= 0; --i) {
+                BlockType next_carry = mantissa[i] & mask;
+                mantissa[i] = (mantissa[i] >> bitShift) | (carry << (blockBits - bitShift));
+                carry = next_carry;
+            }
         }
     }
 
