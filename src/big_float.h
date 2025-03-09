@@ -177,7 +177,7 @@ public:
         }
 
         uint64_t bits = val.u;
-        sign = (bits >> 63) & 0x1;
+        sign = ((bits >> 63) & 0x1) == 0 ? 1 : -1;
 
         int exponent_raw = (bits >> 52) & 0x7FF;
         exponent = exponent_raw - 1023;
@@ -201,7 +201,7 @@ public:
         if (number == 0) {
             return;
         }
-        sign = number < 0;
+        sign = (number < 0) ? -1 : 1;
         uint64_t value = std::abs(number);
         if constexpr(std::is_same_v<BlockType, uint64_t>) {
             mantissa[blocks-1] = value;
@@ -251,24 +251,24 @@ public:
 
     BigFloat operator-() const {
         BigFloat result = *this;
-        result.sign = !result.sign;
+        result.sign = -result.sign;
         return result;
     }
 
     bool operator<(const BigFloat& other) const {
         if (IsZero()) {
-            return !other.sign;
+            return other.sign == 1;
         }
 
         if (other.IsZero()) {
-            return sign;
+            return sign == -1;
         }
 
         if (sign != other.sign) {
-            return sign;
+            return sign < other.sign;
         }
 
-        if (sign) {
+        if (sign == -1) {
             return -other < -*this;
         }
 
@@ -318,7 +318,7 @@ public:
         }
         mantissa_raw >>= 63-52;
         val.u |= mantissa_raw & 0xFFFFFFFFFFFFFULL;
-        val.u |= static_cast<uint64_t>(sign) << 63;
+        val.u |= sign == -1 ? static_cast<uint64_t>(1) << 63 : 0;
 
         return val.d;
     }
@@ -327,9 +327,9 @@ public:
         BigFloat result;
 
         size_t pos = 0;
-        bool sign = false;
+        int sign = 1;
         if (str[0] == '-') {
-            sign = true;
+            sign = -1;
             pos++;
         }
 
@@ -356,7 +356,9 @@ public:
             result = result + frac;
         }
 
-        result.sign = sign;
+        if (!result.IsZero()) {
+            result.sign = sign;
+        }
 
         return result;
     }
@@ -364,7 +366,7 @@ public:
     std::string ToString() const {
         std::string result;
 
-        if (sign) {
+        if (sign == -1) {
             result += "-";
         }
 
@@ -402,7 +404,7 @@ public:
 
             int32_t effectiveExp = exponent + (blocks*blockBits-1);
 
-            while (value != std::array<BlockType,blocks>{} && fracPart.size() < 18) {
+            while (!IsZero(value) && fracPart.size() < 18) {
                 carry = 0;
 
                 for (size_t i = 0; i < value.size(); i++) {
@@ -448,7 +450,7 @@ public:
 
         if (sign != other.sign) {
             BigFloat temp = other;
-            temp.sign = !temp.sign;
+            temp.sign = -temp.sign;
             return *this - temp;
         }
 
@@ -486,13 +488,13 @@ public:
         }
         if (IsZero()) {
             BigFloat result = other;
-            result.sign = !result.sign;
+            result.sign = -result.sign;
             return result;
         }
 
         if (sign != other.sign) {
             BigFloat temp = other;
-            temp.sign = !temp.sign;
+            temp.sign = -temp.sign;
             return *this + temp;
         }
 
@@ -525,7 +527,7 @@ public:
         subWithBorrow(result.mantissa, a.mantissa, b.mantissa);
 
         result.exponent = a.exponent;
-        result.sign = swapped ? !sign : sign;
+        result.sign = swapped ? -sign : sign;
 
         result.normalize();
         return result;
@@ -553,7 +555,7 @@ public:
         for (size_t i = 0; i < blocks; ++i) {
             result.mantissa[i] = temp[i + blocks];
         }
-        result.sign = sign != other.sign;
+        result.sign = sign * other.sign;
         return result;
     }
 
@@ -575,13 +577,13 @@ private:
 
     std::array<BlockType, blocks> mantissa = {0};
     int32_t exponent = 0;
-    bool sign = false;
+    int sign = 0; // -1 negitive, 0 zero, 1 positive
     static constexpr int blockBits = sizeof(BlockType) * 8;
     static_assert(std::is_same_v<BlockType,uint64_t> || blocks > 1, "blocks must be greater than 1");
     static_assert(std::is_same_v<BlockType,uint64_t> || std::is_same_v<BlockType,uint32_t>);
 
     bool IsZero() const {
-        return IsZero(mantissa);
+        return sign == 0;
     }
 
     template<size_t array_blocks>
@@ -598,6 +600,10 @@ private:
         BigFloat result;
 
         uint64_t value = std::stoll(intPart);
+        if (value == 0) {
+            return {};
+        }
+        result.sign = 1;
         // TODO: handle overflow
 
         if constexpr(std::is_same_v<BlockType,uint32_t>) {
@@ -641,6 +647,11 @@ private:
             }
         }
 
+        if (IsZero(result.mantissa)) {
+            return {};
+        }
+
+        result.sign = 1;
         result.normalize();
 
         return result;
@@ -754,12 +765,12 @@ private:
     }
 
     bool isNormalized() const {
-        return isNormalized(mantissa);
+        return IsZero() || isNormalized(mantissa);
     }
 
     template<size_t array_blocks>
     static bool isNormalized(const std::array<BlockType, array_blocks>& array) {
-        return (array.back() & ((BlockType)1U << (blockBits-1))) != 0 || IsZero(array);
+        return (array.back() & ((BlockType)1U << (blockBits-1))) != 0;
     }
 
     template<size_t array_blocks>
