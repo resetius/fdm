@@ -455,22 +455,24 @@ public:
         }
 
         BigFloat result;
-        auto exp_diff = exponent - other.exponent;
+        result.sign = sign;
+        result.exponent = exponent;
 
-        BigFloat a = *this;
-        BigFloat b = other;
+        auto exp_diff = exponent - other.exponent;
+        BlockType carry = 0;
 
         if (exp_diff > 0) {
+            BigFloat b = other;
             shiftMantissaRight(b.mantissa, exp_diff);
-            b.exponent += exp_diff;
+            carry = sumWithCarry(result.mantissa, mantissa, b.mantissa);
         } else if (exp_diff < 0) {
+            BigFloat a = *this;
             shiftMantissaRight(a.mantissa, -exp_diff);
-            a.exponent -= exp_diff;
+            result.exponent -= exp_diff;
+            carry = sumWithCarry(result.mantissa, a.mantissa, other.mantissa);
+        } else {
+            carry = sumWithCarry(result.mantissa, mantissa, other.mantissa);
         }
-
-        auto carry = sumWithCarry(result.mantissa, a.mantissa, b.mantissa);
-        result.exponent = a.exponent;
-        result.sign = sign;
 
         if (carry) {
             shiftMantissaRight(result.mantissa);
