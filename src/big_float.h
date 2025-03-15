@@ -824,31 +824,23 @@ private:
 
         if (bitShift > 0) {
             BlockType mask = (1ULL << bitShift) - 1ULL;
-            if constexpr(std::is_same_v<BlockType,uint64_t>) {
+            int i;
+            for (i = 0; i < blocks - blockShift - 1; i++) {
+                carry = mantissa[i+1] & mask;
+                if constexpr(std::is_same_v<BlockType,uint64_t>) {
 #ifdef __x86_64__
-                int i;
-                for (i = 0; i < blocks - blockShift - 1; i++) {
-                    carry = mantissa[i+1] & mask;
                     asm volatile ("shrd %2, %1, %0"
                         : "+r" (mantissa[i])
                         : "r" (carry), "c" ((unsigned char)bitShift)
                     );
-                }
-                mantissa[i] >>= bitShift;
 #else
-                for (int i = blocks - blockShift - 1; i >= 0; --i) {
-                    BlockType next_carry = mantissa[i] & mask;
                     mantissa[i] = (mantissa[i] >> bitShift) | (carry << (blockBits - bitShift));
-                    carry = next_carry;
-                }
 #endif
-            } else {
-                for (int i = blocks - blockShift - 1; i >= 0; --i) {
-                    BlockType next_carry = mantissa[i] & mask;
+                } else {
                     mantissa[i] = (mantissa[i] >> bitShift) | (carry << (blockBits - bitShift));
-                    carry = next_carry;
                 }
             }
+            mantissa[i] >>= bitShift;
         }
     }
 
