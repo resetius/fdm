@@ -314,6 +314,22 @@ void bench_sum(const std::string& name)
 }
 
 template<typename T>
+void bench_dif(const std::string& name)
+{
+    T a = 0.2;
+    T b = 0.3;
+    T c = 0.0;
+
+    auto t1 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 1000000; i++) {
+        c = c - a - b;
+    }
+    auto t2 = std::chrono::steady_clock::now();
+    auto interval = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+    std::cerr << name << " : " << interval.count() << std::endl;
+}
+
+template<typename T>
 void bench_mul(const std::string& name)
 {
     T a = 0.2;
@@ -353,6 +369,13 @@ void test_microbench(void**) {
     bench_sum<float>("sum float");
     bench_sum<double>("sum double");
     //bench_sum<_Float128>("sum float128");
+
+    bench_dif<BigFloat<2,T>>("dif BigFloat<2>");
+    bench_dif<BigFloat<4,T>>("dif BigFloat<4>");
+    bench_dif<BigFloat<8,T>>("dif BigFloat<8>");
+    bench_dif<BigFloat<16,T>>("dif BigFloat<16>");
+    bench_dif<float>("dif float");
+    bench_dif<double>("dif double");
 
     bench_mul<BigFloat<2,T>>("mul BigFloat<2>");
     bench_mul<BigFloat<4,T>>("mul BigFloat<4>");
