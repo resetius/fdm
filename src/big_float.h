@@ -276,7 +276,7 @@ public:
             return exponent < other.exponent;
         }
 
-        return compare(mantissa, other.mantissa);
+        return less(mantissa, other.mantissa);
     }
 
     bool operator>(const BigFloat& other) const {
@@ -509,15 +509,9 @@ public:
         }
 
         bool swapped = false;
-        for (int i = blocks - 1; i >= 0; --i) {
-            if (a.mantissa[i] < b.mantissa[i]) {
-                std::swap(a, b);
-                swapped = true;
-                break;
-            }
-            if (a.mantissa[i] > b.mantissa[i]) {
-                break;
-            }
+        if (less(a.mantissa, b.mantissa)) {
+            std::swap(a, b);
+            swapped = true;
         }
 
         subWithBorrow(result.mantissa, a.mantissa, b.mantissa);
@@ -653,7 +647,7 @@ private:
         return result;
     }
 
-    static bool compare(const std::array<BlockType, blocks>& left, const std::array<BlockType, blocks>& right) {
+    static bool less(const std::array<BlockType, blocks>& left, const std::array<BlockType, blocks>& right) {
         for (int i = blocks-1; i >= 0; --i) {
             if (left[i] != right[i]) {
                 return left[i] < right[i];
