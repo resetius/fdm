@@ -112,6 +112,14 @@ void test_mul(void** s) {
     assert_string_equal(c.ToString().c_str(), "0.549999999999999999");
 }
 
+template<typename T>
+void test_neg(void** s) {
+    auto a = BigFloat<2,T>::FromString("0.5");
+    assert_string_equal(a.ToString().c_str(), "0.5");
+    a = -a;
+    assert_string_equal(a.ToString().c_str(), "-0.5");
+}
+
 /*
 template<typename T>
 void test_div(void** s) {
@@ -217,6 +225,17 @@ void test_comparison(void** s) {
     assert_false(b > a);
     assert_true(a > b);
     assert_true(b < a);
+
+    a = BigFloat<2,T>(2);
+    auto& a_mantissa = const_cast<std::array<T,2>&>(a.getMantissa());
+    a_mantissa[1] = 2;
+    a_mantissa[0] = 1;
+
+    b = BigFloat<2,T>(3);
+    auto& b_mantissa = const_cast<std::array<T,2>&>(b.getMantissa());
+    b_mantissa[1] = 1;
+    b_mantissa[0] = 9;
+    assert_true(a > b);
 }
 
 template<typename T>
@@ -408,6 +427,7 @@ int main() {
         my_unit(test_strings),
         my_unit(test_sum),
         my_unit(test_mul),
+        my_unit(test_neg),
         //my_unit(test_div),
         my_unit(test_long),
         my_unit(test_from_double),

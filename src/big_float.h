@@ -276,13 +276,7 @@ public:
             return exponent < other.exponent;
         }
 
-        for (int i = 0; i < blocks; i++) {
-            if (mantissa[i] != other.mantissa[i]) {
-                return mantissa[i] < other.mantissa[i];
-            }
-        }
-
-        return false;
+        return compare(mantissa, other.mantissa);
     }
 
     bool operator>(const BigFloat& other) const {
@@ -657,6 +651,15 @@ private:
         result.normalize();
 
         return result;
+    }
+
+    static bool compare(const std::array<BlockType, blocks>& left, const std::array<BlockType, blocks>& right) {
+        for (int i = blocks-1; i >= 0; --i) {
+            if (left[i] != right[i]) {
+                return left[i] < right[i];
+            }
+        }
+        return false;
     }
 
     void normalize() {
