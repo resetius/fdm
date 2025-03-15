@@ -71,6 +71,22 @@ void test_sum(void** s) {
     c = a-b;
     assert_string_equal(c.ToString().c_str(), "-3.099999999999999999");
 
+
+    a = BigFloat<4,T>::FromString("100.2");
+    b = BigFloat<4,T>::FromString("4.3");
+    c = a+b;
+    if constexpr(std::is_same_v<T,uint32_t>) {
+        assert_string_equal(c.ToString().c_str(), "104.499999999999999993");
+    } else {
+        assert_string_equal(c.ToString().c_str(), "104.499999999999999999");
+    }
+
+    c = b+a;
+    if constexpr(std::is_same_v<T,uint32_t>) {
+        assert_string_equal(c.ToString().c_str(), "104.499999999999999993");
+    } else {
+        assert_string_equal(c.ToString().c_str(), "104.499999999999999999");
+    }
 }
 
 template<typename T>
