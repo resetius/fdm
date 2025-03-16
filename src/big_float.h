@@ -727,10 +727,9 @@ private:
         } else {
             BlockType carry = 0;
             for (size_t i = 0; i < blocks; ++i) {
-                BlockType temp = a[i] + carry;
-                bool overflow1 = temp < carry;
-                BlockType sum = temp + b[i];
-                bool overflow2 = sum < temp;
+                BlockType sum;
+                bool overflow1 = __builtin_add_overflow(a[i], carry, &sum);
+                bool overflow2 = __builtin_add_overflow(b[i], sum, &sum);
                 result[i] = sum;
                 carry = overflow1 | overflow2;
             }
