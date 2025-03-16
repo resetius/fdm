@@ -470,44 +470,32 @@ public:
 
     BigFloat operator+(const BigFloat& other) const {
         BigFloat result = *this;
-        result += other;
-        return result;
+        return (result += other);
     }
 
     BigFloat& operator-=(const BigFloat& other) {
-        BigFloat temp = *this;
-        *this = temp - other;
-        return *this;
-    }
-
-    BigFloat operator-(const BigFloat& other) const {
         if (other.IsZero()) {
             return *this;
         }
         if (IsZero()) {
-            BigFloat result = other;
-            result.sign = -result.sign;
-            return result;
+            return (*this = other);
         }
 
         if (sign != other.sign) {
             BigFloat temp = other;
             temp.sign = -temp.sign;
-            return *this + temp;
+            return (*this += temp);
         }
 
-        BigFloat result;
         auto exp_diff = exponent - other.exponent;
 
         auto sub = [&](const BigFloat* a, const BigFloat* b) {
             if (less(a->mantissa, b->mantissa)) {
                 std::swap(a, b);
-                result.sign = -sign;
-            } else {
-                result.sign = sign;
+                sign = -sign;
             }
-            subWithBorrow(result.mantissa, a->mantissa, b->mantissa);
-            result.exponent = a->exponent;
+            subWithBorrow(mantissa, a->mantissa, b->mantissa);
+            exponent = a->exponent;
         };
 
         if (exp_diff > 0) {
@@ -516,16 +504,20 @@ public:
             b.exponent += exp_diff;
             sub(this, &b);
         } else if (exp_diff < 0) {
-            BigFloat a = *this;
-            shiftMantissaRight(a.mantissa, -exp_diff);
-            a.exponent -= exp_diff;
-            sub(&a, &other);
+            shiftMantissaRight(mantissa, -exp_diff);
+            exponent -= exp_diff;
+            sub(this, &other);
         } else {
             sub(this, &other);
         }
 
-        result.normalize();
-        return result;
+        normalize();
+        return *this;
+    }
+
+    BigFloat operator-(const BigFloat& other) const {
+        BigFloat result = *this;
+        return (result -= other);
     }
 
     BigFloat Mul2() const {
@@ -734,10 +726,11 @@ private:
         } else {
             BlockType borrow = 0;
             for (size_t i = 0; i < blocks; ++i) {
-                BlockType subtrahend = b[i] + borrow;
-                bool overflow = (subtrahend < b[i]);
-                result[i] = a[i] - subtrahend;
-                borrow = (a[i] < subtrahend)  | overflow;
+                BlockType sub = b[i] + borrow;
+                bool overflow = (sub < b[i]);
+                BlockType value = a[i] - sub;
+                borrow = (a[i] < sub)  | overflow;
+                result[i] = value;
             }
         }
     }
