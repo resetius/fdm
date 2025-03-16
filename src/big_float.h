@@ -430,27 +430,18 @@ public:
     }
 
     BigFloat& operator+=(const BigFloat& other) {
-        *this = *this + other;
-        return *this;
-    }
-
-    BigFloat operator+(const BigFloat& other) const {
         if (other.IsZero()) {
             return *this;
         }
         if (IsZero()) {
-            return other;
+            return (*this = other);
         }
 
         if (sign != other.sign) {
             BigFloat temp = other;
             temp.sign = -temp.sign;
-            return *this - temp;
+            return (*this -= temp);
         }
-
-        BigFloat result;
-        result.sign = sign;
-        result.exponent = exponent;
 
         auto exp_diff = exponent - other.exponent;
         BlockType carry = 0;
@@ -458,24 +449,35 @@ public:
         if (exp_diff > 0) {
             BigFloat b = other;
             shiftMantissaRight(b.mantissa, exp_diff);
-            carry = sumWithCarry(result.mantissa, mantissa, b.mantissa);
+            carry = sumWithCarry(mantissa, mantissa, b.mantissa);
         } else if (exp_diff < 0) {
-            BigFloat a = *this;
-            shiftMantissaRight(a.mantissa, -exp_diff);
-            result.exponent -= exp_diff;
-            carry = sumWithCarry(result.mantissa, a.mantissa, other.mantissa);
+            shiftMantissaRight(mantissa, -exp_diff);
+            exponent -= exp_diff;
+            carry = sumWithCarry(mantissa, mantissa, other.mantissa);
         } else {
-            carry = sumWithCarry(result.mantissa, mantissa, other.mantissa);
+            carry = sumWithCarry(mantissa, mantissa, other.mantissa);
         }
 
         if (carry) {
-            shiftMantissaRight(result.mantissa);
-            result.mantissa[blocks-1] |= carry << (blockBits - 1);
-            result.exponent++;
+            shiftMantissaRight(mantissa);
+            mantissa[blocks-1] |= carry << (blockBits - 1);
+            exponent++;
         }
 
-        result.normalize();
+        normalize();
+        return *this;
+    }
+
+    BigFloat operator+(const BigFloat& other) const {
+        BigFloat result = *this;
+        result += other;
         return result;
+    }
+
+    BigFloat& operator-=(const BigFloat& other) {
+        BigFloat temp = *this;
+        *this = temp - other;
+        return *this;
     }
 
     BigFloat operator-(const BigFloat& other) const {
