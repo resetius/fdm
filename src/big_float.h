@@ -102,6 +102,14 @@ static inline unsigned char subborrow_u64(unsigned char borrow, uint64_t a, uint
     return _subborrow_u64(borrow, a, b, (unsigned long long*)res);
 }
 
+static inline void umul_ppmm(uint64_t* hi, uint64_t* lo, uint64_t a, uint64_t b) {
+    asm volatile(
+        "mulx %[b], %[lo], %[hi]"
+        : [lo] "=r" (*lo), [hi] "=r" (*hi)
+        : "d" (a), [b] "r" (b)
+    );
+}
+
 #elif defined(__aarch64__)
 
 static inline unsigned char addcarry_u64(unsigned char carry, uint64_t a, uint64_t b, uint64_t* sum) {
@@ -154,7 +162,30 @@ static inline unsigned char subborrow_u64(unsigned char borrow, uint64_t a, uint
     return (unsigned char) outBorrow;
 }
 
+static inline void umul_ppmm(uint64_t* hi, uint64_t* lo, uint64_t a, uint64_t b) {
+    asm volatile (
+        "mul  %0, %2, %3\n\t"
+        "umulh %1, %2, %3"
+        : "=&r"(*lo), "=&r"(*hi)
+        : "r"(a), "r"(b)
+    );
+}
+
+#else
+
+static inline void umul_ppmm(uint64_t* hi, uint64_t* lo, uint64_t a, uint64_t b) {
+    unsigned __int128 tmp = static_cast<unsigned __int128>(a)*b;
+    *lo = static_cast<uint64_t>(tmp);
+    *hi = static_cast<uint64_t>(tmp >> 32);
+}
+
 #endif
+
+static inline void umul_ppmm(uint32_t* hi, uint32_t* lo, uint32_t a, uint32_t b) {
+    uint64_t tmp = static_cast<uint64_t>(a)*b;
+    *lo = static_cast<uint32_t>(tmp);
+    *hi = static_cast<uint32_t>(tmp >> 32);
+}
 
 } // detail
 
@@ -747,17 +778,14 @@ private:
             for (size_t j = 0; j < blocks; ++j) {
                 size_t pos = i + j;
 
-                WideType prod = static_cast<WideType>(a[i]) *
-                            static_cast<WideType>(b[j]) +
-                            static_cast<WideType>(result[pos]) +
-                            carry;
-
-                result[pos] = static_cast<BlockType>(prod);
-
-                carry = prod >> blockBits;
+                BlockType hi, lo;
+                detail::umul_ppmm(&hi, &lo, a[i], b[j]);
+                hi += __builtin_add_overflow(lo, result[pos], &lo);
+                carry = __builtin_add_overflow(lo, carry, &lo) + hi;
+                result[pos] = lo;
             }
 
-            result[i + blocks] += static_cast<BlockType>(carry);
+            result[i + blocks] += carry;
         }
     }
 
