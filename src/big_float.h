@@ -497,27 +497,30 @@ public:
         BigFloat result;
         auto exp_diff = exponent - other.exponent;
 
-        BigFloat a = *this;
-        BigFloat b = other;
+        auto sub = [&](const BigFloat* a, const BigFloat* b) {
+            if (less(a->mantissa, b->mantissa)) {
+                std::swap(a, b);
+                result.sign = -sign;
+            } else {
+                result.sign = sign;
+            }
+            subWithBorrow(result.mantissa, a->mantissa, b->mantissa);
+            result.exponent = a->exponent;
+        };
 
         if (exp_diff > 0) {
+            BigFloat b = other;
             shiftMantissaRight(b.mantissa, exp_diff);
             b.exponent += exp_diff;
+            sub(this, &b);
         } else if (exp_diff < 0) {
+            BigFloat a = *this;
             shiftMantissaRight(a.mantissa, -exp_diff);
             a.exponent -= exp_diff;
+            sub(&a, &other);
+        } else {
+            sub(this, &other);
         }
-
-        bool swapped = false;
-        if (less(a.mantissa, b.mantissa)) {
-            std::swap(a, b);
-            swapped = true;
-        }
-
-        subWithBorrow(result.mantissa, a.mantissa, b.mantissa);
-
-        result.exponent = a.exponent;
-        result.sign = swapped ? -sign : sign;
 
         result.normalize();
         return result;

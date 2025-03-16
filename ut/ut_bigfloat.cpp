@@ -87,6 +87,20 @@ void test_sum(void** s) {
     } else {
         assert_string_equal(c.ToString().c_str(), "104.499999999999999999");
     }
+
+    c = a-b;
+    if constexpr(std::is_same_v<T,uint32_t>) {
+        assert_string_equal(c.ToString().c_str(), "95.900000000000000001");
+    } else {
+        assert_string_equal(c.ToString().c_str(), "95.900000000000000000");
+    }
+
+    c = b-a;
+    if constexpr(std::is_same_v<T,uint32_t>) {
+        assert_string_equal(c.ToString().c_str(), "-95.900000000000000001");
+    } else {
+        assert_string_equal(c.ToString().c_str(), "-95.900000000000000000");
+    }
 }
 
 template<typename T>
