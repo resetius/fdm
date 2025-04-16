@@ -165,6 +165,13 @@ int main() {
             output(N, stats, "fftw3(d)");
 #endif
         }
+        {
+#ifdef HAVE_ONEMATH
+            FFTSycl<double> ft1(q, N);
+            auto stats = benchmark_fft<double>(ft1, N, iterations, sycl_d_alloc);
+            output(N, stats, "Sycl(d)");
+#endif
+        }
 
         {
             FFTTable<float> table(N);

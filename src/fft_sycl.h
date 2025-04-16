@@ -26,7 +26,7 @@ class FFTSycl {
     sycl::queue& q;
     int N;
     FFTSyclDescriptor desc;
-    std::complex<float>* tmp;
+    std::complex<T>* tmp;
 
 public:
     FFTSycl(sycl::queue& q, int N)
