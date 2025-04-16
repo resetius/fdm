@@ -83,14 +83,32 @@ int main() {
 
     for(int power = min_power; power <= max_power; ++power) {
         int N = 1 << power;
-        FFTTable<double> table(N);
-        FFT<double> ft1(table, N);
-        auto stats = benchmark_fft<double>(ft1, N, iterations);
-        output(N, stats, "FFT");
+        {
+            FFTTable<double> table(N);
+            FFT<double> ft1(table, N);
+            auto stats = benchmark_fft<double>(ft1, N, iterations);
+            output(N, stats, "FFT(d)");
+        }
+        {
 #ifdef HAVE_FFTW3
-        FFT_fftw3<double> ft2(N);
-        stats = benchmark_fft<double>(ft2, N, iterations);
-        output(N, stats, "fftw3");
+            FFT_fftw3<double> ft2(N);
+            auto stats = benchmark_fft<double>(ft2, N, iterations);
+            output(N, stats, "fftw3(d)");
 #endif
+        }
+
+        {
+            FFTTable<float> table(N);
+            FFT<float> ft1(table, N);
+            auto stats = benchmark_fft<float>(ft1, N, iterations);
+            output(N, stats, "FFT(f)");
+        }
+        {
+#ifdef HAVE_FFTW3
+            FFT_fftw3<float> ft2(N);
+            auto stats = benchmark_fft<float>(ft2, N, iterations);
+            output(N, stats, "fftw3(f)");
+#endif
+        }
     }
 }
