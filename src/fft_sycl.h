@@ -36,6 +36,8 @@ public:
         , tmp(sycl::malloc_shared<std::complex<T>>(N/2 + 1, q))
     {
         desc.set_value(oneapi::math::dft::config_param::PLACEMENT, oneapi::math::dft::config_value::NOT_INPLACE);
+        desc.set_value(oneapi::math::dft::config_param::CONJUGATE_EVEN_STORAGE,
+            oneapi::math::dft::config_value::COMPLEX_COMPLEX );
         desc.commit(q);
     }
 
@@ -50,7 +52,7 @@ public:
 
         return q.submit([&](sycl::handler& h) {
             h.depends_on(fft_event);
-            h.parallel_for(sycl::range<1>(N/2 + 1), [=](sycl::id<1> idx) {
+            h.parallel_for(sycl::range<1>(N/2 + 1), [=,N=N](sycl::id<1> idx) {
                 int k = idx[0];
                 if (k == 0) {
                     S[0] = out[0].real() * dx;

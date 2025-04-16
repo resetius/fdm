@@ -1,6 +1,37 @@
 cmake_minimum_required(VERSION 3.20)
 project(fdm)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+find_program(ICPX_EXECUTABLE
+    NAMES icpx
+    HINTS
+      ENV SYCL_ROOT
+      /opt/intel/oneapi/compiler/latest/bin
+      $ENV{ONEAPI_ROOT}/compiler/latest/bin
+)
+
+find_path(ONEMATH_INCLUDE_DIR
+    NAMES oneapi/math.hpp
+    HINTS
+      /usr/local/include
+)
+
+if (ICPX_EXECUTABLE AND ONEMATH_INCLUDE_DIR)
+    message(STATUS "Found icpx: ${ICPX_EXECUTABLE}")
+    message(STATUS "Found oneapi/math.hpp in: ${ONEMATH_INCLUDE_DIR}")
+    set(SYCL_FOUND TRUE CACHE BOOL "Found SYCL/icpx + oneapi/math.hpp")
+else()
+    message(WARNING "SYCL compiler (icpx) or oneapi/math.hpp not found")
+    set(SYCL_FOUND FALSE CACHE BOOL "Found SYCL/icpx + oneapi/math.hpp")
+endif()
+
+if (SYCL_FOUND)
+set(CMAKE_CXX_COMPILER ${ICPX_EXECUTABLE} CACHE FILEPATH "C++ compiler for SYCL target" FORCE)
+set(CMAKE_CXX_FLAGS
+   "${CMAKE_CXX_FLAGS} -fsycl -fsycl-targets=nvptx64-nvidia-cuda,spir64 -DHAVE_ONEMATH"
+)
+endif ()
+
 find_package(PkgConfig REQUIRED)
 find_package(OpenMP)
 enable_testing()

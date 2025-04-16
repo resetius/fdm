@@ -8,6 +8,10 @@
 #include "fft.h"
 #include "unixbench_score.h"
 
+#ifdef HAVE_ONEMATH
+#include "fft_sycl.h"
+#endif
+
 using namespace fdm;
 
 struct CombinedBenchmarkStats {

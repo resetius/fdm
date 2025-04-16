@@ -27,7 +27,7 @@ public:
 	std::vector < double > C;
 	std::vector < double > RP;
 
-	conv_diags(int n): A(n), B(n), C(n), RP(n) 
+	conv_diags(int n): A(n), B(n), C(n), RP(n)
 	{
 	}
 
@@ -118,7 +118,7 @@ public:
      * \param Y
      */
     void XYtoU(double* U, const double* X) {
-		if (use_fft) {			
+		if (use_fft) {
 			vector < double > s (n_y + 1);
 			for (int i = 0; i <= n_x; i++) {
 				s[0]  = 0.0;
@@ -192,30 +192,30 @@ public:
 
         double ret = 0.0;
 		if (0 < i && i < n_x) {
-			ret += (A[pOff(i + 1, j)] 
-				- 2. * A[pOff(i, j)] 
+			ret += (A[pOff(i + 1, j)]
+				- 2. * A[pOff(i, j)]
 				+ A[pOff(i - 1, j)]) * d_x2_1;
 		} else if (i == 0) {
-			ret += (A[pOff(i + 1, j)] 
-				- 2. * A[pOff(i, j)] 
+			ret += (A[pOff(i + 1, j)]
+				- 2. * A[pOff(i, j)]
 				) * d_x2_1;
 		} else if (i == n_x) {
 			ret += (
-				- 2. * A[pOff(i, j)] 
+				- 2. * A[pOff(i, j)]
 				+ A[pOff(i - 1, j)]) * d_x2_1;
 		}
 
 		if (0 < j && j < n_y) {
-			ret += (A[pOff(i, j + 1)] 
-				- 2. * A[pOff(i, j)] 
+			ret += (A[pOff(i, j + 1)]
+				- 2. * A[pOff(i, j)]
 				+ A[pOff(i, j - 1)]) * d_y2_1;
 		} else if (j == 0) {
-			ret += (A[pOff(i, j + 1)] 
-				- 2. * A[pOff(i, j)] 
+			ret += (A[pOff(i, j + 1)]
+				- 2. * A[pOff(i, j)]
 				) * d_y2_1;
 		} else if (j == n_y) {
 			ret += (
-				- 2. * A[pOff(i, j)] 
+				- 2. * A[pOff(i, j)]
 				+ A[pOff(i, j - 1)]) * d_y2_1;
 		}
         return ret;
@@ -252,7 +252,7 @@ public:
      */
 	void conv_laplace(double* M,
 		double mult_factor,
-		double diag) 
+		double diag)
 	{
         if (d1 == 0) d1 = new conv_diags(n_x+1);
 		vector < double > MF(np * (n_y + 1));
@@ -334,12 +334,16 @@ double Laplacian2D::lapl(const double * M, int i, int j)
 	return d->laplacian_ij(M, i, j);
 }
 
-void Laplacian2D::lapl_1(double * Dest, const double * Source, 
+void Laplacian2D::lapl_1(double * Dest, const double * Source,
 		double mult, double diag)
 {
-	if (Dest != Source) memcpy(Dest, Source, 
-		(d->n_x + 1) * (d->n_y + 1) * sizeof(double));
+	if (Dest != Source) {
+		memcpy(Dest, Source, (d->n_x + 1) * (d->n_y + 1) * sizeof(double));
+	}
+	// compiler bug
+#ifndef HAVE_ONEMATH
 	d->conv_laplace(Dest, mult, diag);
+#endif
 }
 
 
@@ -376,7 +380,7 @@ double Laplacian::lapl(const double * A, int i)
 	double ret = 0.0;
 	switch (type) {
 	case PERIODIC:
-		ret += (A[(i + 1) % n_x] - 2. * A[i] + 
+		ret += (A[(i + 1) % n_x] - 2. * A[i] +
 			A[(n_x + i) % n_x]) * d_x2_1;
 		break;
 	case ZERO_COND:
