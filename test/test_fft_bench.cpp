@@ -22,6 +22,7 @@ struct CombinedBenchmarkStats {
     double pFFT;
 };
 
+#ifdef HAVE_ONEMATH
 template<typename T>
 class sycl_allocator {
 public:
@@ -65,6 +66,7 @@ private:
     template<typename U> friend class sycl_allocator;
     sycl::queue *queue_;
 };
+#endif
 
 template <typename F, typename... Args>
 void call_and_wait(F&& f, Args&&... args) {
