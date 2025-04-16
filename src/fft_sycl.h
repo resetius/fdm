@@ -33,7 +33,7 @@ public:
         : q(q)
         , N(N)
         , desc(N)
-        , tmp(sycl::malloc_shared<std::complex<T>>(N/2 + 1, q))
+        , tmp(sycl::malloc_device<std::complex<T>>(N/2 + 1, q))
     {
         desc.set_value(oneapi::math::dft::config_param::PLACEMENT, oneapi::math::dft::config_value::NOT_INPLACE);
         desc.set_value(oneapi::math::dft::config_param::CONJUGATE_EVEN_STORAGE,
