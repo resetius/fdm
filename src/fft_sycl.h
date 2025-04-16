@@ -46,9 +46,9 @@ public:
     }
 
     // r2c
-    sycl::event pFFT_1(T *S, const T* s, T dx) {
+    sycl::event pFFT_1(T *S, T* s, T dx) {
         auto* out = tmp;
-        auto fft_event = oneapi::math::dft::compute_backward(desc, s, out);
+        auto fft_event = oneapi::math::dft::compute_forward(desc, s, out);
 
         return q.submit([&](sycl::handler& h) {
             h.depends_on(fft_event);
