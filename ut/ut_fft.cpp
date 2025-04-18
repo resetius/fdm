@@ -121,6 +121,7 @@ void test_periodic_3d_float(void**) {
     test_periodic_3d<float>(nullptr);
 }
 
+#ifdef HAVE_ONEMATH
 template<typename T>
 void test_periodic_3d_sycl(void**) {
     sycl::queue q{ sycl::default_selector_v };
@@ -190,6 +191,7 @@ void test_periodic_3d_sycl_double(void**) {
 void test_periodic_3d_sycl_float(void**) {
     test_periodic_3d_sycl<float>(nullptr);
 }
+#endif
 
 template<typename T>
 void test_sin(void**) {
