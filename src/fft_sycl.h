@@ -70,23 +70,34 @@ class FFTSycl {
     sycl::queue& q;
     int N;
     FFTSyclDescriptor desc;
+    FFTSyclDescriptor desc_batch;
     std::complex<T>* tmp;
+    std::complex<T>* tmp_3d;
 
 public:
     FFTSycl(sycl::queue& q, int N)
         : q(q)
         , N(N)
         , desc(N)
+        , desc_batch(N)
         , tmp(sycl::malloc_device<std::complex<T>>(N/2 + 1, q))
+        , tmp_3d(sycl::malloc_device<std::complex<T>>(N*N*(N/2+1), q))
     {
         desc.set_value(oneapi::math::dft::config_param::PLACEMENT, oneapi::math::dft::config_value::NOT_INPLACE);
         desc.set_value(oneapi::math::dft::config_param::CONJUGATE_EVEN_STORAGE,
             oneapi::math::dft::config_value::COMPLEX_COMPLEX );
         desc.commit(q);
+
+        desc_batch.set_value(oneapi::math::dft::config_param::PLACEMENT, oneapi::math::dft::config_value::NOT_INPLACE);
+        desc_batch.set_value(oneapi::math::dft::config_param::NUMBER_OF_TRANSFORMS, N*N);
+        desc_batch.set_value(oneapi::math::dft::config_param::BWD_DISTANCE, N/2+1);
+        desc_batch.set_value(oneapi::math::dft::config_param::FWD_DISTANCE, N);
+        desc_batch.commit(q);
     }
 
     ~FFTSycl() {
         sycl::free(tmp, q);
+        sycl::free(tmp_3d, q);
     }
 
     // r2c
@@ -137,6 +148,114 @@ public:
             });
         });
     }
+
+    // r2c 3d
+    sycl::event pFFT_1_3d(T *S, T* s, T dx) {
+#if 0
+        auto* out = tmp_3d;
+        auto fft_event = oneapi::math::dft::compute_forward(desc_batch, s, out);
+
+        return q.submit([&](sycl::handler& h) {
+            h.depends_on(fft_event);
+            h.parallel_for(
+              sycl::range<3>(N, N, N/2 + 1),
+              [=,N=N](sycl::id<3> idx) {
+                int i = idx[0], j = idx[1], k = idx[2];
+                size_t cidx = ((size_t)i*N + j)*(N/2+1) + k;
+                size_t base = ((size_t)i*N + j)*N;
+                auto val = out[cidx];
+                if (k == 0) {
+                    S[base + 0]         = val.real() * dx;
+                } else if (k == N/2) {
+                    S[base + N/2]      = val.real() * dx;
+                } else {
+                    S[base + k]         = val.real() * dx;
+                    S[base + (N - k)]  = -val.imag() * dx;
+                }
+              });
+        });
+#endif
+    }
+
+    // c2r 3d
+    sycl::event pFFT_3d(T *S, const T* s, T dx) {
+        auto* in = tmp_3d;
+
+        auto pre_event1 = q.submit([&](sycl::handler& h) {
+            h.parallel_for(
+                sycl::range<3>(N, N, N/2 + 1),
+                    [=,N=N](sycl::id<3> idx) {
+                    int i = idx[0], j = idx[1], k = idx[2];
+                    int out_idx = (i*N + j)*(N/2+1) + k;
+                    if (k == 0) {
+                        in[out_idx] = { s[(i*N + j)*N + 0], T(0) };
+                    } else if (k == N/2) {
+                        in[out_idx] = { s[(i*N + j)*N + N/2], T(0) };
+                    } else {
+                        in[out_idx] = { s[(i*N + j)*N + k], -s[(i*N + j)*N + (N - k)] };
+                    }
+                });
+        });
+
+        auto event1 = oneapi::math::dft::compute_backward(desc_batch, in, S, {pre_event1});
+        auto pre_event2 = q.submit([&](sycl::handler& h) {
+            h.depends_on(event1);
+            h.parallel_for(
+                sycl::range<3>(N, N, N/2 + 1),
+                    [=,N=N](sycl::id<3> idx) {
+                    int i = idx[0], k = idx[1], j = idx[2];
+                    int out_idx = (i*N + k)*(N/2+1) + j;
+                    if (j == 0) {
+                        in[out_idx] = { S[(i*N + j)*N + k], T(0) };
+                    } else if (j == N/2) {
+                        in[out_idx] = { S[(i*N + j)*N + k], T(0) };
+                    } else {
+                        in[out_idx] = { S[(i*N + j)*N + k], -S[(i*N + (N - j))*N + k] };
+                    }
+                });
+        });
+
+        auto event2 = oneapi::math::dft::compute_backward(desc_batch, in, S, {pre_event2});
+        auto pre_event3 = q.submit([&](sycl::handler& h) {
+            h.depends_on(event2);
+            h.parallel_for(
+                sycl::range<3>(N, N, N/2 + 1),
+                    [=,N=N](sycl::id<3> idx) {
+                    int j = idx[0], k = idx[1], i = idx[2];
+                    int  out_idx = (j*N + k)*(N/2+1) + i;
+                    if (i == 0) {
+                        in[out_idx] = { S[(i*N + j)*N + k], T(0) };
+                    } else if (i == N/2) {
+                        in[out_idx] = { S[(i*N + j)*N + k], T(0) };
+                    } else {
+                        in[out_idx] = { S[(i*N + j)*N + k], -S[((N-i)*N + j)*N + k] };
+                    }
+                });
+        });
+        auto event3 = oneapi::math::dft::compute_backward(desc_batch, in, S, {pre_event3});
+
+        return q.submit([&](sycl::handler& h) {
+            h.depends_on(event3);
+            T scale = dx * T(0.5);
+            scale = scale*scale*scale;
+            h.parallel_for(
+                sycl::range<3>(N, N, N),
+                [=,N=N](sycl::id<3> idx) {
+                    int i = idx[0], j = idx[1], k = idx[2];
+                    if (i < k) {
+                        int idx1 = (i*N + j)*N + k;
+                        int idx2 = (k*N + j)*N + i;
+                        auto tmp = S[idx1];
+                        S[idx1] = S[idx2]*scale;
+                        S[idx2] = tmp*scale;
+                    } else if (i == k) {
+                        int idx1 = (i*N + j)*N + k;
+                        S[idx1] = S[idx1]*scale;
+                    }
+                });
+        });
+    }
+
 };
 
 } // namespace fdm

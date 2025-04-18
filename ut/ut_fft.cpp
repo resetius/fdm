@@ -1,3 +1,4 @@
+#include <memory>
 #include <stdarg.h>
 #include <stddef.h>
 #include <setjmp.h>
@@ -100,7 +101,7 @@ void test_periodic_3d(void**) {
     FFTTable<T> table(N);
     fdm::FFT<T> ft(table, N);
 
-    for (int i = 0; i < N; i++) {
+    for (int i = 0; i < N*N*N; i++) {
         s[i] = distribution(generator);
     }
 
@@ -118,6 +119,76 @@ void test_periodic_3d_double(void**) {
 
 void test_periodic_3d_float(void**) {
     test_periodic_3d<float>(nullptr);
+}
+
+template<typename T>
+void test_periodic_3d_sycl(void**) {
+    sycl::queue q{ sycl::default_selector_v };
+    int N = 4; // 128;
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-5;
+    }
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+
+    using alloc_type = sycl_allocator<T>;
+    alloc_type alloc(q);
+    vector<T, alloc_type> S(N*N*N, alloc);
+    vector<T, alloc_type> S1(N*N*N, alloc);
+    vector<T, alloc_type> S2(N*N*N, alloc);
+    vector<T, alloc_type> s(N*N*N, alloc);
+    vector<T, alloc_type> s1(N*N*N, alloc);
+    FFTTable<T> table(N);
+    fdm::FFT<T> ft(table, N);
+
+    fdm::FFTSycl<T> fft_sycl(q, N);
+
+    for (int i = 0; i < N*N*N; i++) {
+        s[i] = distribution(generator);
+    }
+
+    s1 = s; // s1 will be utilized by pFFT
+    fft_sycl.pFFT_3d(&S[0], &s1[0], 1.0).wait();
+    //for (int i = 0; i < N; i++) {
+    //    for (int j = 0; j < N; j++) {
+    //        for (int k = 0; k < N; k++) {
+    //            std::cerr << "(" << i << "," << j << "," << k << ")" << S[i*N*N + j*N + k] << " ";
+    //        }
+    //        std::cerr << std::endl;
+    //    }
+    //    std::cerr << std::endl << std::endl;
+    //}
+    //std::cerr << std::endl << std::endl;
+    S2 = S;
+    //fft_sycl.pFFT_1_3d(&s1[0], &S[0], 2.0/N).wait();
+    //for (int i = 0; i < N*N*N; i++) {
+    //    assert_float_equal(s1[i], s[i], tol);
+    //}
+
+    s1 = s;
+    ft.pFFT_3d(&S1[0], &s1[0], 1.0);
+    //for (int i = 0; i < N; i++) {
+    //    for (int j = 0; j < N; j++) {
+    //        for (int k = 0; k < N; k++) {
+    //            std::cerr << "(" << i << "," << j << "," << k << ")" << S1[i*N*N + j*N + k] << " ";
+    //        }
+    //        std::cerr << std::endl;
+    //    }
+    //    std::cerr << std::endl << std::endl;
+    //}
+    //std::cerr << std::endl << std::endl;
+    for (int i = 0; i < N*N*N; i++) {
+        assert_float_equal(S2[i], S1[i], tol);
+    }
+}
+
+void test_periodic_3d_sycl_double(void**) {
+    test_periodic_3d_sycl<double>(nullptr);
+}
+
+void test_periodic_3d_sycl_float(void**) {
+    test_periodic_3d_sycl<float>(nullptr);
 }
 
 template<typename T>
@@ -1125,7 +1196,6 @@ int main(int argc, char** argv) {
         cmocka_unit_test(test_periodic),
         cmocka_unit_test(test_periodic_new_double),
         cmocka_unit_test(test_periodic_new_float),
-        cmocka_unit_test(test_periodic),
         cmocka_unit_test(test_periodic_3d_double),
         cmocka_unit_test(test_periodic_3d_float),
         cmocka_unit_test(test_sin_double),
@@ -1164,6 +1234,8 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_periodic_sycl_pFFT_1_double, &c),
         cmocka_unit_test_prestate(test_periodic_sycl_pFFT_float, &c),
         cmocka_unit_test_prestate(test_periodic_sycl_pFFT_double, &c),
+        cmocka_unit_test(test_periodic_3d_sycl_double),
+        cmocka_unit_test(test_periodic_3d_sycl_float),
 #endif
     };
 
