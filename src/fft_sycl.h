@@ -5,6 +5,50 @@
 namespace fdm {
 
 template<typename T>
+class sycl_allocator {
+public:
+    using value_type      = T;
+    using pointer         = T*;
+    using const_pointer   = const T*;
+    using size_type       = std::size_t;
+    using difference_type = std::ptrdiff_t;
+
+    explicit sycl_allocator(sycl::queue &q) noexcept
+        : queue_(&q) {}
+
+    template<typename U>
+    sycl_allocator(const sycl_allocator<U> &other) noexcept
+        : queue_(other.queue_) {}
+
+    pointer allocate(size_type n) {
+        if (n == 0)
+            return nullptr;
+        void *p = sycl::malloc_shared(n * sizeof(T), *queue_);
+        if (!p)
+            throw std::bad_alloc();
+        return static_cast<pointer>(p);
+    }
+
+    void deallocate(pointer p, size_type /*n*/) noexcept {
+        sycl::free(p, *queue_);
+    }
+
+    template<typename U>
+    struct rebind { using other = sycl_allocator<U>; };
+
+    bool operator==(const sycl_allocator &other) const noexcept {
+        return queue_ == other.queue_;
+    }
+    bool operator!=(const sycl_allocator &other) const noexcept {
+        return !(*this == other);
+    }
+
+private:
+    template<typename U> friend class sycl_allocator;
+    sycl::queue *queue_;
+};
+
+template<typename T>
 class FFTSyclDescriptorType { };
 
 template<>

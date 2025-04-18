@@ -163,6 +163,9 @@ target_link_libraries(fdm PUBLIC ${PLPLOT_LIBRARIES} ${BLAS_LIBRARIES} ${LAPACK_
 if (OpenMP_CXX_FOUND)
     target_link_libraries(fdm PUBLIC OpenMP::OpenMP_CXX)
 endif()
+if (SYCL_FOUND)
+    target_link_libraries(fdm PUBLIC onemath)
+endif ()
 
 add_subdirectory(test)
 add_subdirectory(utils)

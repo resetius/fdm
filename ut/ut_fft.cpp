@@ -12,6 +12,10 @@
 #include "fft.h"
 #include "config.h"
 
+#ifdef HAVE_ONEMATH
+#include "fft_sycl.h"
+#endif
+
 extern "C" {
 #include <cmocka.h>
 }
@@ -698,6 +702,139 @@ void test_periodic_fftw3_pFFT_float(void** s) {
 }
 #endif
 
+#ifdef HAVE_ONEMATH
+template<typename T>
+void test_periodic_sycl_pFFT_1(void** data) {
+    sycl::queue q{ sycl::default_selector_v };
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 256);
+    int verbose = c->get("test", "verbose", 0);
+    FFTTable<T> table(N);
+    fdm::FFT<T> ft(table, N);
+    fdm::FFTSycl<T> ft_sycl(q, N);
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    using alloc_type = fdm::sycl_allocator<T>;
+    alloc_type alloc(q);
+    vector<T,alloc_type> S(N, alloc);
+    vector<T,alloc_type> s(N, alloc);
+    vector<T,alloc_type> s1(N, alloc);
+    vector<T,alloc_type> S1(N, alloc);
+
+    for (int i = 0; i < N; i++) {
+        s[i] = distribution(generator);
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft_sycl.pFFT_1(&S[0], &s1[0], 2.0).wait();
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t2=%f\n", interval.count());
+        }
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft.pFFT_1(&S1[0], &s1[0], 2.0);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t3=%f\n", interval.count());
+        }
+    }
+
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-3;
+    }
+
+    for (int i = 0; i < N; i++) {
+        assert_float_equal(S1[i], S[i], tol);
+        if (verbose > 1) {
+            printf("%e <> %e\n", S1[i], S[i]);
+        }
+    }
+}
+
+void test_periodic_sycl_pFFT_1_double(void** s) {
+    test_periodic_sycl_pFFT_1<double>(s);
+}
+
+void test_periodic_sycl_pFFT_1_float(void** s) {
+    test_periodic_sycl_pFFT_1<float>(s);
+}
+
+template<typename T>
+void test_periodic_sycl_pFFT(void** data) {
+    sycl::queue q{ sycl::default_selector_v };
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 256);
+    int verbose = c->get("test", "verbose", 0);
+    FFTTable<T> table(N);
+    fdm::FFT<T> ft(table, N);
+    fdm::FFTSycl<T> ft_sycl(q, N);
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    using alloc_type = fdm::sycl_allocator<T>;
+    alloc_type alloc(q);
+    vector<T, alloc_type> S(N, alloc);
+    vector<T, alloc_type> s(N, alloc);
+    vector<T, alloc_type> s1(N, alloc);
+    vector<T, alloc_type> S1(N, alloc);
+
+    for (int i = 0; i < N; i++) {
+        s[i] = distribution(generator);
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft_sycl.pFFT(&S[0], &s1[0], 2.0).wait();
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t2=%f\n", interval.count());
+        }
+    }
+
+    s1 = s;
+    {
+        auto t1 = steady_clock::now();
+        ft.pFFT(&S1[0], &s1[0], 2.0);
+        auto t2 = steady_clock::now();
+        auto interval = duration_cast<duration<double>>(t2 - t1);
+        if (verbose) {
+            printf("t3=%f\n", interval.count());
+        }
+    }
+
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-3;
+    }
+
+    for (int i = 0; i < N; i++) {
+        assert_float_equal(S1[i], S[i], tol);
+        if (verbose > 1) {
+            printf("%e <> %e\n", S1[i], S[i]);
+        }
+    }
+}
+
+void test_periodic_sycl_pFFT_double(void** s) {
+    test_periodic_sycl_pFFT<double>(s);
+}
+
+void test_periodic_sycl_pFFT_float(void** s) {
+    test_periodic_sycl_pFFT<float>(s);
+}
+#endif
+
+
 template<typename T>
 void test_complex(void** data) {
     Config* c = static_cast<Config*>(*data);
@@ -980,6 +1117,12 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_sin_fftw3_double, &c),
         cmocka_unit_test_prestate(test_cos_fftw3_float, &c),
         cmocka_unit_test_prestate(test_cos_fftw3_double, &c),
+#endif
+#ifdef HAVE_ONEMATH
+        cmocka_unit_test_prestate(test_periodic_sycl_pFFT_1_float, &c),
+        cmocka_unit_test_prestate(test_periodic_sycl_pFFT_1_double, &c),
+        cmocka_unit_test_prestate(test_periodic_sycl_pFFT_float, &c),
+        cmocka_unit_test_prestate(test_periodic_sycl_pFFT_double, &c),
 #endif
     };
 
