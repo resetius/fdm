@@ -45,7 +45,7 @@ target_link_libraries(test_nbody2d fdm)
 
 
 add_executable(test_fft_bench test_fft_bench.cpp)
-target_link_libraries(test_fft_bench fdm onemath)
+target_link_libraries(test_fft_bench fdm)
 
 add_executable(test_tdiag_bench test_tdiag_bench.cpp)
 target_link_libraries(test_tdiag_bench fdm)

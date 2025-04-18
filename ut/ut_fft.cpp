@@ -1102,12 +1102,14 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_periodic_new2_float, &c),
         cmocka_unit_test_prestate(test_complex_float, &c),
         cmocka_unit_test_prestate(test_complex_double, &c),
+#ifdef _OPENMP
         cmocka_unit_test_prestate(test_sin_omp_float, &c),
         cmocka_unit_test_prestate(test_sin_omp_double, &c),
         cmocka_unit_test_prestate(test_cos_omp_float, &c),
         cmocka_unit_test_prestate(test_cos_omp_double, &c),
         cmocka_unit_test_prestate(test_per_omp_float, &c),
         cmocka_unit_test_prestate(test_per_omp_double, &c),
+#endif
 #ifdef HAVE_FFTW3
         cmocka_unit_test_prestate(test_periodic_fftw3_pFFT_1_float, &c),
         cmocka_unit_test_prestate(test_periodic_fftw3_pFFT_1_double, &c),
