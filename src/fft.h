@@ -54,12 +54,18 @@ class FFT {
     std::vector<T> b;
     std::vector<T> bn;
 
+    // for fft3d
+    std::vector<T> in;
+    std::vector<T> out;
+
 public:
     FFT(const FFTTable<T>& table, int N)
         : t(table)
         , N(N)
         , b(N)
         , bn(N)
+        , in(N)
+        , out(N)
     {
         init();
     }
@@ -78,6 +84,9 @@ public:
     void sFFT(T* S, T* s, T dx);
     void cFFT(T* S, T* s, T dx);
     void pFFT_1(T* S, T* s, T dx);
+
+    void pFFT_3d(T* S, T* s, T dx);
+    void pFFT_1_3d(T* S, T* s, T dx);
 
     void cpFFT(T* S, T* s, T dx);
 

@@ -212,6 +212,85 @@ void FFT<T>::pFFT(T *S, T* s, T dx) {
 }
 
 template<typename T>
+void FFT<T>::pFFT_3d(T* S, T* s, T dx) {
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            for (int k = 0; k < N; k++) {
+                in[k] = s[i*N*N + j*N + k];
+            }
+            pFFT(&out[0], &in[0], dx);
+            for (int k = 0; k < N; k++) {
+                S[i*N*N + j*N + k] = out[k];
+            }
+        }
+    }
+
+    for (int i = 0; i < N; i++) {
+        for (int k = 0; k < N; k++) {
+            for (int j = 0; j < N; j++) {
+                in[j] = S[i*N*N + j*N + k];
+            }
+            pFFT(&out[0], &in[0], dx);
+            for (int j = 0; j < N; j++) {
+                S[i*N*N + j*N + k] = out[j];
+            }
+        }
+    }
+
+    for (int j = 0; j < N; j++) {
+        for (int k = 0; k < N; k++) {
+            for (int i = 0; i < N; i++) {
+                in[i] = S[i*N*N + j*N + k];
+            }
+            pFFT(&out[0], &in[0], dx);
+            for (int i = 0; i < N; i++) {
+                S[i*N*N + j*N + k] = out[i];
+            }
+        }
+    }
+}
+
+template<typename T>
+void FFT<T>::pFFT_1_3d(T* S, T* s, T dx) {
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            for (int k = 0; k < N; k++) {
+                in[k] = s[i*N*N + j*N + k];
+            }
+            pFFT_1(&out[0], &in[0], dx);
+            for (int k = 0; k < N; k++) {
+                S[i*N*N + j*N + k] = out[k];
+            }
+        }
+    }
+
+    for (int i = 0; i < N; i++) {
+        for (int k = 0; k < N; k++) {
+            for (int j = 0; j < N; j++) {
+                in[j] = S[i*N*N + j*N + k];
+            }
+            pFFT_1(&out[0], &in[0], dx);
+            for (int j = 0; j < N; j++) {
+                S[i*N*N + j*N + k] = out[j];
+            }
+        }
+    }
+
+    for (int j = 0; j < N; j++) {
+        for (int k = 0; k < N; k++) {
+            for (int i = 0; i < N; i++) {
+                in[i] = S[i*N*N + j*N + k];
+            }
+            pFFT_1(&out[0], &in[0], dx);
+            for (int i = 0; i < N; i++) {
+                S[i*N*N + j*N + k] = out[i];
+            }
+        }
+    }
+}
+
+
+template<typename T>
 void FFT<T>::sFFT(T* S, T* s, T dx, int N, int n) {
     std::vector<T>& z = b;
     std::vector<T>& zn = bn;

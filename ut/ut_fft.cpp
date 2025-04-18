@@ -85,6 +85,42 @@ void test_periodic_new_float(void**) {
 }
 
 template<typename T>
+void test_periodic_3d(void**) {
+    int N = 128;
+    double tol = 1e-15;
+    if constexpr(is_same<float,T>::value) {
+        tol = 1e-5;
+    }
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+
+    vector<T> S(N*N*N);
+    vector<T> s(N*N*N);
+    vector<T> s1(N*N*N);
+    FFTTable<T> table(N);
+    fdm::FFT<T> ft(table, N);
+
+    for (int i = 0; i < N; i++) {
+        s[i] = distribution(generator);
+    }
+
+    s1 = s; // s1 will be utilized by pFFT
+    ft.pFFT_3d(&S[0], &s1[0], 1.0);
+    ft.pFFT_1_3d(&s1[0], &S[0], 2.0/N);
+    for (int i = 0; i < N*N*N; i++) {
+        assert_float_equal(s1[i], s[i], tol);
+    }
+}
+
+void test_periodic_3d_double(void**) {
+    test_periodic_3d<double>(nullptr);
+}
+
+void test_periodic_3d_float(void**) {
+    test_periodic_3d<float>(nullptr);
+}
+
+template<typename T>
 void test_sin(void**) {
     int N = 1024;
     double tol = 1e-15;
@@ -1089,6 +1125,9 @@ int main(int argc, char** argv) {
         cmocka_unit_test(test_periodic),
         cmocka_unit_test(test_periodic_new_double),
         cmocka_unit_test(test_periodic_new_float),
+        cmocka_unit_test(test_periodic),
+        cmocka_unit_test(test_periodic_3d_double),
+        cmocka_unit_test(test_periodic_3d_float),
         cmocka_unit_test(test_sin_double),
         cmocka_unit_test(test_sin_float),
         cmocka_unit_test(test_cos_double),
