@@ -13,17 +13,21 @@ public:
     using size_type       = std::size_t;
     using difference_type = std::ptrdiff_t;
 
-    explicit sycl_allocator(sycl::queue &q) noexcept
-        : queue_(&q) {}
+    explicit sycl_allocator(sycl::queue &q, sycl::usm::alloc kind = sycl::usm::alloc::shared) noexcept
+        : queue_(&q)
+        , kind_(kind)
+    {}
 
     template<typename U>
     sycl_allocator(const sycl_allocator<U> &other) noexcept
-        : queue_(other.queue_) {}
+        : queue_(other.queue_)
+        , kind_(other.kind_)
+    {}
 
     pointer allocate(size_type n) {
         if (n == 0)
             return nullptr;
-        void *p = sycl::malloc_shared(n * sizeof(T), *queue_);
+        void *p = sycl::malloc(n * sizeof(T), *queue_, kind_);
         if (!p)
             throw std::bad_alloc();
         return static_cast<pointer>(p);
@@ -46,6 +50,7 @@ public:
 private:
     template<typename U> friend class sycl_allocator;
     sycl::queue *queue_;
+    sycl::usm::alloc kind_ = sycl::usm::alloc::device;
 };
 
 template<typename T>

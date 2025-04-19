@@ -164,7 +164,7 @@ if (OpenMP_CXX_FOUND)
     target_link_libraries(fdm PUBLIC OpenMP::OpenMP_CXX)
 endif()
 if (SYCL_FOUND)
-    target_link_libraries(fdm PUBLIC onemath)
+    target_link_libraries(fdm PUBLIC onemath_dft_mklgpu onemath)
 endif ()
 
 add_subdirectory(test)
