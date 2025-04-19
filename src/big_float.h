@@ -299,15 +299,19 @@ public:
             return sign < other.sign;
         }
 
-        if (sign == -1) {
-            return -other < -*this;
-        }
+        if (sign > 0) {
+            if (exponent != other.exponent) {
+                return exponent < other.exponent;
+            }
 
-        if (exponent != other.exponent) {
-            return exponent < other.exponent;
-        }
+            return less(mantissa, other.mantissa);
+        } else {
+            if (exponent != other.exponent) {
+                return other.exponent < exponent;
+            }
 
-        return less(mantissa, other.mantissa);
+            return less(other.mantissa, mantissa);
+        }
     }
 
     bool operator>(const BigFloat& other) const {
@@ -471,32 +475,10 @@ public:
         if (sign != other.sign) {
             BigFloat temp = other;
             temp.sign = -temp.sign;
-            return (*this -= temp);
+            return SubUnchecked(temp);
         }
 
-        auto exp_diff = exponent - other.exponent;
-        BlockType carry = 0;
-
-        if (exp_diff > 0) {
-            BigFloat b = other;
-            shiftMantissaRight(b.mantissa, exp_diff);
-            carry = sumWithCarry(mantissa, mantissa, b.mantissa);
-        } else if (exp_diff < 0) {
-            shiftMantissaRight(mantissa, -exp_diff);
-            exponent -= exp_diff;
-            carry = sumWithCarry(mantissa, mantissa, other.mantissa);
-        } else {
-            carry = sumWithCarry(mantissa, mantissa, other.mantissa);
-        }
-
-        if (carry) {
-            shiftMantissaRight(mantissa);
-            mantissa[blocks-1] |= carry << (blockBits - 1);
-            exponent++;
-        }
-
-        normalize();
-        return *this;
+        return AddUnchecked(other);
     }
 
     BigFloat operator+(const BigFloat& other) const {
@@ -515,35 +497,10 @@ public:
         if (sign != other.sign) {
             BigFloat temp = other;
             temp.sign = -temp.sign;
-            return (*this += temp);
+            return AddUnchecked(temp);
         }
 
-        auto exp_diff = exponent - other.exponent;
-
-        auto sub = [&](const BigFloat* a, const BigFloat* b) {
-            if (less(a->mantissa, b->mantissa)) {
-                std::swap(a, b);
-                sign = -sign;
-            }
-            subWithBorrow(mantissa, a->mantissa, b->mantissa);
-            exponent = a->exponent;
-        };
-
-        if (exp_diff > 0) {
-            BigFloat b = other;
-            shiftMantissaRight(b.mantissa, exp_diff);
-            b.exponent += exp_diff;
-            sub(this, &b);
-        } else if (exp_diff < 0) {
-            shiftMantissaRight(mantissa, -exp_diff);
-            exponent -= exp_diff;
-            sub(this, &other);
-        } else {
-            sub(this, &other);
-        }
-
-        normalize();
-        return *this;
+        return SubUnchecked(other);
     }
 
     BigFloat operator-(const BigFloat& other) const {
@@ -599,6 +556,61 @@ private:
     static constexpr int blockBits = sizeof(BlockType) * 8;
     static_assert(std::is_same_v<BlockType,uint64_t> || blocks > 1, "blocks must be greater than 1");
     static_assert(std::is_same_v<BlockType,uint64_t> || std::is_same_v<BlockType,uint32_t>);
+
+    BigFloat& AddUnchecked(const BigFloat& other) {
+        auto exp_diff = exponent - other.exponent;
+        BlockType carry = 0;
+
+        if (exp_diff > 0) {
+            BigFloat b = other;
+            shiftMantissaRight(b.mantissa, exp_diff);
+            carry = sumWithCarry(mantissa, mantissa, b.mantissa);
+        } else if (exp_diff < 0) {
+            shiftMantissaRight(mantissa, -exp_diff);
+            exponent -= exp_diff;
+            carry = sumWithCarry(mantissa, mantissa, other.mantissa);
+        } else {
+            carry = sumWithCarry(mantissa, mantissa, other.mantissa);
+        }
+
+        if (carry) {
+            shiftMantissaRight(mantissa);
+            mantissa[blocks-1] |= carry << (blockBits - 1);
+            exponent++;
+        }
+
+        normalize();
+        return *this;
+    }
+
+    BigFloat& SubUnchecked(const BigFloat& other) {
+        auto exp_diff = exponent - other.exponent;
+
+        auto sub = [&](const BigFloat* a, const BigFloat* b) {
+            if (less(a->mantissa, b->mantissa)) {
+                std::swap(a, b);
+                sign = -sign;
+            }
+            subWithBorrow(mantissa, a->mantissa, b->mantissa);
+            exponent = a->exponent;
+        };
+
+        if (exp_diff > 0) {
+            BigFloat b = other;
+            shiftMantissaRight(b.mantissa, exp_diff);
+            b.exponent += exp_diff;
+            sub(this, &b);
+        } else if (exp_diff < 0) {
+            shiftMantissaRight(mantissa, -exp_diff);
+            exponent -= exp_diff;
+            sub(this, &other);
+        } else {
+            sub(this, &other);
+        }
+
+        normalize();
+        return *this;
+    }
 
     bool IsZero() const {
         return sign == 0;
