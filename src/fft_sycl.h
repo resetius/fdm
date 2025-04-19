@@ -151,30 +151,67 @@ public:
 
     // r2c 3d
     sycl::event pFFT_1_3d(T *S, T* s, T dx) {
-#if 0
         auto* out = tmp_3d;
-        auto fft_event = oneapi::math::dft::compute_forward(desc_batch, s, out);
 
-        return q.submit([&](sycl::handler& h) {
-            h.depends_on(fft_event);
+        auto event1 = oneapi::math::dft::compute_forward(desc_batch, s, out);
+        auto post_event1 = q.submit([&](sycl::handler& h) {
+            h.depends_on(event1);
             h.parallel_for(
-              sycl::range<3>(N, N, N/2 + 1),
-              [=,N=N](sycl::id<3> idx) {
-                int i = idx[0], j = idx[1], k = idx[2];
-                size_t cidx = ((size_t)i*N + j)*(N/2+1) + k;
-                size_t base = ((size_t)i*N + j)*N;
-                auto val = out[cidx];
-                if (k == 0) {
-                    S[base + 0]         = val.real() * dx;
-                } else if (k == N/2) {
-                    S[base + N/2]      = val.real() * dx;
-                } else {
-                    S[base + k]         = val.real() * dx;
-                    S[base + (N - k)]  = -val.imag() * dx;
-                }
-              });
+                sycl::range<3>(N, N, N/2 + 1),
+                [=,N=N](sycl::id<3> idx) {
+                    int i = idx[0], j = idx[1], k = idx[2];
+                    int in_idx = (i*N + j)*(N/2+1) + k;
+                    auto val = out[in_idx];
+                    if (k == 0) {
+                        S[(i*N + 0)*N + j] = val.real() * dx;
+                    } else if (k == N/2) {
+                        S[(i*N + N/2)*N + j] = val.real() * dx;
+                    } else {
+                        S[(i*N + k)*N + j] = val.real() * dx;
+                        S[(i*N + (N - k))*N + j] = -val.imag() * dx;
+                    }
+                });
         });
-#endif
+
+        auto event2 = oneapi::math::dft::compute_forward(desc_batch, S, out, {post_event1});
+        auto post_event2 = q.submit([&](sycl::handler& h) {
+            h.depends_on(event2);
+            h.parallel_for(
+                sycl::range<3>(N, N, N/2 + 1),
+                [=,N=N](sycl::id<3> idx) {
+                    int i = idx[0], j = idx[1], k = idx[2];
+                    int in_idx = (i*N + j)*(N/2+1) + k;
+                    auto val = out[in_idx];
+                    if (k == 0) {
+                        S[(0*N + j)*N + i] = val.real() * dx;
+                    } else if (k == N/2) {
+                        S[(N/2*N + j)*N + i] = val.real() * dx;
+                    } else {
+                        S[(k*N + j)*N + i] = val.real() * dx;
+                        S[((N - k)*N + j)*N + i] = -val.imag() * dx;
+                    }
+                });
+        });
+
+        auto event3 = oneapi::math::dft::compute_forward(desc_batch, S, out, {post_event2});
+        return q.submit([&](sycl::handler& h) {
+            h.depends_on(event3);
+            h.parallel_for(
+                sycl::range<3>(N, N, N/2 + 1),
+                [=,N=N](sycl::id<3> idx) {
+                    int i = idx[0], j = idx[1], k = idx[2];
+                    int in_idx = (i*N + j)*(N/2+1) + k;
+                    auto val = out[in_idx];
+                    if (k == 0) {
+                        S[(0*N + i)*N + j] = val.real() * dx;
+                    } else if (k == N/2) {
+                        S[(N/2*N + i)*N + j] = val.real() * dx;
+                    } else {
+                        S[(k*N + i)*N + j] = val.real() * dx;
+                        S[((N - k)*N + i)*N + j] = -val.imag() * dx;
+                    }
+                });
+        });
     }
 
     // c2r 3d

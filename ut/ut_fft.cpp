@@ -125,7 +125,7 @@ void test_periodic_3d_float(void**) {
 template<typename T>
 void test_periodic_3d_sycl(void**) {
     sycl::queue q{ sycl::default_selector_v };
-    int N = 4; // 128;
+    int N = 8;
     double tol = 1e-15;
     if constexpr(is_same<float,T>::value) {
         tol = 1e-5;
@@ -151,36 +151,30 @@ void test_periodic_3d_sycl(void**) {
 
     s1 = s; // s1 will be utilized by pFFT
     fft_sycl.pFFT_3d(&S[0], &s1[0], 1.0).wait();
-    //for (int i = 0; i < N; i++) {
-    //    for (int j = 0; j < N; j++) {
-    //        for (int k = 0; k < N; k++) {
-    //            std::cerr << "(" << i << "," << j << "," << k << ")" << S[i*N*N + j*N + k] << " ";
-    //        }
-    //        std::cerr << std::endl;
-    //    }
-    //    std::cerr << std::endl << std::endl;
-    //}
-    //std::cerr << std::endl << std::endl;
     S2 = S;
-    //fft_sycl.pFFT_1_3d(&s1[0], &S[0], 2.0/N).wait();
-    //for (int i = 0; i < N*N*N; i++) {
-    //    assert_float_equal(s1[i], s[i], tol);
-    //}
 
     s1 = s;
     ft.pFFT_3d(&S1[0], &s1[0], 1.0);
-    //for (int i = 0; i < N; i++) {
-    //    for (int j = 0; j < N; j++) {
-    //        for (int k = 0; k < N; k++) {
-    //            std::cerr << "(" << i << "," << j << "," << k << ")" << S1[i*N*N + j*N + k] << " ";
-    //        }
-    //        std::cerr << std::endl;
-    //    }
-    //    std::cerr << std::endl << std::endl;
-    //}
-    //std::cerr << std::endl << std::endl;
     for (int i = 0; i < N*N*N; i++) {
         assert_float_equal(S2[i], S1[i], tol);
+    }
+
+    s1 = s;
+    fft_sycl.pFFT_1_3d(&S[0], &s1[0], 1.0).wait();
+    S2 = S;
+
+    s1 = s;
+    ft.pFFT_1_3d(&S1[0], &s1[0], 1.0);
+    for (int i = 0; i < N*N*N; i++) {
+        assert_float_equal(S2[i], S1[i], tol);
+    }
+
+    s1 = s;
+    fft_sycl.pFFT_3d(&S[0], &s1[0], 1.0).wait();
+    fft_sycl.pFFT_1_3d(&s1[0], &S[0], 2.0/N).wait();
+
+    for (int i = 0; i < N*N*N; i++) {
+        assert_float_equal(s1[i], s[i], tol);
     }
 }
 
