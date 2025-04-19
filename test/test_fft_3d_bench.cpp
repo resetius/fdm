@@ -36,12 +36,10 @@ void call_and_wait(F&& f, Args&&... args) {
 
 template <typename T, typename FFTClass, typename Allocator, typename Init>
 CombinedBenchmarkStats benchmark_fft(FFTClass& fft, int N, int iterations, Allocator alloc, Init init) {
-    //std::vector<T, Allocator> S(N*N*N, 0.0, alloc);
-    //std::vector<T, Allocator> s(N*N*N, 0.0, alloc);
     auto* S = alloc.allocate(N*N*N);
     auto* s = alloc.allocate(N*N*N);
 
-    init(S, N);
+    init(s, N);
 
     std::vector<double> times_pFFT_1;
     std::vector<double> times_pFFT;

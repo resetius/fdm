@@ -36,12 +36,12 @@ void call_and_wait(F&& f, Args&&... args) {
 
 template <typename T, typename FFTClass, typename Allocator>
 CombinedBenchmarkStats benchmark_fft(FFTClass& fft, int N, int iterations, Allocator alloc) {
-    std::vector<T, Allocator> S(N, 0.0, alloc);
-    std::vector<T, Allocator> s(N, 0.0, alloc);
+    auto* S = alloc.allocate(N);
+    auto* s = alloc.allocate(N);
 
-    for(int i = 0; i < N; ++i) {
-        S[i] = sin(2.0 * M_PI * i / N) + 0.5 * cos(4.0 * M_PI * i / N);
-    }
+    //for(int i = 0; i < N; ++i) {
+    //    S[i] = sin(2.0 * M_PI * i / N) + 0.5 * cos(4.0 * M_PI * i / N);
+    //}
 
     std::vector<double> times_pFFT_1;
     std::vector<double> times_pFFT;
@@ -49,12 +49,10 @@ CombinedBenchmarkStats benchmark_fft(FFTClass& fft, int N, int iterations, Alloc
     times_pFFT.reserve(iterations);
 
     for(int it = 0; it < iterations; ++it) {
-        std::copy(S.begin(), S.end(), s.begin());
-
         auto start = std::chrono::high_resolution_clock::now();
         call_and_wait([&](auto* S, auto* s, auto dx){
             return fft.pFFT_1(S, s, dx);
-        }, S.data(), s.data(), 1.0);
+        }, S, s, 1.0);
         auto end = std::chrono::high_resolution_clock::now();
 
         std::chrono::duration<double, std::milli> elapsed = end - start;
@@ -62,12 +60,10 @@ CombinedBenchmarkStats benchmark_fft(FFTClass& fft, int N, int iterations, Alloc
     }
 
     for(int it = 0; it < iterations; ++it) {
-        std::copy(S.begin(), S.end(), s.begin());
-
         auto start = std::chrono::high_resolution_clock::now();
         call_and_wait([&](auto* S, auto* s, auto dx){
             return fft.pFFT(S, s, dx);
-        }, S.data(), s.data(), 1.0);
+        }, S, s, 1.0);
         auto end = std::chrono::high_resolution_clock::now();
 
         std::chrono::duration<double, std::milli> elapsed = end - start;
@@ -85,11 +81,11 @@ int main() {
 #ifdef HAVE_ONEMATH
     sycl::queue q{ sycl::default_selector_v };
     std::cout << "Using device: " << q.get_device().get_info<sycl::info::device::name>() << "\n";
-    fdm::sycl_allocator<double> sycl_d_alloc(q);
-    fdm::sycl_allocator<float> sycl_f_alloc(q);
+    fdm::sycl_allocator<double> sycl_d_alloc(q, sycl::usm::alloc::device);
+    fdm::sycl_allocator<float> sycl_f_alloc(q, sycl::usm::alloc::device);
 #endif
     const int min_power = 4;
-    const int max_power = 16;
+    const int max_power = 11;
     const int iterations = 2000;
 
     std::cout << std::setw(10) << "N"
