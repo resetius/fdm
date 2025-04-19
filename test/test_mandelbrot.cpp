@@ -1,5 +1,9 @@
 #include "big_float.h"
 #include <sycl/sycl.hpp>
+#include <chrono>
+#include <iostream>
+
+#include "unixbench_score.h"
 
 template<typename T>
 int get_iteration_mandelbrot(T x0, T y0, int max_iterations = 100) {
@@ -29,26 +33,37 @@ void mandelbrot()
     int height = 1000;
     int width = 1000;
     using T = BigFloat<4, uint32_t>;
+    int* buffer = sycl::malloc_device<int>(height * width, q);
 
     T view_width = 4.0;
     T center_x = -0.75;
     T center_y = 0.0;
     double _1_w = 1.0 / width;
     T pixel_size = view_width * T(_1_w);
+    int tries = 50;
 
-    q.submit([&](sycl::handler& h) {
-        h.parallel_for(sycl::range<2>(height, width), [=](sycl::id<2> idx) {
-            int x = idx[0];
-            int y = idx[1];
+    std::vector<double> times;
+    for (int i = 0; i < tries; ++i) {
+        auto start = std::chrono::high_resolution_clock::now();
+        q.submit([&](sycl::handler& h) {
+            h.parallel_for(sycl::range<2>(height, width), [=](sycl::id<2> idx) {
+                int x = idx[0];
+                int y = idx[1];
 
-            T x0 = center_x + T(x - width / 2.0) * pixel_size;
-            T y0 = center_y + T(y - height / 2.0) * pixel_size;
+                T x0 = center_x + T(x - width / 2.0) * pixel_size;
+                T y0 = center_y + T(y - height / 2.0) * pixel_size;
 
-            [[maybe_unused]] int iter = get_iteration_mandelbrot(x0, y0);
+                buffer[y*width+x] = get_iteration_mandelbrot(x0, y0);
+            });
+        }).wait();
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> elapsed = end - start;
+        times.push_back(elapsed.count());
+    }
+    auto score = fdm::unixbench_score(times);
+    std::cerr << "Elapsed time: " << score << " ms" << std::endl;
 
-            // Store the result in some way (e.g., in a buffer)
-        });
-    }).wait();
+    sycl::free(buffer, q);
 }
 
 void test_mandelbrot() {
