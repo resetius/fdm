@@ -150,6 +150,32 @@ void save_mandelbrot_ppm(const int *host_buf,
     ofs.close();
 }
 
+void save_mandelbrot_ppm(const unsigned char *host_buf,
+                         int width, int height,
+                         int max_iter,
+                         std::string filename) {
+
+    // Open output file in binary mode
+    std::ofstream ofs(filename, std::ios::binary);
+    if (!ofs) {
+        throw std::runtime_error("Cannot open file: " + filename);
+    }
+
+    // Write PPM header (P6 = binary RGB)
+    ofs << "P6\n" << width << " " << height << "\n255\n";
+
+    // Write pixel data
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            auto r = host_buf[3*(y * width + x) + 0];
+            auto g = host_buf[3*(y * width + x) + 1];
+            auto b = host_buf[3*(y * width + x) + 2];
+            ofs.put(r).put(g).put(b);
+        }
+    }
+    ofs.close();
+}
+
 template<typename T>
 int get_iteration_mandelbrot(T x0, T y0, int max_iterations) {
     T x = 0;
@@ -172,31 +198,66 @@ int get_iteration_mandelbrot(T x0, T y0, int max_iterations) {
     return i;
 }
 
-template<int bs>
+template<typename T>
+unsigned char get_iteration_mandelbrot2(T x0, T y0, int max_iterations) {
+    T x = 0;
+    T y = 0;
+    T xn;
+    T x2=x*x, y2=y*y;
+    T _4 = T(4);
+    int i;
+    for (i = 1; i < max_iterations && x2+y2 < _4; i=i+1) {
+        x2=x*x; y2=y*y;
+        xn = x2 - y2 + x0;
+        if constexpr(std::is_same_v<T,double> || std::is_same_v<T,float>) {
+            y = T(2.0)*x*y + y0;
+        } else {
+            y = (x*y).Mul2() + y0;
+        }
+        x = xn;
+    }
+
+    double mu = i;
+    if (i < max_iterations) {
+        double log_zn = std::log((x2 + y2).ToDouble()) / 2.0;
+        double nu     = std::log(log_zn / std::log(2.0)) / std::log(2.0);
+        mu += 1.0 - nu;
+    }
+
+    double t = mu / max_iterations;
+    double shade = std::sqrt(1.0 - t);
+    std::cerr << "shade: " << shade << std::endl;
+    unsigned char c = static_cast<unsigned char>(shade * 255.0);
+
+    // std::cerr << "c: " << (int)c << std::endl;
+    return c;
+}
+
+template<int bs, typename BlockType = uint32_t>
 struct TypeSelector {
     static constexpr int blocks = bs;
-    using T = BigFloat<blocks, uint32_t>;
+    using T = BigFloat<blocks, BlockType, GenericPlatformSpec<BlockType>>;
 };
 
-template<>
-struct TypeSelector<0> {
+template<typename BlockType>
+struct TypeSelector<0, BlockType> {
     static constexpr int blocks = 0;
     using T = float;
 };
 
-template<>
-struct TypeSelector<1> {
+template<typename BlockType>
+struct TypeSelector<1, BlockType> {
     static constexpr int blocks = 1;
     using T = double;
 };
 
-template<int blocks>
+template<int blocks, typename BlockType = uint32_t>
 void mandelbrot()
 {
     sycl::queue q{ sycl::default_selector_v };
     int height = 1000;
     int width = 1000;
-    using T = typename TypeSelector<blocks>::T;
+    using T = typename TypeSelector<blocks, BlockType>::T;
 
     int* buffer = sycl::malloc_device<int>(height * width, q);
 
@@ -238,7 +299,49 @@ void mandelbrot()
     sycl::free(buffer, q);
 }
 
+template<int blocks, typename BlockType = uint32_t>
+void mandelbrot_omp()
+{
+    int height = 1000;
+    int width = 1000;
+    using T = typename TypeSelector<blocks, BlockType>::T;
+
+    std::vector<int> host_buf(width * height);
+    int* buffer = host_buf.data();
+
+    T view_width = 4.0;
+    T center_x = -0.75;
+    T center_y = 0.0;
+    double _1_w = 1.0 / width;
+    T pixel_size = view_width * T(_1_w);
+    int tries = 10;
+    int max_iterations = 400;
+
+    std::vector<double> times;
+    for (int i = 0; i < tries; ++i) {
+        auto start = std::chrono::high_resolution_clock::now();
+#pragma omp parallel for collapse(2)
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                T x0 = center_x + T(x - width / 2.0) * pixel_size;
+                T y0 = center_y + T(y - height / 2.0) * pixel_size;
+
+                buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
+            }
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> elapsed = end - start;
+        times.push_back(elapsed.count());
+    }
+    auto score = fdm::unixbench_score(times);
+    std::cerr << "Blocks: " << blocks << ", elapsed time: " << score << " ms" << std::endl;
+
+    std::string filename = "mandelbrot_" + std::to_string(blocks) + ".ppm";
+    save_mandelbrot_ppm(host_buf.data(), width, height, max_iterations, filename);
+}
+
 void test_mandelbrot() {
+    std::cerr << "Testing mandelbrot uint32_t ..." << std::endl;
     mandelbrot<0>();
     mandelbrot<1>();
     mandelbrot<2>();
@@ -246,14 +349,38 @@ void test_mandelbrot() {
     mandelbrot<8>();
     mandelbrot<16>();
     mandelbrot<32>();
+
+    std::cerr << "Testing mandelbrot uint64_t ..." << std::endl;
+    mandelbrot<0, uint64_t>();
+    mandelbrot<1, uint64_t>();
+    mandelbrot<2, uint64_t>();
+    mandelbrot<4, uint64_t>();
+    mandelbrot<8, uint64_t>();
+    mandelbrot<16, uint64_t>();
+
+    std::cerr << "Testing mandelbrot uint32_t (omp)..." << std::endl;
+    mandelbrot_omp<0>();
+    mandelbrot_omp<1>();
+    mandelbrot_omp<2>();
+    mandelbrot_omp<4>();
+    mandelbrot_omp<8>();
+
+    std::cerr << "Testing mandelbrot uint64_t (omp)..." << std::endl;
+    mandelbrot_omp<0, uint64_t>();
+    mandelbrot_omp<1, uint64_t>();
+    mandelbrot_omp<2, uint64_t>();
+    mandelbrot_omp<4, uint64_t>();
+
+    //mandelbrot_omp<4, uint64_t>();
+    //mandelbrot_shade_omp<4, uint64_t>();
 }
 
-template<int blocks>
+template<int blocks, typename BlockType = uint32_t>
 void calc_mandelbrot() {
     sycl::queue q{ sycl::default_selector_v };
     int height = 1000;
     int width = 1000;
-    using T = typename TypeSelector<blocks>::T;
+    using T = typename TypeSelector<blocks, BlockType>::T;
 
     int* buffer = sycl::malloc_device<int>(height * width, q);
     std::vector<int> host_buf(width * height);
@@ -299,7 +426,8 @@ void calc_mandelbrot() {
 }
 
 int main() {
-    // test_mandelbrot();
-    calc_mandelbrot<8>();
+    test_mandelbrot();
+    //calc_mandelbrot<4,uint64_t>();
+    //calc_mandelbrot<8>();
     return 0;
 }
