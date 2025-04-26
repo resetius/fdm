@@ -17,63 +17,63 @@ extern "C" {
 #include <cmocka.h>
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_strings(void** s) {
-    auto f = BigFloat<2,T>::FromString("1");
+    auto f = BigFloat<2,T,Spec>::FromString("1");
     assert_string_equal(f.ToString().c_str(), "1");
 
-    f = BigFloat<2,T>::FromString("-1");
+    f = BigFloat<2,T,Spec>::FromString("-1");
     assert_string_equal(f.ToString().c_str(), "-1");
 
-    f = BigFloat<2,T>::FromString("0.1");
+    f = BigFloat<2,T,Spec>::FromString("0.1");
     assert_string_equal(f.ToString().c_str(), "0.099999999999999999");
 
-    f = BigFloat<2,T>::FromString("-0.1");
+    f = BigFloat<2,T,Spec>::FromString("-0.1");
     assert_string_equal(f.ToString().c_str(), "-0.099999999999999999");
 
-    f = BigFloat<2,T>::FromString("0.01");
+    f = BigFloat<2,T,Spec>::FromString("0.01");
     assert_string_equal(f.ToString().c_str(), "0.009999999999999999");
 
-    f = BigFloat<2,T>::FromString("0.0000123");
+    f = BigFloat<2,T,Spec>::FromString("0.0000123");
     assert_string_equal(f.ToString().c_str(), "0.000012299999999999");
 
-    f = BigFloat<2,T>::FromString("2.0000123");
+    f = BigFloat<2,T,Spec>::FromString("2.0000123");
     assert_string_equal(f.ToString().c_str(), "2.000012299999999999");
 
-    f = BigFloat<2,T>::FromString("-2.0000123");
+    f = BigFloat<2,T,Spec>::FromString("-2.0000123");
     assert_string_equal(f.ToString().c_str(), "-2.000012299999999999");
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_sum(void** s) {
-    auto a = BigFloat<2,T>::FromString("0.2");
-    auto b = BigFloat<2,T>::FromString("0.3");
+    auto a = BigFloat<2,T,Spec>::FromString("0.2");
+    auto b = BigFloat<2,T,Spec>::FromString("0.3");
     auto c = a+b;
     assert_string_equal(c.ToString().c_str(), "0.499999999999999999");
 
-    a = BigFloat<2,T>::FromString("1.2");
-    b = BigFloat<2,T>::FromString("4.3");
+    a = BigFloat<2,T,Spec>::FromString("1.2");
+    b = BigFloat<2,T,Spec>::FromString("4.3");
     c = a+b;
     assert_string_equal(c.ToString().c_str(), "5.499999999999999999");
 
-    a = BigFloat<2,T>::FromString("-1.2");
-    b = BigFloat<2,T>::FromString("4.3");
+    a = BigFloat<2,T,Spec>::FromString("-1.2");
+    b = BigFloat<2,T,Spec>::FromString("4.3");
     c = b+a;
     assert_string_equal(c.ToString().c_str(), "3.099999999999999999");
 
-    a = BigFloat<2,T>::FromString("1.2");
-    b = BigFloat<2,T>::FromString("4.3");
+    a = BigFloat<2,T,Spec>::FromString("1.2");
+    b = BigFloat<2,T,Spec>::FromString("4.3");
     c = b-a;
     assert_string_equal(c.ToString().c_str(), "3.099999999999999999");
 
-    a = BigFloat<2,T>::FromString("1.2");
-    b = BigFloat<2,T>::FromString("4.3");
+    a = BigFloat<2,T,Spec>::FromString("1.2");
+    b = BigFloat<2,T,Spec>::FromString("4.3");
     c = a-b;
     assert_string_equal(c.ToString().c_str(), "-3.099999999999999999");
 
 
-    a = BigFloat<4,T>::FromString("100.2");
-    b = BigFloat<4,T>::FromString("4.3");
+    a = BigFloat<4,T,Spec>::FromString("100.2");
+    b = BigFloat<4,T,Spec>::FromString("4.3");
     c = a+b;
     if constexpr(std::is_same_v<T,uint32_t>) {
         assert_string_equal(c.ToString().c_str(), "104.499999999999999993");
@@ -103,149 +103,149 @@ void test_sum(void** s) {
     }
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_mul(void** s) {
-    auto a = BigFloat<2,T>::FromString("0.5");
-    auto b = BigFloat<2,T>::FromString("0.5");
+    auto a = BigFloat<2,T,Spec>::FromString("0.5");
+    auto b = BigFloat<2,T,Spec>::FromString("0.5");
     auto c = a*b;
     assert_string_equal(c.ToString().c_str(), "0.25");
 
-    a = BigFloat<2,T>::FromString("0.2");
-    b = BigFloat<2,T>::FromString("0.3");
+    a = BigFloat<2,T,Spec>::FromString("0.2");
+    b = BigFloat<2,T,Spec>::FromString("0.3");
     c = a*b;
     assert_string_equal(c.ToString().c_str(), "0.059999999999999999");
 
-    a = BigFloat<2,T>::FromString("-0.2");
-    b = BigFloat<2,T>::FromString("0.3");
+    a = BigFloat<2,T,Spec>::FromString("-0.2");
+    b = BigFloat<2,T,Spec>::FromString("0.3");
     c = a*b;
     assert_string_equal(c.ToString().c_str(), "-0.059999999999999999");
 
-    a = BigFloat<2,T>::FromString("0.5");
-    b = BigFloat<2,T>::FromString("1.1");
+    a = BigFloat<2,T,Spec>::FromString("0.5");
+    b = BigFloat<2,T,Spec>::FromString("1.1");
     c = a*b;
     assert_string_equal(c.ToString().c_str(), "0.549999999999999999");
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_neg(void** s) {
-    auto a = BigFloat<2,T>::FromString("0.5");
+    auto a = BigFloat<2,T,Spec>::FromString("0.5");
     assert_string_equal(a.ToString().c_str(), "0.5");
     a = -a;
     assert_string_equal(a.ToString().c_str(), "-0.5");
 }
 
 /*
-template<typename T>
+template<typename T, typename Spec>
 void test_div(void** s) {
-    auto a = BigFloat<2,T>::FromString("0.5");
-    auto b = BigFloat<2,T>::FromString("2");
+    auto a = BigFloat<2,T,Spec>::FromString("0.5");
+    auto b = BigFloat<2,T,Spec>::FromString("2");
     assert_string_equal(b.Inv().ToString().c_str(), "0.5");
 
-    b = BigFloat<2,T>::FromString("4");
+    b = BigFloat<2,T,Spec>::FromString("4");
     assert_string_equal(b.Inv().ToString().c_str(), "0.25");
 
-    b = BigFloat<2,T>::FromString("8");
+    b = BigFloat<2,T,Spec>::FromString("8");
     assert_string_equal(b.Inv().ToString().c_str(), "0.125");
 
     auto c = a/b;
     assert_string_equal(c.ToString().c_str(), "0.0625");
 
-    a = BigFloat<2,T>::FromString("0.2");
-    b = BigFloat<2,T>::FromString("0.3");
+    a = BigFloat<2,T,Spec>::FromString("0.2");
+    b = BigFloat<2,T,Spec>::FromString("0.3");
     c = a/b;
     assert_string_equal(c.ToString().c_str(), "0.059999999999999999");
 
-    a = BigFloat<2,T>::FromString("-0.2");
-    b = BigFloat<2,T>::FromString("0.3");
+    a = BigFloat<2,T,Spec>::FromString("-0.2");
+    b = BigFloat<2,T,Spec>::FromString("0.3");
     c = a/b;
     assert_string_equal(c.ToString().c_str(), "-0.059999999999999999");
 
-    a = BigFloat<2,T>::FromString("0.5");
-    b = BigFloat<2,T>::FromString("1.1");
+    a = BigFloat<2,T,Spec>::FromString("0.5");
+    b = BigFloat<2,T,Spec>::FromString("1.1");
     c = a/b;
     assert_string_equal(c.ToString().c_str(), "0.549999999999999999");
 }
 */
 
-template<typename T>
+template<typename T, typename Spec>
 void test_long(void** s) {
-    auto a = BigFloat<128,T>::FromString("0.2");
-    auto b = BigFloat<128,T>::FromString("0.3");
+    auto a = BigFloat<128,T,Spec>::FromString("0.2");
+    auto b = BigFloat<128,T,Spec>::FromString("0.3");
     auto c = a*b;
     assert_string_equal(c.ToString().c_str(), "0.059999999999999999");
 
-    a = BigFloat<128,T>::FromString("0.0000002");
-    b = BigFloat<128,T>::FromString("0.3");
+    a = BigFloat<128,T,Spec>::FromString("0.0000002");
+    b = BigFloat<128,T,Spec>::FromString("0.3");
     c = a*b;
     assert_string_equal(c.ToString().c_str(), "0.000000059999999999");
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_from_double(void** s) {
-    auto a = BigFloat<2,T>(0.2);
+    auto a = BigFloat<2,T,Spec>(0.2);
     assert_string_equal(a.ToString().c_str(), "0.200000000000000011");
 
-    a = BigFloat<2,T>(2);
+    a = BigFloat<2,T,Spec>(2);
     assert_string_equal(a.ToString().c_str(), "2");
 
-    a = BigFloat<2,T>(-2);
+    a = BigFloat<2,T,Spec>(-2);
     assert_string_equal(a.ToString().c_str(), "-2");
 
-    a = BigFloat<2,T>(2.01);
+    a = BigFloat<2,T,Spec>(2.01);
     assert_string_equal(a.ToString().c_str(), "2.009999999999999786");
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_to_double(void** s) {
-    auto a = BigFloat<2,T>(0.2);
+    auto a = BigFloat<2,T,Spec>(0.2);
     assert_double_equal(a.ToDouble(), 0.2, 1e-15);
 
-    a = BigFloat<2,T>(2.0);
+    a = BigFloat<2,T,Spec>(2.0);
     assert_double_equal(a.ToDouble(), 2, 1e-15);
 
-    a = BigFloat<2,T>(-2L);
+    a = BigFloat<2,T,Spec>(-2L);
     assert_double_equal(a.ToDouble(), -2, 1e-15);
 
-    a = BigFloat<2,T>(2.01);
+    a = BigFloat<2,T,Spec>(2.01);
     assert_double_equal(a.ToDouble(), 2.01, 1e-15);
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_comparison(void** s) {
-    auto a = BigFloat<2,T>(0.2);
-    auto b = BigFloat<2,T>(0.3);
+    auto a = BigFloat<2,T,Spec>(0.2);
+    auto b = BigFloat<2,T,Spec>(0.3);
     assert_true(a < b);
     assert_true(b > a);
     assert_false(a > b);
     assert_false(b < a);
 
-    a = BigFloat<2,T>(0.2);
-    b = BigFloat<2,T>(0.2);
+    a = BigFloat<2,T,Spec>(0.2);
+    b = BigFloat<2,T,Spec>(0.2);
     assert_false(a < b);
     assert_false(b > a);
     assert_false(a > b);
     assert_false(b < a);
 
-    a = BigFloat<2,T>(-0.2);
-    b = BigFloat<2,T>(0.2);
+    a = BigFloat<2,T,Spec>(-0.2);
+    b = BigFloat<2,T,Spec>(0.2);
     assert_true(a < b);
     assert_true(b > a);
     assert_false(a > b);
     assert_false(b < a);
 
-    a = BigFloat<2,T>(-0.2);
-    b = BigFloat<2,T>(-0.3);
+    a = BigFloat<2,T,Spec>(-0.2);
+    b = BigFloat<2,T,Spec>(-0.3);
     assert_false(a < b);
     assert_false(b > a);
     assert_true(a > b);
     assert_true(b < a);
 
-    a = BigFloat<2,T>(2);
+    a = BigFloat<2,T,Spec>(2);
     auto& a_mantissa = const_cast<std::array<T,2>&>(a.getMantissa());
     a_mantissa[1] = 2;
     a_mantissa[0] = 1;
 
-    b = BigFloat<2,T>(3);
+    b = BigFloat<2,T,Spec>(3);
     auto& b_mantissa = const_cast<std::array<T,2>&>(b.getMantissa());
     b_mantissa[1] = 1;
     b_mantissa[0] = 9;
@@ -267,11 +267,11 @@ int mandelbrot(T ca, T cb) {
     return 1000;
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_mandelbrot(void** s) {
     int iters1 = 0, iters2 = 0;
     {
-        using U = BigFloat<4,T>;
+        using U = BigFloat<4,T,Spec>;
         iters1 = mandelbrot<U>(-1.2, 0.0);
     }
     {
@@ -282,15 +282,15 @@ void test_mandelbrot(void** s) {
     assert_int_equal(iters1, iters2);
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_eps(void** s) {
     {
-        auto one = BigFloat<2,T>(1.0);
-        auto eps = BigFloat<2,T>(1.0);
+        auto one = BigFloat<2,T,Spec>(1.0);
+        auto eps = BigFloat<2,T,Spec>(1.0);
 
         int i = 0;
         while (one + eps > one) {
-            eps = BigFloat<2,T>(0.5) * eps;
+            eps = BigFloat<2,T,Spec>(0.5) * eps;
             i++;
         }
 
@@ -298,12 +298,12 @@ void test_eps(void** s) {
     }
 
     {
-        auto one = BigFloat<4,T>(1.0);
-        auto eps = BigFloat<4,T>(1.0);
+        auto one = BigFloat<4,T,Spec>(1.0);
+        auto eps = BigFloat<4,T,Spec>(1.0);
 
         int i = 0;
         while (one + eps > one) {
-            eps = BigFloat<4,T>(0.5) * eps;
+            eps = BigFloat<4,T,Spec>(0.5) * eps;
             i++;
         }
 
@@ -374,48 +374,48 @@ void bench_square(const std::string& name)
     std::cerr << name << " : " << interval.count() << std::endl;
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_microbench(void**) {
-    bench_sum<BigFloat<2,T>>("sum BigFloat<2>");
-    bench_sum<BigFloat<4,T>>("sum BigFloat<4>");
-    bench_sum<BigFloat<8,T>>("sum BigFloat<8>");
-    bench_sum<BigFloat<16,T>>("sum BigFloat<16>");
+    bench_sum<BigFloat<2,T,Spec>>("sum BigFloat<2>");
+    bench_sum<BigFloat<4,T,Spec>>("sum BigFloat<4>");
+    bench_sum<BigFloat<8,T,Spec>>("sum BigFloat<8>");
+    bench_sum<BigFloat<16,T,Spec>>("sum BigFloat<16>");
     bench_sum<float>("sum float");
     bench_sum<double>("sum double");
     //bench_sum<_Float128>("sum float128");
 
-    bench_dif<BigFloat<2,T>>("dif BigFloat<2>");
-    bench_dif<BigFloat<4,T>>("dif BigFloat<4>");
-    bench_dif<BigFloat<8,T>>("dif BigFloat<8>");
-    bench_dif<BigFloat<16,T>>("dif BigFloat<16>");
+    bench_dif<BigFloat<2,T,Spec>>("dif BigFloat<2>");
+    bench_dif<BigFloat<4,T,Spec>>("dif BigFloat<4>");
+    bench_dif<BigFloat<8,T,Spec>>("dif BigFloat<8>");
+    bench_dif<BigFloat<16,T,Spec>>("dif BigFloat<16>");
     bench_dif<float>("dif float");
     bench_dif<double>("dif double");
 
-    bench_mul<BigFloat<2,T>>("mul BigFloat<2>");
-    bench_mul<BigFloat<4,T>>("mul BigFloat<4>");
-    bench_mul<BigFloat<8,T>>("mul BigFloat<8>");
-    bench_mul<BigFloat<16,T>>("mul BigFloat<16>");
+    bench_mul<BigFloat<2,T,Spec>>("mul BigFloat<2>");
+    bench_mul<BigFloat<4,T,Spec>>("mul BigFloat<4>");
+    bench_mul<BigFloat<8,T,Spec>>("mul BigFloat<8>");
+    bench_mul<BigFloat<16,T,Spec>>("mul BigFloat<16>");
     bench_mul<float>("mul float");
     bench_mul<double>("mul double");
     //bench_mul<_Float128>("mul float128");
 
-    bench_square<BigFloat<2,T>>("sq BigFloat<2>");
-    bench_square<BigFloat<4,T>>("sq BigFloat<4>");
-    bench_square<BigFloat<8,T>>("sq BigFloat<8>");
-    bench_square<BigFloat<16,T>>("sq BigFloat<16>");
+    bench_square<BigFloat<2,T,Spec>>("sq BigFloat<2>");
+    bench_square<BigFloat<4,T,Spec>>("sq BigFloat<4>");
+    bench_square<BigFloat<8,T,Spec>>("sq BigFloat<8>");
+    bench_square<BigFloat<16,T,Spec>>("sq BigFloat<16>");
     bench_square<float>("sq float");
     bench_square<double>("sq double");
     //bench_square<_Float128>("sq float128");
 }
 
-template<typename T>
+template<typename T, typename Spec>
 void test_construct(void**) {
-    BigFloat<2,T> v1(123.456);
-    BigFloat<4,T> v2(v1);
+    BigFloat<2,T,Spec> v1(123.456);
+    BigFloat<4,T,Spec> v2(v1);
     assert_double_equal((double)v2, (double)v1, 1e-15);
 
-    BigFloat<3,T> v3(123.456);
-    BigFloat<2,T> v4(v3);
+    BigFloat<3,T,Spec> v3(123.456);
+    BigFloat<2,T,Spec> v4(v3);
     assert_double_equal((double)v3, (double)v4, 1e-15);
 }
 
@@ -454,8 +454,10 @@ void test_precision(void**)
 }
 
 #define my_unit_test2(f, a, b) \
-    { #f "(" #a ")", f<a>, NULL, NULL, NULL }, \
-    { #f "(" #b ")", f<b>, NULL, NULL, NULL }
+    { #f "(" #a ",default)", f<a,DefaultPlatformSpec<a>>, NULL, NULL, NULL }, \
+    { #f "(" #a ",generic)", f<a,DefaultPlatformSpec<a>>, NULL, NULL, NULL }, \
+    { #f "(" #b ",default)", f<b,GenericPlatformSpec<b>>, NULL, NULL, NULL }, \
+    { #f "(" #b ",generic)", f<b,GenericPlatformSpec<b>>, NULL, NULL, NULL }
 
 #define my_unit(f) my_unit_test2(f, uint32_t, uint64_t)
 
