@@ -364,6 +364,18 @@ public:
         return sign == other.sign && exponent == other.exponent && mantissa == other.mantissa;
     }
 
+    bool operator<=(const BigFloat& other) const {
+        return !(*this > other);
+    }
+
+    bool operator>=(const BigFloat& other) const {
+        return !(*this < other);
+    }
+
+    bool operator!=(const BigFloat& other) const {
+        return !(*this == other);
+    }
+
     double ToDouble() const {
         if (IsZero()) {
             return 0.0;
