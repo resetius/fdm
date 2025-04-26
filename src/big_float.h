@@ -79,23 +79,51 @@ mul double : 0
 #include <x86intrin.h>
 #endif
 
+namespace detail {
+
+template <typename, typename = void>
+struct has_builtin_addc : std::false_type
+{ };
+
+template <typename T>
+struct has_builtin_addc<T,
+    std::void_t<
+        decltype(
+            __builtin_addc(
+                std::declval<unsigned int>(),
+                std::declval<unsigned int>(),
+                std::declval<unsigned int>(),
+                std::declval<unsigned int*>()
+            )
+        )
+    >
+> : std::true_type
+{ };
+
+inline constexpr bool has_builtin_addc_v = has_builtin_addc<void>::value;
+
+}
+
 template<typename BlockType>
 struct GenericPlatformSpec {
     // https://gcc.gnu.org/onlinedocs/gcc/Integer-Overflow-Builtins.html
     static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum)
     {
-        BlockType carry_out;
-        if constexpr (std::is_same_v<BlockType, uint32_t>) {
-            *sum = __builtin_addc(a, b, carry, &carry_out);
-        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
-            *sum = __builtin_addcll(a, b, carry, (unsigned long long *) &carry_out);
+        if constexpr(detail::has_builtin_addc_v) {
+            BlockType carry_out;
+            if constexpr (std::is_same_v<BlockType, uint32_t>) {
+                *sum = __builtin_addc(a, b, carry, &carry_out);
+            } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+                *sum = __builtin_addcll(a, b, carry, (unsigned long long *) &carry_out);
+            } else {
+                static_assert(false, "Unsupported BlockType");
+            }
+            return (unsigned char)carry_out;
         } else {
-            static_assert(false, "Unsupported BlockType");
+            bool overflow1 = __builtin_add_overflow(a, carry, sum);
+            bool overflow2 = __builtin_add_overflow(b, *sum, sum);
+            return (unsigned char)(overflow1 | overflow2);
         }
-        return (unsigned char)carry_out;
-        //bool overflow1 = __builtin_add_overflow(a, carry, sum);
-        //bool overflow2 = __builtin_add_overflow(b, *sum, sum);
-        //return (unsigned char)(overflow1 | overflow2);
     }
 
     static inline unsigned char addcarry(BlockType a, BlockType b, BlockType* sum)
