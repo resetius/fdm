@@ -536,6 +536,11 @@ public:
         return result;
     }
 
+    BigFloat& Mul2() {
+        exponent++;
+        return *this;
+    }
+
     BigFloat operator*(const BigFloat& other) const {
         if (IsZero() || other.IsZero()) {
             return BigFloat();
@@ -670,22 +675,21 @@ private:
     static BigFloat FracFromString(const std::string& fracPart) {
         BigFloat result;
 
-        WideType mult = 10;
+        BigFloat mult = 10;
         result.exponent = - blocks*blockBits;
-        for (size_t i = 0; i < fracPart.size()-1; i++) {
+        for (int i = 0; i < (int)fracPart.size()-1; i++) {
             mult *= 10;
         }
-        // todo:
-        WideType frac = std::stoll(fracPart);
+        BigFloat frac = IntFromString(fracPart);
         int blockId = blocks-1;
         int bitId = blockBits-1;
-        frac *= 2;
-        while (frac != 0) {
-            BlockType bit = frac >= mult;
+        frac.Mul2();
+        while (!frac.IsZero()) {
+            BlockType bit = !(frac < mult);
             if (bit) {
                 frac -= mult;
             }
-            frac = 2 * frac;
+            frac.Mul2();
             result.mantissa[blockId] |= (bit << bitId);
             bitId -= 1;
             if (bitId < 0) {
