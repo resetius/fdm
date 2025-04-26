@@ -79,6 +79,197 @@ mul double : 0
 #include <x86intrin.h>
 #endif
 
+template<typename BlockType>
+struct GenericPlatformSpec {
+    static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum)
+    {
+        bool overflow1 = __builtin_add_overflow(a, carry, sum);
+        bool overflow2 = __builtin_add_overflow(b, *sum, sum);
+        return (unsigned char)(overflow1 | overflow2);
+    }
+
+    static inline unsigned char addcarry(BlockType a, BlockType b, BlockType* sum)
+    {
+        bool overflow = __builtin_add_overflow(a, b, sum);
+        return (unsigned char)overflow;
+    }
+
+    static inline unsigned char subborrow(unsigned char borrow, BlockType a, BlockType b, BlockType* res)
+    {
+        bool overflow1 = __builtin_add_overflow(b, borrow, &b);
+        bool overflow2 = __builtin_sub_overflow(a, b, res);
+        return (unsigned char)(overflow1 | overflow2);
+    }
+
+    static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            uint64_t tmp = static_cast<uint64_t>(a) * b;
+            *lo = static_cast<uint32_t>(tmp);
+            *hi = static_cast<uint32_t>(tmp >> 32);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            const uint64_t a0 = (uint32_t)a, a1 = a >> 32;
+            const uint64_t b0 = (uint32_t)b, b1 = b >> 32;
+            const uint64_t p11 = a1 * b1, p01 = a0 * b1;
+            const uint64_t p10 = a1 * b0, p00 = a0 * b0;
+
+            const uint64_t middle = p10 + (p00 >> 32) + (uint32_t)p01;
+
+            *hi = p11 + (middle >> 32) + (p01 >> 32);
+            *lo = (middle << 32) | (uint32_t)p00;
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+};
+
+
+#if defined(__x86_64__)
+template<typename BlockType>
+struct AMD64PlatformSpec {
+    static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum) {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            return _addcarry_u32(carry, a, b, (unsigned int*)sum);
+        }
+        else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            return _addcarry_u64(carry, a, b, (unsigned long long*)sum);
+        }
+        else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+
+    static inline unsigned char addcarry(BlockType a, BlockType b, BlockType* sum) {
+        return addcarry(0, a, b, sum);
+    }
+
+    static inline unsigned char subborrow(unsigned char borrow, BlockType a, BlockType b, BlockType* res) {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            return _subborrow_u32(borrow, a, b, (unsigned int*)res);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            return _subborrow_u64(borrow, a, b, (unsigned long long*)res);
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+
+    static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            GenericPlatformSpec<BlockType>::umul_ppmm(hi, lo, a, b);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            asm volatile(
+                "mulx %[b], %[lo], %[hi]"
+                : [lo] "=r" (*lo), [hi] "=r" (*hi)
+                : "d" (a), [b] "r" (b)
+            );
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+};
+#endif
+
+
+#if defined(__aarch64__)
+template<typename BlockType>
+struct AArch64PlatformSpec {
+    static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum) {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            return GenericPlatformSpec<BlockType>(carry, a, b, sum);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            unsigned char carry_out;
+            uint64_t result;
+
+            asm volatile (
+                "adds xzr, xzr, xzr\n\t"
+                "adcs %[result], %[a], %[b]\n\t"
+                "cset %[carry_out], cs"
+                : [result] "=r" (result), [carry_out] "=r" (carry_out)
+                : [a] "r" (a), [b] "r" (b)
+                : "cc"
+            );
+
+            *sum = result;
+            return carry_out;
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+
+    static inline unsigned char addcarry(BlockType a, BlockType b, BlockType* sum) {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            return GenericPlatformSpec<BlockType>::addcarry(a, b, sum);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            unsigned char carry_out;
+            uint64_t result;
+
+            asm volatile (
+                "adds %[result], %[a], %[b]\n\t"
+                "cset %[carry_out], cs"
+                : [result] "=r" (result), [carry_out] "=r" (carry_out)
+                : [a] "r" (a), [b] "r" (b)
+                : "cc"
+            );
+
+            *sum = result;
+            return carry_out;
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+
+    static inline unsigned char subborrow(unsigned char borrow, BlockType a, BlockType b, BlockType* diff)
+    {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            return GenericPlatformSpec<BlockType>::subborrow(borrow, a, b, diff);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            uint64_t res;
+            unsigned int outBorrow;
+            asm volatile(
+                "mov    w10, #1           \n"
+                "sub    w10, w10, %w[br]   \n"
+                "cmp    w10, #1           \n"
+                "sbcs   %x[res], %x[a], %x[b] \n"
+                "cset   %w[ob], cc        \n"
+                : [res] "=&r" (res), [ob] "=&r" (outBorrow)
+                : [a] "r" (a), [b] "r" (b), [br] "r" ((unsigned int)borrow)
+                : "w10", "cc"
+            );
+            *diff = res;
+            return (unsigned char) outBorrow;
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+
+
+    static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            GenericPlatformSpec<BlockType>::umul_ppmm(hi, lo, a, b);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            asm volatile (
+                "mul  %0, %2, %3\n\t"
+                "umulh %1, %2, %3"
+                : "=&r"(*lo), "=&r"(*hi)
+                : "r"(a), "r"(b)
+            );
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+};
+#endif
+
+#if defined(__x86_64__)
+template<typename BlockType>
+using DefaultPlatformSpec = AMD64PlatformSpec<BlockType>;
+#elif defined(__aarch64__)
+template<typename BlockType>
+using DefaultPlatformSpec = AArch64PlatformSpec<BlockType>;
+#else
+template<typename BlockType>
+using DefaultPlatformSpec = GenericPlatformSpec<BlockType>;
+#endif
+
 namespace detail {
 
 static inline int clz(uint32_t a) {
@@ -89,107 +280,9 @@ static inline int clz(uint64_t a) {
     return __builtin_clzll(a);
 }
 
-#if defined(__x86_64__)
-static inline unsigned char addcarry_u64(unsigned char carry, uint64_t a, uint64_t b, uint64_t* sum) {
-    return _addcarry_u64(carry, a, b, (unsigned long long*)sum);
-}
-
-static inline unsigned char addcarry_u64(uint64_t a, uint64_t b, uint64_t* sum) {
-    return _addcarry_u64(0, a, b, (unsigned long long*)sum);
-}
-
-static inline unsigned char subborrow_u64(unsigned char borrow, uint64_t a, uint64_t b, uint64_t* res) {
-    return _subborrow_u64(borrow, a, b, (unsigned long long*)res);
-}
-
-static inline void umul_ppmm(uint64_t* hi, uint64_t* lo, uint64_t a, uint64_t b) {
-    asm volatile(
-        "mulx %[b], %[lo], %[hi]"
-        : [lo] "=r" (*lo), [hi] "=r" (*hi)
-        : "d" (a), [b] "r" (b)
-    );
-}
-
-#elif defined(__aarch64__)
-
-static inline unsigned char addcarry_u64(unsigned char carry, uint64_t a, uint64_t b, uint64_t* sum) {
-    unsigned char carry_out;
-    uint64_t result;
-
-    asm volatile (
-        "adds xzr, xzr, xzr\n\t"
-        "adcs %[result], %[a], %[b]\n\t"
-        "cset %[carry_out], cs"
-        : [result] "=r" (result), [carry_out] "=r" (carry_out)
-        : [a] "r" (a), [b] "r" (b)
-        : "cc"
-    );
-
-    *sum = result;
-    return carry_out;
-}
-
-static inline unsigned char addcarry_u64(uint64_t a, uint64_t b, uint64_t* sum) {
-    unsigned char carry_out;
-    uint64_t result;
-
-    asm volatile (
-        "adds %[result], %[a], %[b]\n\t"
-        "cset %[carry_out], cs"
-        : [result] "=r" (result), [carry_out] "=r" (carry_out)
-        : [a] "r" (a), [b] "r" (b)
-        : "cc"
-    );
-
-    *sum = result;
-    return carry_out;
-}
-
-static inline unsigned char subborrow_u64(unsigned char borrow, uint64_t a, uint64_t b, uint64_t* diff) {
-    uint64_t res;
-    unsigned int outBorrow;
-    asm volatile(
-        "mov    w10, #1           \n"
-        "sub    w10, w10, %w[br]   \n"
-        "cmp    w10, #1           \n"
-        "sbcs   %x[res], %x[a], %x[b] \n"
-        "cset   %w[ob], cc        \n"
-        : [res] "=&r" (res), [ob] "=&r" (outBorrow)
-        : [a] "r" (a), [b] "r" (b), [br] "r" ((unsigned int)borrow)
-        : "w10", "cc"
-    );
-    *diff = res;
-    return (unsigned char) outBorrow;
-}
-
-static inline void umul_ppmm(uint64_t* hi, uint64_t* lo, uint64_t a, uint64_t b) {
-    asm volatile (
-        "mul  %0, %2, %3\n\t"
-        "umulh %1, %2, %3"
-        : "=&r"(*lo), "=&r"(*hi)
-        : "r"(a), "r"(b)
-    );
-}
-
-#else
-
-static inline void umul_ppmm(uint64_t* hi, uint64_t* lo, uint64_t a, uint64_t b) {
-    unsigned __int128 tmp = static_cast<unsigned __int128>(a)*b;
-    *lo = static_cast<uint64_t>(tmp);
-    *hi = static_cast<uint64_t>(tmp >> 32);
-}
-
-#endif
-
-static inline void umul_ppmm(uint32_t* hi, uint32_t* lo, uint32_t a, uint32_t b) {
-    uint64_t tmp = static_cast<uint64_t>(a)*b;
-    *lo = static_cast<uint32_t>(tmp);
-    *hi = static_cast<uint32_t>(tmp >> 32);
-}
-
 } // detail
 
-template<int blocks, typename BlockType = uint64_t>
+template<int blocks, typename BlockType = uint64_t, typename Spec = DefaultPlatformSpec<BlockType>>
 class BigFloat {
 public:
     BigFloat() = default;
@@ -253,8 +346,8 @@ public:
         : BigFloat((long long)number)
     { }
 
-    template<int otherBlocks>
-    BigFloat(const BigFloat<otherBlocks, BlockType>& other)
+    template<int otherBlocks, typename OtherSpec>
+    BigFloat(const BigFloat<otherBlocks, BlockType, OtherSpec>& other)
         : exponent(other.getExponent())
         , sign(other.getSign())
     {
@@ -724,29 +817,11 @@ private:
         const std::array<BlockType, blocks>& a,
         const std::array<BlockType, blocks>& b)
     {
-#if defined(__x86_64__) || defined(__aarch64__)
-        constexpr bool use_asm = std::is_same_v<BlockType, uint64_t>;
-#else
-        constexpr bool use_asm = false;
-#endif
-
-        if constexpr(use_asm) {
-            BlockType carry = detail::addcarry_u64(a[0], b[0], &result[0]);
-            for (size_t i = 1; i < blocks; ++i) {
-                carry = detail::addcarry_u64(carry, a[i], b[i], &result[i]);
-            }
-            return carry;
-        } else {
-            BlockType carry = 0;
-            for (size_t i = 0; i < blocks; ++i) {
-                BlockType sum;
-                bool overflow1 = __builtin_add_overflow(a[i], carry, &sum);
-                bool overflow2 = __builtin_add_overflow(b[i], sum, &sum);
-                result[i] = sum;
-                carry = overflow1 | overflow2;
-            }
-            return carry;
+        BlockType carry = Spec::addcarry(a[0], b[0], &result[0]);
+        for (size_t i = 1; i < blocks; ++i) {
+            carry = Spec::addcarry(carry, a[i], b[i], &result[i]);
         }
+        return carry;
     }
 
     static void subWithBorrow(
@@ -754,26 +829,9 @@ private:
         const std::array<BlockType, blocks>& a,
         const std::array<BlockType, blocks>& b)
     {
-#if defined(__x86_64__) || defined(__aarch64__)
-        constexpr bool use_asm = std::is_same_v<BlockType, uint64_t>;
-#else
-        constexpr bool use_asm = false;
-#endif
-
-        if constexpr(use_asm) {
-            BlockType borrow = 0;
-            for (size_t i = 0; i < blocks; ++i) {
-                borrow = detail::subborrow_u64(borrow, a[i], b[i], &result[i]);
-            }
-        } else {
-            BlockType borrow = 0;
-            for (size_t i = 0; i < blocks; ++i) {
-                BlockType sub = b[i] + borrow;
-                bool overflow = (sub < b[i]);
-                BlockType value = a[i] - sub;
-                borrow = (a[i] < sub)  | overflow;
-                result[i] = value;
-            }
+        BlockType borrow = 0;
+        for (size_t i = 0; i < blocks; ++i) {
+            borrow = Spec::subborrow(borrow, a[i], b[i], &result[i]);
         }
     }
 
@@ -790,7 +848,7 @@ private:
                 size_t pos = i + j;
 
                 BlockType hi, lo;
-                detail::umul_ppmm(&hi, &lo, a[i], b[j]);
+                Spec::umul_ppmm(&hi, &lo, a[i], b[j]);
                 hi += __builtin_add_overflow(lo, result[pos], &lo);
                 carry = __builtin_add_overflow(lo, carry, &lo) + hi;
                 result[pos] = lo;
@@ -864,14 +922,14 @@ private:
             for (i = 0; i < blocks - blockShift - 1; i++) {
                 carry = mantissa[i+1] & mask;
                 if constexpr(std::is_same_v<BlockType,uint64_t>) {
-#ifdef __x86_64__
-                    asm volatile ("shrd %2, %1, %0"
-                        : "+r" (mantissa[i])
-                        : "r" (carry), "c" ((unsigned char)bitShift)
-                    );
-#else
+//#ifdef __x86_64__
+//                    asm volatile ("shrd %2, %1, %0"
+//                        : "+r" (mantissa[i])
+//                        : "r" (carry), "c" ((unsigned char)bitShift)
+//                    );
+//#else
                     mantissa[i] = (mantissa[i] >> bitShift) | (carry << (blockBits - bitShift));
-#endif
+//#endif
                 } else {
                     mantissa[i] = (mantissa[i] >> bitShift) | (carry << (blockBits - bitShift));
                 }
