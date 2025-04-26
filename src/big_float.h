@@ -556,6 +556,14 @@ public:
         return result;
     }
 
+    BigFloat& operator*=(const BigFloat& other) {
+        if (IsZero() || other.IsZero()) {
+            return (*this = BigFloat());
+        }
+
+        return (*this = (*this * other));
+    }
+
     int getSign() const {
         return sign;
     }
@@ -649,23 +657,13 @@ private:
     }
 
     static BigFloat IntFromString(const std::string& intPart) {
-        BigFloat result;
-
-        uint64_t value = std::stoll(intPart);
-        if (value == 0) {
-            return {};
-        }
-        result.sign = 1;
-        // TODO: handle overflow
-
-        if constexpr(std::is_same_v<BlockType,uint32_t>) {
-            result.mantissa[0] = static_cast<uint32_t>(value & 0xFFFFFFFF);
-            result.mantissa[1] = static_cast<uint32_t>(value >> 32);
-        } else {
-            result.mantissa[0] = static_cast<uint32_t>(value);
+        BigFloat ten = 10;
+        BigFloat result = 0;
+        for (auto c : intPart) {
+            result *= ten;
+            result += c - '0';
         }
 
-        result.normalize();
         return result;
     }
 
