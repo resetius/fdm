@@ -162,17 +162,11 @@ struct GenericPlatformSpec {
 template<typename BlockType>
 struct AMD64PlatformSpec : GenericPlatformSpec<BlockType> {
     static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
-        if constexpr (std::is_same_v<BlockType, uint32_t>) {
-            GenericPlatformSpec<BlockType>::umul_ppmm(hi, lo, a, b);
-        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
-            asm volatile(
-                "mulx %[b], %[lo], %[hi]"
-                : [lo] "=r" (*lo), [hi] "=r" (*hi)
-                : "d" (a), [b] "r" (b)
-            );
-        } else {
-            static_assert(false, "Unsupported BlockType");
-        }
+        asm volatile(
+            "mulx %[b], %[lo], %[hi]"
+            : [lo] "=r" (*lo), [hi] "=r" (*hi)
+            : "d" (a), [b] "r" (b)
+        );
     }
 
     static inline void shiftrcarry(BlockType carry, unsigned char shift, BlockType* res)
