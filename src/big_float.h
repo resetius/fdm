@@ -193,7 +193,7 @@ template<typename BlockType>
 struct AArch64PlatformSpec {
     static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum) {
         if constexpr (std::is_same_v<BlockType, uint32_t>) {
-            return GenericPlatformSpec<BlockType>(carry, a, b, sum);
+            return GenericPlatformSpec<BlockType>::addcarry(carry, a, b, sum);
         } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
             unsigned char carry_out;
             uint64_t result;
