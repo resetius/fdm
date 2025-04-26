@@ -79,51 +79,26 @@ mul double : 0
 #include <x86intrin.h>
 #endif
 
-namespace detail {
-
-template <typename, typename = void>
-struct has_builtin_addc : std::false_type
-{ };
-
-template <typename T>
-struct has_builtin_addc<T,
-    std::void_t<
-        decltype(
-            __builtin_addc(
-                std::declval<unsigned int>(),
-                std::declval<unsigned int>(),
-                std::declval<unsigned int>(),
-                std::declval<unsigned int*>()
-            )
-        )
-    >
-> : std::true_type
-{ };
-
-inline constexpr bool has_builtin_addc_v = has_builtin_addc<void>::value;
-
-}
-
 template<typename BlockType>
 struct GenericPlatformSpec {
     // https://gcc.gnu.org/onlinedocs/gcc/Integer-Overflow-Builtins.html
     static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum)
     {
-        if constexpr(detail::has_builtin_addc_v) {
-            BlockType carry_out;
-            if constexpr (std::is_same_v<BlockType, uint32_t>) {
-                *sum = __builtin_addc(a, b, carry, &carry_out);
-            } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
-                *sum = __builtin_addcll(a, b, carry, (unsigned long long *) &carry_out);
-            } else {
-                static_assert(false, "Unsupported BlockType");
-            }
-            return (unsigned char)carry_out;
+#if __has_builtin(__builtin_addc)
+        BlockType carry_out;
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            *sum = __builtin_addc(a, b, carry, &carry_out);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            *sum = __builtin_addcll(a, b, carry, (unsigned long long *) &carry_out);
         } else {
-            bool overflow1 = __builtin_add_overflow(a, carry, sum);
-            bool overflow2 = __builtin_add_overflow(b, *sum, sum);
-            return (unsigned char)(overflow1 | overflow2);
+            static_assert(false, "Unsupported BlockType");
         }
+        return (unsigned char)carry_out;
+#else
+        bool overflow1 = __builtin_add_overflow(a, carry, sum);
+        bool overflow2 = __builtin_add_overflow(b, *sum, sum);
+        return (unsigned char)(overflow1 | overflow2);
+#endif
     }
 
     static inline unsigned char addcarry(BlockType a, BlockType b, BlockType* sum)
@@ -134,6 +109,7 @@ struct GenericPlatformSpec {
 
     static inline unsigned char subborrow(unsigned char borrow, BlockType a, BlockType b, BlockType* res)
     {
+#if __has_builtin(__builtin_subc)
         BlockType carry_out;
         if constexpr (std::is_same_v<BlockType, uint32_t>) {
             *res = __builtin_subc(a, b, borrow, &carry_out);
@@ -143,9 +119,11 @@ struct GenericPlatformSpec {
             static_assert(false, "Unsupported BlockType");
         }
         return (unsigned char)carry_out;
-        //bool overflow1 = __builtin_sub_overflow(a, b, res);
-        //bool overflow2 = __builtin_sub_overflow(*res, borrow, res);
-        //return (unsigned char)(overflow1 | overflow2);
+#else
+        bool overflow1 = __builtin_sub_overflow(a, b, res);
+        bool overflow2 = __builtin_sub_overflow(*res, borrow, res);
+        return (unsigned char)(overflow1 | overflow2);
+#endif
     }
 
     static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
