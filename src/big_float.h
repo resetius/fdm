@@ -144,33 +144,7 @@ struct GenericPlatformSpec {
 
 #if defined(__x86_64__)
 template<typename BlockType>
-struct AMD64PlatformSpec {
-    static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum) {
-        if constexpr (std::is_same_v<BlockType, uint32_t>) {
-            return _addcarry_u32(carry, a, b, (unsigned int*)sum);
-        }
-        else if constexpr (std::is_same_v<BlockType, uint64_t>) {
-            return _addcarry_u64(carry, a, b, (unsigned long long*)sum);
-        }
-        else {
-            static_assert(false, "Unsupported BlockType");
-        }
-    }
-
-    static inline unsigned char addcarry(BlockType a, BlockType b, BlockType* sum) {
-        return addcarry(0, a, b, sum);
-    }
-
-    static inline unsigned char subborrow(unsigned char borrow, BlockType a, BlockType b, BlockType* res) {
-        if constexpr (std::is_same_v<BlockType, uint32_t>) {
-            return _subborrow_u32(borrow, a, b, (unsigned int*)res);
-        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
-            return _subborrow_u64(borrow, a, b, (unsigned long long*)res);
-        } else {
-            static_assert(false, "Unsupported BlockType");
-        }
-    }
-
+struct AMD64PlatformSpec : GenericPlatformSpec<BlockType> {
     static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
         if constexpr (std::is_same_v<BlockType, uint32_t>) {
             GenericPlatformSpec<BlockType>::umul_ppmm(hi, lo, a, b);
@@ -190,77 +164,7 @@ struct AMD64PlatformSpec {
 
 #if defined(__aarch64__)
 template<typename BlockType>
-struct AArch64PlatformSpec {
-    static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum) {
-        if constexpr (std::is_same_v<BlockType, uint32_t>) {
-            return GenericPlatformSpec<BlockType>::addcarry(carry, a, b, sum);
-        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
-            unsigned char carry_out;
-            uint64_t result;
-
-            asm volatile (
-                "adds xzr, xzr, xzr\n\t"
-                "adcs %[result], %[a], %[b]\n\t"
-                "cset %[carry_out], cs"
-                : [result] "=r" (result), [carry_out] "=r" (carry_out)
-                : [a] "r" (a), [b] "r" (b)
-                : "cc"
-            );
-
-            *sum = result;
-            return carry_out;
-        } else {
-            static_assert(false, "Unsupported BlockType");
-        }
-    }
-
-    static inline unsigned char addcarry(BlockType a, BlockType b, BlockType* sum) {
-        if constexpr (std::is_same_v<BlockType, uint32_t>) {
-            return GenericPlatformSpec<BlockType>::addcarry(a, b, sum);
-        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
-            unsigned char carry_out;
-            uint64_t result;
-
-            asm volatile (
-                "adds %[result], %[a], %[b]\n\t"
-                "cset %[carry_out], cs"
-                : [result] "=r" (result), [carry_out] "=r" (carry_out)
-                : [a] "r" (a), [b] "r" (b)
-                : "cc"
-            );
-
-            *sum = result;
-            return carry_out;
-        } else {
-            static_assert(false, "Unsupported BlockType");
-        }
-    }
-
-    static inline unsigned char subborrow(unsigned char borrow, BlockType a, BlockType b, BlockType* diff)
-    {
-        if constexpr (std::is_same_v<BlockType, uint32_t>) {
-            return GenericPlatformSpec<BlockType>::subborrow(borrow, a, b, diff);
-        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
-            uint64_t res;
-            unsigned int outBorrow;
-            asm volatile(
-                "mov    w10, #1           \n"
-                "sub    w10, w10, %w[br]   \n"
-                "cmp    w10, #1           \n"
-                "sbcs   %x[res], %x[a], %x[b] \n"
-                "cset   %w[ob], cc        \n"
-                : [res] "=&r" (res), [ob] "=&r" (outBorrow)
-                : [a] "r" (a), [b] "r" (b), [br] "r" ((unsigned int)borrow)
-                : "w10", "cc"
-            );
-            *diff = res;
-            return (unsigned char) outBorrow;
-        } else {
-            static_assert(false, "Unsupported BlockType");
-        }
-    }
-
-
+struct AArch64PlatformSpec : GenericPlatformSpec<BlockType> {
     static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
         if constexpr (std::is_same_v<BlockType, uint32_t>) {
             GenericPlatformSpec<BlockType>::umul_ppmm(hi, lo, a, b);
