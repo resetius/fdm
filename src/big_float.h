@@ -128,13 +128,12 @@ struct GenericPlatformSpec {
 
     static inline void shiftrcarry(BlockType carry, unsigned char shift, BlockType* res)
     {
-        if constexpr (std::is_same_v<BlockType, uint32_t>) {
-            *res = (*res >> shift) | (carry << (32 - shift));
-        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
-            *res = (*res >> shift) | (carry << (64 - shift));
-        } else {
-            static_assert(false, "Unsupported BlockType");
-        }
+        *res = (*res >> shift) | (carry << (8*sizeof(BlockType) - shift));
+    }
+
+    static inline void shiftlcarry(BlockType carry, unsigned char shift, BlockType* res)
+    {
+        *res = (*res << shift) | (carry >> (8*sizeof(BlockType) - shift));
     }
 
     static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
@@ -178,16 +177,18 @@ struct AMD64PlatformSpec : GenericPlatformSpec<BlockType> {
 
     static inline void shiftrcarry(BlockType carry, unsigned char shift, BlockType* res)
     {
-        if constexpr (std::is_same_v<BlockType, uint32_t>) {
-            GenericPlatformSpec<BlockType>::shiftrcarry(carry, shift, res);
-        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
-            asm volatile ("shrd %2, %1, %0"
-                : "+r" (*res)
-                : "r" (carry), "c" (shift)
-            );
-        } else {
-            static_assert(false, "Unsupported BlockType");
-        }
+        asm volatile ("shrd %2, %1, %0"
+            : "+r" (*res)
+            : "r" (carry), "c" (shift)
+        );
+    }
+
+    static inline void shiftlcarry(BlockType carry, unsigned char shift, BlockType* res)
+    {
+        asm volatile ("shld %2, %1, %0"
+            : "+r" (*res)
+            : "r" (carry), "c" (shift)
+        );
     }
 };
 #endif
@@ -845,10 +846,14 @@ private:
 
         if (bitShift > 0) {
             BlockType mask = (1ULL << bitShift) - 1ULL;
-            for (size_t i = blockShift; i < array_blocks; ++i) {
-                BlockType next_carry = (mantissa[i] & (mask << (blockBits - bitShift))) >> (blockBits - bitShift);
-                mantissa[i] = (mantissa[i] << bitShift) | carry;
-                carry = next_carry;
+            mask <<= (blockBits - bitShift);
+            int i = blockShift;
+            BlockType nextCarry = (mantissa[i] & mask);
+            mantissa[i++] <<= bitShift;
+            for (; i < array_blocks; ++i) {
+                carry = nextCarry;
+                nextCarry = (mantissa[i] & mask);
+                Spec::shiftlcarry(carry, bitShift, &mantissa[i]);
             }
         }
     }
