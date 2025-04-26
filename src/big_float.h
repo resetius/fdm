@@ -126,6 +126,17 @@ struct GenericPlatformSpec {
 #endif
     }
 
+    static inline void shiftrcarry(BlockType carry, unsigned char shift, BlockType* res)
+    {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            *res = (*res >> shift) | (carry << (32 - shift));
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            *res = (*res >> shift) | (carry << (64 - shift));
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+
     static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
         if constexpr (std::is_same_v<BlockType, uint32_t>) {
             uint64_t tmp = static_cast<uint64_t>(a) * b;
@@ -159,6 +170,20 @@ struct AMD64PlatformSpec : GenericPlatformSpec<BlockType> {
                 "mulx %[b], %[lo], %[hi]"
                 : [lo] "=r" (*lo), [hi] "=r" (*hi)
                 : "d" (a), [b] "r" (b)
+            );
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+
+    static inline void shiftrcarry(BlockType carry, unsigned char shift, BlockType* res)
+    {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            GenericPlatformSpec<BlockType>::shiftrcarry(carry, shift, res);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            asm volatile ("shrd %2, %1, %0"
+                : "+r" (*res)
+                : "r" (carry), "c" (shift)
             );
         } else {
             static_assert(false, "Unsupported BlockType");
@@ -852,18 +877,7 @@ private:
             int i;
             for (i = 0; i < blocks - blockShift - 1; i++) {
                 carry = mantissa[i+1] & mask;
-                if constexpr(std::is_same_v<BlockType,uint64_t>) {
-//#ifdef __x86_64__
-//                    asm volatile ("shrd %2, %1, %0"
-//                        : "+r" (mantissa[i])
-//                        : "r" (carry), "c" ((unsigned char)bitShift)
-//                    );
-//#else
-                    mantissa[i] = (mantissa[i] >> bitShift) | (carry << (blockBits - bitShift));
-//#endif
-                } else {
-                    mantissa[i] = (mantissa[i] >> bitShift) | (carry << (blockBits - bitShift));
-                }
+                Spec::shiftrcarry(carry, bitShift, &mantissa[i]);
             }
             mantissa[i] >>= bitShift;
         }
