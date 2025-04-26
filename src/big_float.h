@@ -81,11 +81,21 @@ mul double : 0
 
 template<typename BlockType>
 struct GenericPlatformSpec {
+    // https://gcc.gnu.org/onlinedocs/gcc/Integer-Overflow-Builtins.html
     static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum)
     {
-        bool overflow1 = __builtin_add_overflow(a, carry, sum);
-        bool overflow2 = __builtin_add_overflow(b, *sum, sum);
-        return (unsigned char)(overflow1 | overflow2);
+        BlockType carry_out;
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            *sum = __builtin_addc(a, b, carry, &carry_out);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            *sum = __builtin_addcll(a, b, carry, (unsigned long long *) &carry_out);
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+        return (unsigned char)carry_out;
+        //bool overflow1 = __builtin_add_overflow(a, carry, sum);
+        //bool overflow2 = __builtin_add_overflow(b, *sum, sum);
+        //return (unsigned char)(overflow1 | overflow2);
     }
 
     static inline unsigned char addcarry(BlockType a, BlockType b, BlockType* sum)
@@ -96,9 +106,18 @@ struct GenericPlatformSpec {
 
     static inline unsigned char subborrow(unsigned char borrow, BlockType a, BlockType b, BlockType* res)
     {
-        bool overflow1 = __builtin_add_overflow(b, borrow, &b);
-        bool overflow2 = __builtin_sub_overflow(a, b, res);
-        return (unsigned char)(overflow1 | overflow2);
+        BlockType carry_out;
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            *res = __builtin_subc(a, b, borrow, &carry_out);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            *res = __builtin_subcll(a, b, borrow, (unsigned long long *) &carry_out);
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+        return (unsigned char)carry_out;
+        //bool overflow1 = __builtin_sub_overflow(a, b, res);
+        //bool overflow2 = __builtin_sub_overflow(*res, borrow, res);
+        //return (unsigned char)(overflow1 | overflow2);
     }
 
     static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
