@@ -153,7 +153,6 @@ void save_mandelbrot_ppm(const int *host_buf,
 
 void save_mandelbrot_ppm(const unsigned char *host_buf,
                          int width, int height,
-                         int max_iter,
                          std::string filename) {
 
     // Open output file in binary mode
@@ -516,6 +515,67 @@ void search_control(std::vector<std::pair<T,T>>& control, const T& center_xx, co
     }
 }
 
+void color(std::vector<unsigned char>& output, const std::vector<int>& in, int width, int height, int max_iterations) {
+    std::vector<int> hist(max_iterations+1);
+    int total = 0;
+    for (int y = 0; y < height; y=y+1) {
+        for (int x = 0; x < width; x=x+1) {
+            int iter = in[y*width+x];
+            hist[iter] ++;
+            total ++;
+        }
+    }
+    for (int i = 1; i <= max_iterations; i++) {
+        hist[i] += hist[i-1];
+    }
+
+    const double z_factor = 10;
+    const double kernelsize = 8;
+    const double azimuth = 135 * M_PI/180;
+    const double altitude = 45 * M_PI/180;
+    const double zenith = M_PI/2 - altitude;
+
+    for (int y = 1; y < height-1; ++y) {
+        for (int x = 1; x < width-1; ++x) {
+            int mu = in[y * width + x];
+            unsigned char cr, cg, cb;
+            if (mu >= max_iterations) {
+                cr = cg = cb = 0;
+            } else {
+#define off(x,y) ((y)*width+(x))
+                double lb = in[off(x-1,y-1)];
+                double b = in[off(x,y-1)];
+                double rb = in[off(x+1,y-1)];
+                double l = in[off(x-1,y)];
+                double r = in[off(x+1,y)];
+                double lt = in[off(x-1,y+1)];
+                double t = in[off(x,y+1)];
+                double rt = in[off(x+1,y+1)];
+#undef off
+                double dzdx = ((rb + 2*r + rt) - (lb + 2*l + lt)) / kernelsize;
+                double dzdy = ((lt + 2*t + rt) - (lb + 2*b + rb)) / kernelsize;
+
+                double slope = atan(z_factor * sqrt(dzdx*dzdx + dzdy*dzdy));
+                double aspect = atan2(dzdy, -dzdx);
+                double shade = ((cos(zenith)*cos(slope)) + (sin(zenith)*sin(slope)*cos(azimuth-aspect)));
+                shade = fmax(0, shade);
+
+                double perc = hist[mu] / (double)total;
+                double h = 360.0 * perc;
+                double s = 1;
+                double v = shade;
+
+                //inline void hsv2rgb(float h, float s, float v,
+                //    unsigned char &r, unsigned char &g, unsigned char &b) {
+                hsv2rgb(h, s, v, cr, cg, cb);
+            }
+            output[3*(y * width + x) + 0] = cr;
+            output[3*(y * width + x) + 1] = cg;
+            output[3*(y * width + x) + 2] = cb;
+        }
+    }
+}
+
 template<int blocks, typename BlockType = uint32_t>
 void calc_mandelbrot() {
     sycl::queue q{ sycl::default_selector_v };
@@ -525,6 +585,7 @@ void calc_mandelbrot() {
 
     int* buffer = sycl::malloc_device<int>(height * width, q);
     std::vector<int> host_buf(width * height);
+    std::vector<unsigned char> rgb(3 * width * height);
 
     T view_width = 4.0;
     T center_x = -0.75;
@@ -575,8 +636,10 @@ void calc_mandelbrot() {
         q.memcpy(host_buf.data(), buffer, sizeof(int) * host_buf.size()).wait();
         char buf[256];
         snprintf(buf, sizeof(buf), "%03d:%.2le", frame,view_width.ToDouble());
+
+        color(rgb, host_buf, width, height, max_iterations);
         std::string filename = "mandelbrot_frame_" + std::string(buf) + ".ppm";
-        save_mandelbrot_ppm(host_buf.data(), width, height, max_iterations, filename);
+        save_mandelbrot_ppm(rgb.data(), width, height, filename);
 
         auto [new_x, new_y] = find_zoom_point(host_buf.data(), width, height, max_iterations, view_width, center_x, center_y);
         center_x = new_x;
