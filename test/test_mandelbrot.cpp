@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <map>
 #include <random>
+#include <complex>
 
 #include "unixbench_score.h"
 
@@ -233,6 +234,53 @@ unsigned char get_iteration_mandelbrot2(T x0, T y0, int max_iterations) {
     return c;
 }
 
+template<typename T>
+void get_iteration_mandelbrot3(std::vector<std::pair<T,T>>& res, T x0, T y0, int max_iterations) {
+    T x = 0;
+    T y = 0;
+    T xn;
+    T _4 = T(4);
+    T x2=x*x, y2=y*y;
+    int i;
+
+    res.emplace_back(0, 0);
+    for (i = 1; i < max_iterations && x2+y2 < _4; i=i+1) {
+        x2=x*x; y2=y*y;
+        xn = x2 - y2 + x0;
+        if constexpr(std::is_same_v<T,double> || std::is_same_v<T,float>) {
+            y = T(2.0)*x*y + y0;
+        } else {
+            y = (x*y).Mul2() + y0;
+        }
+        x = xn;
+        res.emplace_back(x, y);
+    }
+}
+
+template<typename T>
+int get_iteration_mandelbrot4(const std::pair<T,T>* z, T x0, T y0, int max_iterations) {
+    std::complex<double> d = {(x0 - z[1].first).ToDouble(), (y0 - z[1].second).ToDouble()};
+    std::complex<double> e = {0, 0};
+    std::complex<double> en = {0, 0};
+
+    int i;
+    //e = d;
+    // en = 2z e + e e + delta
+    for (i = 1; i < max_iterations; i=i+1) {
+        std::complex<double> zp = {z[i-1].first.ToDouble(), z[i-1].second.ToDouble()};
+        en = 2.0 * e * zp + e * e + d;
+        std::complex<double> ze = {z[i].first.ToDouble(), z[i].second.ToDouble()};
+        if (std::norm(en+ze) > 4.0) {
+            break;
+        }
+        e = en;
+    }
+    //std::cerr << "i: " << i << ", e: " << e.real() << ", " << e.imag() << std::endl;
+
+    return i;
+}
+
+
 template<int bs, typename BlockType = uint32_t>
 struct TypeSelector {
     static constexpr int blocks = bs;
@@ -375,6 +423,99 @@ void test_mandelbrot() {
     //mandelbrot_shade_omp<4, uint64_t>();
 }
 
+template<typename T>
+void search_control(std::vector<std::pair<T,T>>& control, const T& center_xx, const T& center_yy, const T& view_width, int width, int height, int max_iterations) {
+    double _1_w = 1.0 / width;
+    T pixel_size = view_width * T(_1_w);
+
+    int center_x = width / 2;
+    int center_y = height / 2;
+    int max_radius = std::max(width, height) / 2;
+    bool found = false;
+
+    // Start at the center point
+    {
+        T x0 = center_xx;
+        T y0 = center_yy;
+        control.clear();
+        get_iteration_mandelbrot3(control, x0, y0, max_iterations);
+        if (control.size() >= max_iterations) {
+            found = true;
+        }
+    }
+
+    // If not found at center, expand outward in squares of increasing size
+    for (int radius = 1; !found && radius <= max_radius; ++radius) {
+        // Top and bottom edges of the square
+        for (int x = center_x - radius; !found && x <= center_x + radius; ++x) {
+            // Skip points outside the image boundaries
+            if (x < 0 || x >= width) continue;
+
+            // Top edge
+            int y = center_y - radius;
+            if (y >= 0 && y < height) {
+                T x0 = center_xx + T(x - width / 2.0) * pixel_size;
+                T y0 = center_yy + T(y - height / 2.0) * pixel_size;
+                control.clear();
+                get_iteration_mandelbrot3(control, x0, y0, max_iterations);
+                if (control.size() >= max_iterations) {
+                    found = true;
+                    break;
+                }
+            }
+
+            // Bottom edge
+            y = center_y + radius;
+            if (y >= 0 && y < height) {
+                T x0 = center_xx + T(x - width / 2.0) * pixel_size;
+                T y0 = center_yy + T(y - height / 2.0) * pixel_size;
+                control.clear();
+                get_iteration_mandelbrot3(control, x0, y0, max_iterations);
+                if (control.size() >= max_iterations) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        // Left and right edges of the square (excluding corners which were handled above)
+        for (int y = center_y - radius + 1; !found && y <= center_y + radius - 1; ++y) {
+            // Skip points outside the image boundaries
+            if (y < 0 || y >= height) continue;
+
+            // Left edge
+            int x = center_x - radius;
+            if (x >= 0 && x < width) {
+                T x0 = center_xx + T(x - width / 2.0) * pixel_size;
+                T y0 = center_yy + T(y - height / 2.0) * pixel_size;
+                control.clear();
+                get_iteration_mandelbrot3(control, x0, y0, max_iterations);
+                if (control.size() >= max_iterations) {
+                    found = true;
+                    break;
+                }
+            }
+
+            // Right edge
+            x = center_x + radius;
+            if (x >= 0 && x < width) {
+                T x0 = center_xx + T(x - width / 2.0) * pixel_size;
+                T y0 = center_yy + T(y - height / 2.0) * pixel_size;
+                control.clear();
+                get_iteration_mandelbrot3(control, x0, y0, max_iterations);
+                if (control.size() >= max_iterations) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!found) {
+        std::cerr << "Control not found!" << std::endl;
+    }
+}
+
 template<int blocks, typename BlockType = uint32_t>
 void calc_mandelbrot() {
     sycl::queue q{ sycl::default_selector_v };
@@ -390,24 +531,46 @@ void calc_mandelbrot() {
     T center_y = 0.0;
     double _1_w = 1.0 / width;
     int max_iterations = 50;
+    static constexpr bool perturb = true;
+
+    std::vector<std::pair<T,T>> control;
+    std::pair<T,T>* control_data = sycl::malloc_device<std::pair<T,T>>(height * width, q);
 
     for (int frame = 0; frame < 1000; frame++) {
         T pixel_size = view_width * T(_1_w);
         auto start = std::chrono::high_resolution_clock::now();
-        q.submit([&](sycl::handler& h) {
-            h.parallel_for(sycl::range<2>(height, width), [=](sycl::id<2> idx) {
-                int x = idx[0];
-                int y = idx[1];
+        if (view_width < T(1e-1) && perturb) {
+            search_control(control, center_x, center_y, view_width, width, height, max_iterations);
+            q.memcpy(control_data, control.data(), sizeof(std::pair<T,T>)*control.size());
 
-                T x0 = center_x + T(x - width / 2.0) * pixel_size;
-                T y0 = center_y + T(y - height / 2.0) * pixel_size;
+            q.submit([&](sycl::handler& h) {
+                h.parallel_for(sycl::range<2>(height, width), [=](sycl::id<2> idx) {
+                    int x = idx[0];
+                    int y = idx[1];
 
-                buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
-            });
-        }).wait();
+                    T x0 = center_x + T(x - width / 2.0) * pixel_size;
+                    T y0 = center_y + T(y - height / 2.0) * pixel_size;
+
+                    buffer[y*width+x] = get_iteration_mandelbrot4(control_data, x0, y0, max_iterations);
+                });
+            }).wait();
+
+        } else {
+            q.submit([&](sycl::handler& h) {
+                h.parallel_for(sycl::range<2>(height, width), [=](sycl::id<2> idx) {
+                    int x = idx[0];
+                    int y = idx[1];
+
+                    T x0 = center_x + T(x - width / 2.0) * pixel_size;
+                    T y0 = center_y + T(y - height / 2.0) * pixel_size;
+
+                    buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
+                });
+            }).wait();
+        }
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = end - start;
-        std::cerr << "Blocks: " << blocks << ", frame: " << frame << ", elapsed time: " << elapsed.count() << " ms" << std::endl;
+        std::cerr << "Blocks: " << blocks << ", frame: " << frame << ", elapsed time: " << elapsed.count() << " ms, eps: " << view_width.ToDouble() << std::endl;
 
         q.memcpy(host_buf.data(), buffer, sizeof(int) * host_buf.size()).wait();
         char buf[256];
@@ -422,12 +585,55 @@ void calc_mandelbrot() {
         view_width = view_width * T(1.0/1.2);
         max_iterations += 1;
     }
+//    std::cerr << "X: " << center_x.ToString() << "\n";
+//    std::cerr << "Y: " << center_y.ToString() << "\n";
+//    std::cerr << "W: " << view_width.ToString() << "\n";
     sycl::free(buffer, q);
+    sycl::free(control_data, q);
+}
+
+template<int blocks, typename BlockType = uint32_t>
+void calc_mandelbrot_perturb() {
+    int height = 1000;
+    int width = 1000;
+    using T = typename TypeSelector<blocks, BlockType>::T;
+
+    T center_x("-0.7476180759505704135946970713481386103624764298397722545821903892128864105376320896311400072644479937");
+//           X: -0.7476180759505704135946970713481386103311034431621133227763770407705213837390293053373688247909001347
+
+    T center_y("-0.0974709816484987892699819856482762443302570416103311139092943008409339789097694332141201683941661361");
+//           Y: -0.0974709816484987892699819856482762443241086925597891723699625482566299363373607704606575719008532132
+
+    T view_width("0.0000000000000000000000000000000850279233328961660578925450907037419478065610364650578428219078049755");
+//             W: 0.0000000000000000000000000000000850279233149992701966899062648236424647584833571546615495900800496542
+//    std::cerr << "X: " << center_xx.ToString() << "\n";
+//    std::cerr << "Y: " << center_yy.ToString() << "\n";
+//    std::cerr << "W: " << view_width.ToString() << "\n";
+
+    int max_iterations = 50+400;
+    double _1_w = 1.0 / width;
+    T pixel_size = view_width * T(_1_w);
+
+    std::vector<std::pair<T,T>> control;
+    search_control(control, center_x, center_y, view_width, width, height, max_iterations);
+
+    std::vector<int> buffer(width * height);
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            T x0 = center_x + T(x - width / 2.0) * pixel_size;
+            T y0 = center_y + T(y - height / 2.0) * pixel_size;
+            buffer[y*width+x] = get_iteration_mandelbrot4(control.data(), x0, y0, max_iterations);
+        }
+    }
+
+    save_mandelbrot_ppm(buffer.data(), width, height, max_iterations, "mandelbrot_perturb.ppm");
 }
 
 int main() {
-    test_mandelbrot();
+    //test_mandelbrot();
     //calc_mandelbrot<4,uint64_t>();
-    //calc_mandelbrot<8>();
+    calc_mandelbrot<8>();
+    //calc_mandelbrot_perturb<4>();
     return 0;
 }
