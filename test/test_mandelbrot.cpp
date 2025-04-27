@@ -234,7 +234,7 @@ unsigned char get_iteration_mandelbrot2(T x0, T y0, int max_iterations) {
 }
 
 template<typename T>
-void get_iteration_mandelbrot3(std::vector<std::pair<T,T>>& res, T x0, T y0, int max_iterations) {
+void get_iteration_mandelbrot3(std::pair<T,T>& c, std::vector<std::complex<double>>& control, T x0, T y0, int max_iterations) {
     T x = 0;
     T y = 0;
     T xn;
@@ -242,7 +242,8 @@ void get_iteration_mandelbrot3(std::vector<std::pair<T,T>>& res, T x0, T y0, int
     T x2=x*x, y2=y*y;
     int i;
 
-    res.emplace_back(0, 0);
+    c = {x0, y0};
+    control.emplace_back(0.0, 0.0);
     for (i = 1; i < max_iterations && x2+y2 < _4; i=i+1) {
         x2=x*x; y2=y*y;
         xn = x2 - y2 + x0;
@@ -252,13 +253,13 @@ void get_iteration_mandelbrot3(std::vector<std::pair<T,T>>& res, T x0, T y0, int
             y = (x*y).Mul2() + y0;
         }
         x = xn;
-        res.emplace_back(x, y);
+        control.emplace_back((double)x, (double)y);
     }
 }
 
 template<typename T>
-int get_iteration_mandelbrot4(const std::pair<T,T>* z, T x0, T y0, int max_iterations) {
-    std::complex<double> d = {(x0 - z[1].first).ToDouble(), (y0 - z[1].second).ToDouble()};
+int get_iteration_mandelbrot4(const std::pair<T,T> c, const std::complex<double>* z, T x0, T y0, int max_iterations) {
+    std::complex<double> d = {(x0 - c.first).ToDouble(), (y0 - c.second).ToDouble()};
     std::complex<double> e = {0, 0};
     std::complex<double> en = {0, 0};
 
@@ -266,9 +267,9 @@ int get_iteration_mandelbrot4(const std::pair<T,T>* z, T x0, T y0, int max_itera
     //e = d;
     // en = 2z e + e e + delta
     for (i = 1; i < max_iterations; i=i+1) {
-        std::complex<double> zp = {z[i-1].first.ToDouble(), z[i-1].second.ToDouble()};
+        const std::complex<double>& zp = z[i-1];
         en = 2.0 * e * zp + e * e + d;
-        std::complex<double> ze = {z[i].first.ToDouble(), z[i].second.ToDouble()};
+        const std::complex<double>& ze = z[i];
         if (std::norm(en+ze) > 4.0) {
             break;
         }
@@ -423,7 +424,7 @@ void test_mandelbrot() {
 }
 
 template<typename T>
-void search_control(std::vector<std::pair<T,T>>& control, const T& center_xx, const T& center_yy, const T& view_width, int width, int height, int max_iterations) {
+void search_control(std::pair<T,T>& c, std::vector<std::complex<double>>& control, const T& center_xx, const T& center_yy, const T& view_width, int width, int height, int max_iterations) {
     double _1_w = 1.0 / width;
     T pixel_size = view_width * T(_1_w);
 
@@ -437,7 +438,7 @@ void search_control(std::vector<std::pair<T,T>>& control, const T& center_xx, co
         T x0 = center_xx;
         T y0 = center_yy;
         control.clear();
-        get_iteration_mandelbrot3(control, x0, y0, max_iterations);
+        get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
         if (control.size() >= max_iterations) {
             found = true;
         }
@@ -456,7 +457,7 @@ void search_control(std::vector<std::pair<T,T>>& control, const T& center_xx, co
                 T x0 = center_xx + T(x - width / 2.0) * pixel_size;
                 T y0 = center_yy + T(y - height / 2.0) * pixel_size;
                 control.clear();
-                get_iteration_mandelbrot3(control, x0, y0, max_iterations);
+                get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
                 if (control.size() >= max_iterations) {
                     found = true;
                     break;
@@ -469,7 +470,7 @@ void search_control(std::vector<std::pair<T,T>>& control, const T& center_xx, co
                 T x0 = center_xx + T(x - width / 2.0) * pixel_size;
                 T y0 = center_yy + T(y - height / 2.0) * pixel_size;
                 control.clear();
-                get_iteration_mandelbrot3(control, x0, y0, max_iterations);
+                get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
                 if (control.size() >= max_iterations) {
                     found = true;
                     break;
@@ -488,7 +489,7 @@ void search_control(std::vector<std::pair<T,T>>& control, const T& center_xx, co
                 T x0 = center_xx + T(x - width / 2.0) * pixel_size;
                 T y0 = center_yy + T(y - height / 2.0) * pixel_size;
                 control.clear();
-                get_iteration_mandelbrot3(control, x0, y0, max_iterations);
+                get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
                 if (control.size() >= max_iterations) {
                     found = true;
                     break;
@@ -501,7 +502,7 @@ void search_control(std::vector<std::pair<T,T>>& control, const T& center_xx, co
                 T x0 = center_xx + T(x - width / 2.0) * pixel_size;
                 T y0 = center_yy + T(y - height / 2.0) * pixel_size;
                 control.clear();
-                get_iteration_mandelbrot3(control, x0, y0, max_iterations);
+                get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
                 if (control.size() >= max_iterations) {
                     found = true;
                     break;
@@ -592,17 +593,19 @@ void calc_mandelbrot() {
     T center_y = 0.0;
     double _1_w = 1.0 / width;
     int max_iterations = 50;
+    int max_frames = 2000;
     static constexpr bool perturb = true;
 
-    std::vector<std::pair<T,T>> control;
-    std::pair<T,T>* control_data = sycl::malloc_device<std::pair<T,T>>(height * width, q);
+    std::vector<std::complex<double>> control;
+    std::pair<T,T> c;
+    std::complex<double>* control_data = sycl::malloc_device<std::complex<double>>(max_iterations + max_frames + 1, q);
 
-    for (int frame = 0; frame < 1000; frame++) {
+    for (int frame = 0; frame < max_frames; frame++) {
         T pixel_size = view_width * T(_1_w);
         auto start = std::chrono::high_resolution_clock::now();
         if (view_width < T(1e-1) && perturb) {
-            search_control(control, center_x, center_y, view_width, width, height, max_iterations);
-            q.memcpy(control_data, control.data(), sizeof(std::pair<T,T>)*control.size());
+            search_control(c, control, center_x, center_y, view_width, width, height, max_iterations);
+            q.memcpy(control_data, control.data(), sizeof(std::complex<double>)*control.size());
 
             q.submit([&](sycl::handler& h) {
                 h.parallel_for(sycl::range<2>(height, width), [=](sycl::id<2> idx) {
@@ -612,7 +615,7 @@ void calc_mandelbrot() {
                     T x0 = center_x + T(x - width / 2.0) * pixel_size;
                     T y0 = center_y + T(y - height / 2.0) * pixel_size;
 
-                    buffer[y*width+x] = get_iteration_mandelbrot4(control_data, x0, y0, max_iterations);
+                    buffer[y*width+x] = get_iteration_mandelbrot4(c, control_data, x0, y0, max_iterations);
                 });
             }).wait();
 
@@ -696,7 +699,9 @@ void calc_mandelbrot_perturb() {
 int main() {
     //test_mandelbrot();
     //calc_mandelbrot<4,uint64_t>();
-    calc_mandelbrot<8>();
+    //calc_mandelbrot<8>();
+    //calc_mandelbrot<8>();
+    calc_mandelbrot<8,uint64_t>();
     //calc_mandelbrot_perturb<4>();
     return 0;
 }
