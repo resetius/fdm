@@ -516,65 +516,64 @@ void search_control(std::pair<T,T>& c, std::vector<std::complex<double>>& contro
     }
 }
 
-void color(std::vector<unsigned char>& output, const std::vector<int>& in, int width, int height, int max_iterations) {
-    std::vector<int> hist(max_iterations+1);
-    int total = 0;
-    for (int y = 0; y < height; y=y+1) {
-        for (int x = 0; x < width; x=x+1) {
-            int iter = in[y*width+x];
-            hist[iter] ++;
-            total ++;
-        }
-    }
-    for (int i = 1; i <= max_iterations; i++) {
-        hist[i] += hist[i-1];
-    }
+float fract(float x) {
+    return x - std::floor(x);
+}
 
-    const double z_factor = 10;
-    const double kernelsize = 8;
-    const double azimuth = 135 * M_PI/180;
-    const double altitude = 45 * M_PI/180;
-    const double zenith = M_PI/2 - altitude;
+sycl::event color(unsigned char* output, const int* in, int width, int height, int max_iterations, sycl::queue& q) {
+    const float z_factor = 10;
+    const float kernelsize = 8;
+    const float azimuth = 135 * M_PI/180;
+    const float altitude = 45 * M_PI/180;
+    const float zenith = M_PI/2 - altitude;
 
-    for (int y = 1; y < height-1; ++y) {
-        for (int x = 1; x < width-1; ++x) {
-            int mu = in[y * width + x];
-            unsigned char cr, cg, cb;
-            if (mu >= max_iterations) {
-                cr = cg = cb = 0;
-            } else {
+    const float P = 180.0; // tune this to change the color map
+
 #define off(x,y) ((y)*width+(x))
-                double lb = in[off(x-1,y-1)];
-                double b = in[off(x,y-1)];
-                double rb = in[off(x+1,y-1)];
-                double l = in[off(x-1,y)];
-                double r = in[off(x+1,y)];
-                double lt = in[off(x-1,y+1)];
-                double t = in[off(x,y+1)];
-                double rt = in[off(x+1,y+1)];
-#undef off
-                double dzdx = ((rb + 2*r + rt) - (lb + 2*l + lt)) / kernelsize;
-                double dzdy = ((lt + 2*t + rt) - (lb + 2*b + rb)) / kernelsize;
 
-                double slope = atan(z_factor * sqrt(dzdx*dzdx + dzdy*dzdy));
-                double aspect = atan2(dzdy, -dzdx);
-                double shade = ((cos(zenith)*cos(slope)) + (sin(zenith)*sin(slope)*cos(azimuth-aspect)));
-                shade = fmax(0, shade);
-
-                double perc = hist[mu] / (double)total;
-                double h = 360.0 * perc;
-                double s = 1;
-                double v = shade;
-
-                //inline void hsv2rgb(float h, float s, float v,
-                //    unsigned char &r, unsigned char &g, unsigned char &b) {
-                hsv2rgb(h, s, v, cr, cg, cb);
+    return q.submit([&](sycl::handler& h) {
+        h.parallel_for(sycl::range<2>(height, width), [=](sycl::id<2> idx) {
+            int x = idx[0];
+            int y = idx[1];
+            if (x < 1 || x >= width-1 || y < 1 || y >= height-1 || in[off(x,y)] == max_iterations) {
+                output[3*(y * width + x) + 0] = 0;
+                output[3*(y * width + x) + 1] = 0;
+                output[3*(y * width + x) + 2] = 0;
+                return;
             }
+
+            int mu = in[off(x,y)];
+            unsigned char cr, cg, cb;
+            float lb = in[off(x-1,y-1)];
+            float b = in[off(x,y-1)];
+            float rb = in[off(x+1,y-1)];
+            float l = in[off(x-1,y)];
+            float r = in[off(x+1,y)];
+            float lt = in[off(x-1,y+1)];
+            float t = in[off(x,y+1)];
+            float rt = in[off(x+1,y+1)];
+            float dzdx = ((rb + 2*r + rt) - (lb + 2*l + lt)) / kernelsize;
+            float dzdy = ((lt + 2*t + rt) - (lb + 2*b + rb)) / kernelsize;
+
+            float slope = atan(z_factor * sqrt(dzdx*dzdx + dzdy*dzdy));
+            float aspect = atan2(dzdy, -dzdx);
+            float shade = ((cos(zenith)*cos(slope)) + (sin(zenith)*sin(slope)*cos(azimuth-aspect)));
+            shade = std::max<float>(0, shade);
+
+            float perc =  fract(mu / P);
+            float h = 360.0 * perc;
+            float s = 1;
+            float v = shade;
+
+            hsv2rgb(h, s, v, cr, cg, cb);
+
             output[3*(y * width + x) + 0] = cr;
             output[3*(y * width + x) + 1] = cg;
             output[3*(y * width + x) + 2] = cb;
-        }
-    }
+        });
+    });
+
+#undef off
 }
 
 template<int blocks, typename BlockType = uint32_t>
@@ -586,6 +585,8 @@ void calc_mandelbrot() {
 
     int* buffer = sycl::malloc_device<int>(height * width, q);
     std::vector<int> host_buf(width * height);
+
+    unsigned char* rgb_data = sycl::malloc_device<unsigned char>(3 * height * width, q);
     std::vector<unsigned char> rgb(3 * width * height);
 
     T view_width = 4.0;
@@ -636,14 +637,20 @@ void calc_mandelbrot() {
         std::chrono::duration<double, std::milli> elapsed = end - start;
         std::cerr << "Blocks: " << blocks << ", frame: " << frame << ", elapsed time: " << elapsed.count() << " ms, eps: " << view_width.ToDouble() << std::endl;
 
-        q.memcpy(host_buf.data(), buffer, sizeof(int) * host_buf.size()).wait();
-        char buf[256];
-        snprintf(buf, sizeof(buf), "%03d:%.2le", frame,view_width.ToDouble());
+        auto event1 = q.memcpy(host_buf.data(), buffer, sizeof(int) * host_buf.size());
+        auto event2 = color(rgb_data, buffer, width, height, max_iterations, q);
+        auto event3 = q.memcpy(rgb.data(), rgb_data, sizeof(unsigned char) * rgb.size(), {event2});
 
-        color(rgb, host_buf, width, height, max_iterations);
-        std::string filename = "mandelbrot_frame_" + std::string(buf) + ".ppm";
-        save_mandelbrot_ppm(rgb.data(), width, height, filename);
+        {
+            char buf[256];
+            snprintf(buf, sizeof(buf), "%03d:%.2le", frame,view_width.ToDouble());
+            std::string filename = "mandelbrot_frame_" + std::string(buf) + ".ppm";
 
+            event3.wait();
+            save_mandelbrot_ppm(rgb.data(), width, height, filename);
+        }
+
+        event1.wait();
         auto [new_x, new_y] = find_zoom_point(host_buf.data(), width, height, max_iterations, view_width, center_x, center_y);
         center_x = new_x;
         center_y = new_y;
