@@ -164,16 +164,8 @@ void save_mandelbrot_ppm(const unsigned char *host_buf,
     // Write PPM header (P6 = binary RGB)
     ofs << "P6\n" << width << " " << height << "\n255\n";
 
-    // Write pixel data
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            auto r = host_buf[3*(y * width + x) + 0];
-            auto g = host_buf[3*(y * width + x) + 1];
-            auto b = host_buf[3*(y * width + x) + 2];
-            ofs.put(r).put(g).put(b);
-        }
-    }
-    ofs.close();
+    const size_t data_size = static_cast<size_t>(width) * height * 3;
+    ofs.write(reinterpret_cast<const char*>(host_buf), data_size);
 }
 
 template<typename T>
@@ -424,7 +416,18 @@ void test_mandelbrot() {
 }
 
 template<typename T>
-void search_control(std::pair<T,T>& c, std::vector<std::complex<double>>& control, const T& center_xx, const T& center_yy, const T& view_width, int width, int height, int max_iterations) {
+bool search_control(std::pair<T,T>& c, std::vector<std::complex<double>>& control, T x0, T y0, int max_iterations) {
+    control.clear();
+    get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
+    return control.size() >= max_iterations;
+}
+
+template<typename T, typename F>
+void spiral_search(
+    F lambda,
+    const T& center_xx, const T& center_yy,
+    const T& view_width, int width, int height)
+{
     double _1_w = 1.0 / width;
     T pixel_size = view_width * T(_1_w);
 
@@ -437,11 +440,7 @@ void search_control(std::pair<T,T>& c, std::vector<std::complex<double>>& contro
     {
         T x0 = center_xx;
         T y0 = center_yy;
-        control.clear();
-        get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
-        if (control.size() >= max_iterations) {
-            found = true;
-        }
+        found = lambda(x0, y0);
     }
 
     // If not found at center, expand outward in squares of increasing size
@@ -456,10 +455,7 @@ void search_control(std::pair<T,T>& c, std::vector<std::complex<double>>& contro
             if (y >= 0 && y < height) {
                 T x0 = center_xx + T(x - width / 2.0) * pixel_size;
                 T y0 = center_yy + T(y - height / 2.0) * pixel_size;
-                control.clear();
-                get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
-                if (control.size() >= max_iterations) {
-                    found = true;
+                if ((found = lambda(x0, y0))) {
                     break;
                 }
             }
@@ -469,10 +465,7 @@ void search_control(std::pair<T,T>& c, std::vector<std::complex<double>>& contro
             if (y >= 0 && y < height) {
                 T x0 = center_xx + T(x - width / 2.0) * pixel_size;
                 T y0 = center_yy + T(y - height / 2.0) * pixel_size;
-                control.clear();
-                get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
-                if (control.size() >= max_iterations) {
-                    found = true;
+                if ((found = lambda(x0, y0))) {
                     break;
                 }
             }
@@ -488,10 +481,7 @@ void search_control(std::pair<T,T>& c, std::vector<std::complex<double>>& contro
             if (x >= 0 && x < width) {
                 T x0 = center_xx + T(x - width / 2.0) * pixel_size;
                 T y0 = center_yy + T(y - height / 2.0) * pixel_size;
-                control.clear();
-                get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
-                if (control.size() >= max_iterations) {
-                    found = true;
+                if ((found = lambda(x0, y0))) {
                     break;
                 }
             }
@@ -501,10 +491,7 @@ void search_control(std::pair<T,T>& c, std::vector<std::complex<double>>& contro
             if (x >= 0 && x < width) {
                 T x0 = center_xx + T(x - width / 2.0) * pixel_size;
                 T y0 = center_yy + T(y - height / 2.0) * pixel_size;
-                control.clear();
-                get_iteration_mandelbrot3(c, control, x0, y0, max_iterations);
-                if (control.size() >= max_iterations) {
-                    found = true;
+                if ((found = lambda(x0, y0))) {
                     break;
                 }
             }
@@ -512,7 +499,8 @@ void search_control(std::pair<T,T>& c, std::vector<std::complex<double>>& contro
     }
 
     if (!found) {
-        std::cerr << "Control not found!" << std::endl;
+        std::cerr << "Parameter not found!" << std::endl;
+        abort();
     }
 }
 
@@ -601,11 +589,15 @@ void calc_mandelbrot() {
     std::pair<T,T> c;
     std::complex<double>* control_data = sycl::malloc_device<std::complex<double>>(max_iterations + max_frames + 1, q);
 
+    auto lambda = [&](T x0, T y0) {
+        return search_control(c, control, x0, y0, max_iterations);
+    };
+
     for (int frame = 0; frame < max_frames; frame++) {
         T pixel_size = view_width * T(_1_w);
         auto start = std::chrono::high_resolution_clock::now();
         if (view_width < T(1e-1) && perturb) {
-            search_control(c, control, center_x, center_y, view_width, width, height, max_iterations);
+            spiral_search(lambda, center_x, center_y, view_width, width, height);
             q.memcpy(control_data, control.data(), sizeof(std::complex<double>)*control.size());
 
             q.submit([&](sycl::handler& h) {
