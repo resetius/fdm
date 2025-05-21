@@ -856,7 +856,7 @@ private:
             int i = blockShift;
             BlockType nextCarry = (mantissa[i] & mask);
             mantissa[i++] <<= bitShift;
-            for (; i < array_blocks; ++i) {
+            for (; i < static_cast<int>(array_blocks); ++i) {
                 carry = nextCarry;
                 nextCarry = (mantissa[i] & mask);
                 Spec::shiftlcarry(carry, bitShift, &mantissa[i]);
