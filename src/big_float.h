@@ -75,10 +75,6 @@ mul double : 0
 #include <cstdint>
 #include <algorithm>
 
-#if defined(__x86_64__)
-#include <x86intrin.h>
-#endif
-
 template<typename BlockType, bool has_int128 = false>
 struct NaivePlatformSpec {
     static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum) {
