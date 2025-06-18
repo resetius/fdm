@@ -9,11 +9,16 @@
 #include <random>
 #include <complex>
 
+#include <boost/multiprecision/cpp_bin_float.hpp>
+
 #include "unixbench_score.h"
 
 std::random_device rd;
 std::mt19937 gen(rd());
 std::uniform_real_distribution<double> dist;
+
+using namespace boost::multiprecision;
+using boost_float256 = number<cpp_bin_float<256, digit_base_2, void, long long, false>>;
 
 template<typename T>
 std::pair<T, T> find_zoom_point(const int* iterations_buffer, int width, int height, int max_iterations, const T& view_width, const T& cx, const T& cy) {
@@ -179,7 +184,7 @@ int get_iteration_mandelbrot(T x0, T y0, int max_iterations) {
     for (i = 1; i < max_iterations && x2+y2 < _4; i=i+1) {
         x2=x*x; y2=y*y;
         xn = x2 - y2 + x0;
-        if constexpr(std::is_same_v<T,double> || std::is_same_v<T,float>) {
+        if constexpr(std::is_same_v<T,double> || std::is_same_v<T,float> || std::is_same_v<T,boost_float256>) {
             y = T(2.0)*x*y + y0;
         } else {
             y = (x*y).Mul2() + y0;
@@ -239,7 +244,7 @@ void get_iteration_mandelbrot3(std::pair<T,T>& c, std::vector<std::complex<doubl
     for (i = 1; i < max_iterations && x2+y2 < _4; i=i+1) {
         x2=x*x; y2=y*y;
         xn = x2 - y2 + x0;
-        if constexpr(std::is_same_v<T,double> || std::is_same_v<T,float>) {
+        if constexpr(std::is_same_v<T,double> || std::is_same_v<T,float> || std::is_same_v<T,boost_float256>) {
             y = T(2.0)*x*y + y0;
         } else {
             y = (x*y).Mul2() + y0;
@@ -658,6 +663,62 @@ void calc_mandelbrot() {
 }
 
 template<int blocks, typename BlockType = uint32_t, typename T = typename TypeSelector<blocks, BlockType>::T>
+double calc_mandelbrot_perturb_gpu() {
+    sycl::queue q{ sycl::default_selector_v };
+    int height = 1000;
+    int width = 1000;
+
+    T center_x("-0.7476180759505704135946970713481386103624764298397722545821903892128864105376320896311400072644479937");
+    T center_y("-0.0974709816484987892699819856482762443302570416103311139092943008409339789097694332141201683941661361");
+    T view_width("0.0000000000000000000000000000000850279233328961660578925450907037419478065610364650578428219078049755");
+
+    view_width *= T(1./16);
+    int max_iterations = 500;
+    double _1_w = 1.0 / width;
+    T pixel_size = view_width * T(_1_w);
+
+    std::vector<std::complex<double>> control;
+    std::pair<T,T> c;
+    std::complex<double>* control_data = sycl::malloc_device<std::complex<double>>(max_iterations + 10 + 1, q);
+    auto lambda = [&](T x0, T y0) {
+        return search_control(c, control, x0, y0, max_iterations);
+    };
+
+    spiral_search(lambda, center_x, center_y, view_width, width, height);
+    q.memcpy(control_data, control.data(), sizeof(std::complex<double>)*control.size()).wait();
+
+    std::vector<int> buffer_host(width * height);
+    int* buffer = sycl::malloc_device<int>(width * height, q);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    q.submit([&](sycl::handler& h) {
+        h.parallel_for(sycl::range<2>(height, width), [=](sycl::id<2> idx) {
+            int x = idx[0];
+            int y = idx[1];
+
+            T x0 = center_x + T(x - width / 2.0) * pixel_size;
+            T y0 = center_y + T(y - height / 2.0) * pixel_size;
+
+            //buffer[y*width+x] = get_iteration_mandelbrot4(c, control.data(), x0, y0, max_iterations);
+            buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
+        });
+    }).wait();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> elapsed = end - start;
+
+    std::cerr << "elapsed time: " << elapsed.count() << " ms " << "\n";
+
+    // save_mandelbrot_ppm(buffer.data(), width, height, max_iterations, "mandelbrot_perturb.ppm");
+
+    sycl::free(buffer, q);
+    sycl::free(control_data, q);
+
+    return elapsed.count();
+}
+
+template<int blocks, typename BlockType = uint32_t, typename T = typename TypeSelector<blocks, BlockType>::T>
 double calc_mandelbrot_perturb_cpu() {
     int height = 1000;
     int width = 1000;
@@ -718,6 +779,40 @@ int main() {
     int its = 8;
     double score;
     std::vector<double> times; times.reserve(its);
+
+    // 32 bit gpu
+    std::cerr << "Testing mandelbrot... (256bit, 32bit block, gpu, generic arithmetics)" << std::endl;
+    times.clear();
+    for (int i = 0; i < its; i++)
+    {
+        std::cerr << "Iteration: " << i << "/" << its << "... " << std::flush;
+        times.emplace_back(calc_mandelbrot_perturb_gpu<8, uint32_t, BigFloat<8, uint32_t, GenericPlatformSpec<uint32_t>>>());
+    }
+    score = fdm::unixbench_score(times);
+    std::cerr << "Score: " << score << " ms" << std::endl;
+
+    // 64 bit gpu
+    std::cerr << "Testing mandelbrot... (256bit, 64bit block, gpu, generic arithmetics)" << std::endl;
+    times.clear();
+    for (int i = 0; i < its; i++)
+    {
+        std::cerr << "Iteration: " << i << "/" << its << "... " << std::flush;
+        times.emplace_back(calc_mandelbrot_perturb_gpu<4, uint64_t, BigFloat<4, uint64_t, GenericPlatformSpec<uint64_t>>>());
+    }
+    score = fdm::unixbench_score(times);
+    std::cerr << "Score: " << score << " ms" << std::endl;
+
+    // boost float256
+    std::cerr << "Testing mandelbrot... (256bit, omp, boost_float256)" << std::endl;
+    times.clear();
+    for (int i = 0; i < 8; i++)
+    {
+        std::cerr << "Iteration: " << i << "/" << its << "... " << std::flush;
+        times.emplace_back(calc_mandelbrot_perturb_cpu<4, uint64_t, boost_float256>());
+    }
+    score = fdm::unixbench_score(times);
+    std::cerr << "Score: " << score << " ms" << std::endl;
+
     // 32 bit
     std::cerr << "Testing mandelbrot... (256bit, 32bit block, omp, optimized arithmetics)" << std::endl;
     times.clear();
