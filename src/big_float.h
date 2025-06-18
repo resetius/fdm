@@ -79,6 +79,71 @@ mul double : 0
 #include <x86intrin.h>
 #endif
 
+template<typename BlockType, bool has_int128 = false>
+struct NaivePlatformSpec {
+    static inline unsigned char addcarry(unsigned char carry, BlockType a, BlockType b, BlockType* sum) {
+        BlockType tmp = a + carry;
+        bool overflow1 = tmp < a;
+        BlockType result = tmp + b;
+        bool overflow2 = result < tmp;
+        *sum = result;
+        return (unsigned char)(overflow1 | overflow2);
+    }
+
+    static inline unsigned char addcarry(BlockType a, BlockType b, BlockType* sum) {
+        BlockType result = a + b;
+        bool overflow = result < a;
+        *sum = result;
+        return (unsigned char)(overflow);
+    }
+
+    static inline unsigned char subborrow(unsigned char borrow, BlockType a, BlockType b, BlockType* res)
+    {
+        BlockType tmp = a - b;
+        bool overflow1 = a < b;
+        BlockType result = tmp - borrow;
+        bool overflow2 = tmp < borrow;
+        *res = result;
+        return (unsigned char)(overflow1 | overflow2);
+    }
+
+    static inline void shiftrcarry(BlockType carry, unsigned char shift, BlockType* res)
+    {
+        *res = (*res >> shift) | (carry << (8*sizeof(BlockType) - shift));
+    }
+
+    static inline void shiftlcarry(BlockType carry, unsigned char shift, BlockType* res)
+    {
+        *res = (*res << shift) | (carry >> (8*sizeof(BlockType) - shift));
+    }
+
+    static inline void umul_ppmm(BlockType* hi, BlockType* lo, BlockType a, BlockType b) {
+        if constexpr (std::is_same_v<BlockType, uint32_t>) {
+            uint64_t tmp = static_cast<uint64_t>(a) * b;
+            *lo = static_cast<uint32_t>(tmp);
+            *hi = static_cast<uint32_t>(tmp >> 32);
+        } else if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            if constexpr (has_int128) {
+                __uint128_t tmp = static_cast<__uint128_t>(a) * b;
+                *lo = static_cast<uint64_t>(tmp);
+                *hi = static_cast<uint64_t>(tmp >> 64);
+            } else {
+                const uint64_t a0 = (uint32_t)a, a1 = a >> 32;
+                const uint64_t b0 = (uint32_t)b, b1 = b >> 32;
+                const uint64_t p11 = a1 * b1, p01 = a0 * b1;
+                const uint64_t p10 = a1 * b0, p00 = a0 * b0;
+
+                const uint64_t middle = p10 + (p00 >> 32) + (uint32_t)p01;
+
+                *hi = p11 + (middle >> 32) + (p01 >> 32);
+                *lo = (middle << 32) | (uint32_t)p00;
+            }
+        } else {
+            static_assert(false, "Unsupported BlockType");
+        }
+    }
+};
+
 template<typename BlockType>
 struct GenericPlatformSpec {
     // https://gcc.gnu.org/onlinedocs/gcc/Integer-Overflow-Builtins.html
