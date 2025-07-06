@@ -768,14 +768,8 @@ double calc_mandelbrot_perturb_cpu() {
     return elapsed.count();
 }
 
-int main() {
-    //test_mandelbrot();
-    //calc_mandelbrot<4,uint64_t>();
-    //calc_mandelbrot<8>();
-    //calc_mandelbrot<8>();
-    //calc_mandelbrot<8,uint64_t>();
-    //calc_mandelbrot_perturb_cpu<8>();
-
+void run_bench()
+{
     int its = 8;
     double score;
     std::vector<double> times; times.reserve(its);
@@ -884,6 +878,17 @@ int main() {
     }
     score = fdm::unixbench_score(times);
     std::cerr << "Score: " << score << " ms" << std::endl;
+}
+
+int main() {
+    //test_mandelbrot();
+    //calc_mandelbrot<4,uint64_t>();
+    //calc_mandelbrot<8>();
+    //calc_mandelbrot<8>();
+    //calc_mandelbrot<8,uint64_t>();
+    //calc_mandelbrot_perturb_cpu<8>();
+
+    run_bench();
 
     return 0;
 }
