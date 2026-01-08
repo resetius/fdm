@@ -330,6 +330,41 @@ public:
         exponent = exponent - (blocks*blockBits-1);
     }
 
+    BigFloat(float number)
+    {
+        union {
+            float f;
+            uint32_t u;
+        } val;
+
+        val.f = number;
+
+        if (val.u == 0) {
+            return;
+        }
+
+        uint32_t bits = val.u;
+        sign = ((bits >> 31) & 0x1) == 0 ? 1 : -1;
+
+        int exponent_raw = (bits >> 23) & 0xFF;
+        exponent = exponent_raw - 127;
+
+        uint32_t mantissa_value = bits & 0x007FFFFFu;
+        mantissa_value |= (1u << 23);
+
+        constexpr int mantissa_bits = 23;
+        mantissa_value <<= (31 - mantissa_bits);
+
+
+        if constexpr (std::is_same_v<BlockType, uint64_t>) {
+            mantissa[blocks - 1] = (uint64_t)mantissa_value << 32;
+        } else {
+            mantissa[blocks - 1] = mantissa_value;
+        }
+
+        exponent = exponent - (blocks * blockBits - 1);
+    }
+
     BigFloat(long long number)
     {
         if (number == 0) {
