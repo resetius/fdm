@@ -623,9 +623,7 @@ public:
         }
 
         if (sign != other.sign) {
-            BigFloat temp = other;
-            temp.sign = -temp.sign;
-            return SubUnchecked(temp);
+            return SubUnchecked(-other);
         }
 
         return AddUnchecked(other);
@@ -641,13 +639,11 @@ public:
             return *this;
         }
         if (IsZero()) {
-            return (*this = other);
+            return (*this = -other);
         }
 
         if (sign != other.sign) {
-            BigFloat temp = other;
-            temp.sign = -temp.sign;
-            return AddUnchecked(temp);
+            return AddUnchecked(-other);
         }
 
         return SubUnchecked(other);
