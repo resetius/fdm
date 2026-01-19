@@ -256,7 +256,7 @@ void get_iteration_mandelbrot3(std::pair<T,T>& c, std::vector<std::complex<doubl
 
 template<typename T>
 int get_iteration_mandelbrot4(const std::pair<T,T> c, const std::complex<double>* z, T x0, T y0, int max_iterations) {
-    std::complex<double> d = {(x0 - c.first).ToDouble(), (y0 - c.second).ToDouble()};
+    std::complex<double> d = {(double)(x0 - c.first), (double)(y0 - c.second)};
     std::complex<double> e = {0, 0};
     std::complex<double> en = {0, 0};
 
@@ -569,12 +569,11 @@ sycl::event color(unsigned char* output, const int* in, int width, int height, i
 #undef off
 }
 
-template<int blocks, typename BlockType = uint32_t>
+template<typename T = typename TypeSelector<8, uint32_t>::T, bool perturb = true>
 void calc_mandelbrot() {
     sycl::queue q{ sycl::default_selector_v };
     int height = 1000;
     int width = 1000;
-    using T = typename TypeSelector<blocks, BlockType>::T;
 
     int* buffer = sycl::malloc_device<int>(height * width, q);
     std::vector<int> host_buf(width * height);
@@ -588,7 +587,6 @@ void calc_mandelbrot() {
     double _1_w = 1.0 / width;
     int max_iterations = 50;
     int max_frames = 2000;
-    static constexpr bool perturb = true;
 
     std::vector<std::complex<double>> control;
     std::pair<T,T> c;
@@ -632,7 +630,7 @@ void calc_mandelbrot() {
         }
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = end - start;
-        std::cerr << "Blocks: " << blocks << ", frame: " << frame << ", elapsed time: " << elapsed.count() << " ms, eps: " << view_width.ToDouble() << std::endl;
+        std::cerr << "Frame: " << frame << ", elapsed time: " << elapsed.count() << " ms, eps: " << (double)view_width << std::endl;
 
         auto event1 = q.memcpy(host_buf.data(), buffer, sizeof(int) * host_buf.size());
         auto event2 = color(rgb_data, buffer, width, height, max_iterations, q);
@@ -640,7 +638,7 @@ void calc_mandelbrot() {
 
         {
             char buf[256];
-            snprintf(buf, sizeof(buf), "%03d:%.2le", frame,view_width.ToDouble());
+            snprintf(buf, sizeof(buf), "%03d:%.2le", frame, (double)view_width);
             std::string filename = "mandelbrot_frame_" + std::string(buf) + ".ppm";
 
             event3.wait();
@@ -888,7 +886,9 @@ int main() {
     //calc_mandelbrot<8,uint64_t>();
     //calc_mandelbrot_perturb_cpu<8>();
 
-    run_bench();
+    //calc_mandelbrot<double, false>();
+    calc_mandelbrot<BigFloat<4,uint64_t,GenericPlatformSpec<uint64_t>>, true>();
+    //run_bench();
 
     return 0;
 }

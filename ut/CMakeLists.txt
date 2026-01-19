@@ -35,5 +35,6 @@ ut(compute ut_compute.cpp)
 endif ()
 ut(tdiag ut_tdiag.cpp)
 ut(bigloat ut_bigfloat.cpp)
+ut(softdouble ut_softdouble.cpp)
 
 endif()
