@@ -200,6 +200,18 @@ int main() {
             }
         );
         output(N, stats, "crkgc_neon(d)");
+
+        CyclicReductionNeon<double> crnd(N);
+        stats = benchmark_tdiag<double>(N, iterations,
+            [&](double *A1, double *A2, double *A3, int N) -> void* {
+                crnd.prepare(A2, A1, A3);
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                crnd.execute(B);
+            }
+        );
+        output(N, stats, "crkgPN(d)");
 #endif
 
         CyclicReduction<double> cr(N);
@@ -348,6 +360,18 @@ int main() {
             }
         );
         output(N, stats, "crkgc_neon(f)");
+
+        CyclicReductionNeon<float> crnf(N);
+        stats = benchmark_tdiag<float>(N, iterations,
+            [&](float *A1, float *A2, float *A3, int N) -> void* {
+                crnf.prepare(A2, A1, A3);
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                crnf.execute(B);
+            }
+        );
+        output(N, stats, "crkgPN(f)");
 #endif
 
         CyclicReduction<float> crf(N);

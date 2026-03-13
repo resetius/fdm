@@ -1,5 +1,9 @@
 #pragma once
 
+#include <vector>
+#include <cmath>
+#include <type_traits>
+
 #ifdef __ARM_NEON
 #include <arm_neon.h>
 
@@ -441,6 +445,208 @@ inline void cyclic_reduction_kershaw_general_continue_neon(
         n_curr  = n_next;
     }
 }
+
+// Precomputed-alpha/gamma class (NEON version).
+//
+// prepare(d, e, f) runs the full Kershaw factorization on a local copy and
+// records:
+//   alpha_fwd_[dst], gamma_fwd_[dst]  – forward-sweep multipliers (contiguous)
+//   inv_d_bs_[j], e_bs_[j], f_bs_[j] – back-sub coefficients (stride-2)
+//
+// execute(b) then performs zero divisions: forward sweep uses vld1q on the
+// contiguous alpha/gamma arrays; back-sub uses vmulq/vmlsq on the stride-2
+// inv_d/e/f arrays.
+//
+// Works for both float (4-wide) and double (2-wide) via if constexpr.
+template<typename T>
+class CyclicReductionNeon {
+    static_assert(std::is_same_v<T,float> || std::is_same_v<T,double>,
+                  "CyclicReductionNeon requires float or double");
+public:
+    explicit CyclicReductionNeon(int n)
+        : n_(n)
+        , q_((int)std::ceil(std::log2((double)(n + 1))))
+        , inv_d_mid_(T(0))
+        , alpha_fwd_(2*n+2, T(0))
+        , gamma_fwd_(2*n+2, T(0))
+        , inv_d_bs_ (2*n+2, T(0))
+        , e_bs_     (2*n+2, T(0))
+        , f_bs_     (2*n+2, T(0))
+    {}
+
+    // Factorize d/e/f (non-destructive) and store all precomputed coefficients.
+    void prepare(const T *d_in, const T *e_in, const T *f_in) {
+        const int n = n_, q = q_;
+        std::vector<T> dk(2*n+2, T(0)), ek(2*n+2, T(0)), fk(2*n+2, T(0));
+        for (int i = 0; i < n; i++) { dk[i]=d_in[i]; ek[i]=e_in[i]; fk[i]=f_in[i]; }
+
+        int j, l, n_curr = n, n_next, off = 0, dst;
+
+        // ---- forward sweep ----
+        for (l = 1; l < q; l++) {
+            n_next = (n_curr - n_curr % 2) / 2;
+            j   = off + 1;
+            dst = off + n_curr;
+
+            for (; j + 1 < off + n_curr; j += 2, dst++) {
+                T alpha   = -ek[j] / dk[j-1];
+                T gamma_v = -fk[j] / dk[j+1];
+                alpha_fwd_[dst] = alpha;
+                gamma_fwd_[dst] = gamma_v;
+                dk[dst] = dk[j] + alpha * fk[j-1] + gamma_v * ek[j+1];
+                ek[dst] = alpha   * ek[j-1];
+                fk[dst] = gamma_v * fk[j+1];
+            }
+            for (; j < off + n_curr; j += 2, dst++) {
+                T alpha = -ek[j] / dk[j-1];
+                alpha_fwd_[dst] = alpha;
+                gamma_fwd_[dst] = T(0);
+                dk[dst] = dk[j] + alpha * fk[j-1];
+                ek[dst] = alpha * ek[j-1];
+                fk[dst] = T(0);
+            }
+
+            off    += n_curr;
+            n_curr  = n_next;
+        }
+
+        inv_d_mid_ = T(1) / dk[off];
+        n_curr = 1;
+
+        // ---- back-sub: record inv_d, e/d, f/d at every j position ----
+        for (int mask = (1 << (q-1)) >> 1; mask > 0; mask >>= 1) {
+            n_next = (n & mask) ? n_curr * 2 + 1 : n_curr * 2;
+
+            // First element has only a right neighbour (e[j]=0 at boundary).
+            j = off - n_next;
+            inv_d_bs_[j] = T(1) / dk[j];
+            e_bs_[j]     = T(0);
+            f_bs_[j]     = fk[j] / dk[j];
+            j += 2;
+
+            for (; j + 1 < off; j += 2) {
+                inv_d_bs_[j] = T(1) / dk[j];
+                e_bs_[j]     = ek[j] / dk[j];
+                f_bs_[j]     = fk[j] / dk[j];
+            }
+            for (; j < off; j += 2) {
+                inv_d_bs_[j] = T(1) / dk[j];
+                e_bs_[j]     = ek[j] / dk[j];
+                f_bs_[j]     = T(0);
+            }
+
+            off    -= n_next;
+            n_curr  = n_next;
+        }
+    }
+
+    // Solve using precomputed coefficients (zero divisions).
+    void execute(T *b) {
+        const int n = n_, q = q_;
+        int j, l, n_curr = n, n_next, off = 0, dst, mask;
+
+        // ---- forward sweep ----
+        for (l = 1; l < q; l++) {
+            n_next = (n_curr - n_curr % 2) / 2;
+            j   = off + 1;
+            dst = off + n_curr;
+
+            if constexpr (std::is_same_v<T, float>) {
+                // 4-wide float: alpha/gamma are contiguous → vld1q (no deinterleave).
+                // b is interleaved → vld2q to extract nodes and neighbours.
+                for (; j + 7 < off + n_curr; j += 8, dst += 4) {
+                    float32x4_t alpha_v = vld1q_f32(alpha_fwd_.data() + dst);
+                    float32x4_t gamma_v = vld1q_f32(gamma_fwd_.data() + dst);
+                    float32x4x2_t bv  = vld2q_f32(b + j - 1);
+                    float32x4_t b_jp1 = vld2q_f32(b + j + 1).val[0];
+                    // b_out = b[j] + alpha*b[j-1] + gamma*b[j+1]
+                    float32x4_t b_out = vmlaq_f32(vmlaq_f32(bv.val[1], alpha_v, bv.val[0]), gamma_v, b_jp1);
+                    vst1q_f32(b + dst, b_out);
+                }
+            } else {
+                // 2-wide double
+                for (; j + 3 < off + n_curr; j += 4, dst += 2) {
+                    float64x2_t alpha_v = vld1q_f64(alpha_fwd_.data() + dst);
+                    float64x2_t gamma_v = vld1q_f64(gamma_fwd_.data() + dst);
+                    float64x2x2_t bv  = vld2q_f64(b + j - 1);
+                    float64x2_t b_jp1 = vld2q_f64(b + j + 1).val[0];
+                    float64x2_t b_out = vmlaq_f64(vmlaq_f64(bv.val[1], alpha_v, bv.val[0]), gamma_v, b_jp1);
+                    vst1q_f64(b + dst, b_out);
+                }
+            }
+            for (; j + 1 < off + n_curr; j += 2, dst++)
+                b[dst] = b[j] + alpha_fwd_[dst]*b[j-1] + gamma_fwd_[dst]*b[j+1];
+            for (; j < off + n_curr; j += 2, dst++)
+                b[dst] = b[j] + alpha_fwd_[dst]*b[j-1];
+
+            off    += n_curr;
+            n_curr  = n_next;
+        }
+
+        b[off] = b[off] * inv_d_mid_;
+        n_curr = 1;
+
+        // ---- back-substitution ----
+        for (mask = (1 << (q-1)) >> 1; mask > 0; mask >>= 1) {
+            n_next = (n & mask) ? n_curr * 2 + 1 : n_curr * 2;
+
+            // Copy known values to odd positions.
+            for (j = off, dst = off - n_next + 1; j < off + n_curr; j++, dst += 2)
+                b[dst] = b[j];
+
+            // First element (only right neighbour).
+            j = off - n_next;
+            b[j] = inv_d_bs_[j] * b[j] - f_bs_[j] * b[j+1];
+            j += 2;
+
+            if constexpr (std::is_same_v<T, float>) {
+                // Even positions j, j+2, j+4, j+6 are independent.
+                // inv_d_bs/e_bs/f_bs stored at stride-2 positions → val[1] gives the 4 values.
+                for (; j + 7 < off; j += 8) {
+                    float32x4x2_t bv   = vld2q_f32(b + j - 1);
+                    float32x4_t b_jp1v = vld2q_f32(b + j + 1).val[0];
+                    float32x4_t inv_d_v = vld2q_f32(inv_d_bs_.data() + j - 1).val[1];
+                    float32x4_t e_v     = vld2q_f32(e_bs_.data()     + j - 1).val[1];
+                    float32x4_t f_v     = vld2q_f32(f_bs_.data()     + j - 1).val[1];
+                    // res = inv_d*b[j] - e_bs*b[j-1] - f_bs*b[j+1]
+                    float32x4_t res = vmulq_f32(inv_d_v, bv.val[1]);
+                    res = vmlsq_f32(res, e_v, bv.val[0]);
+                    res = vmlsq_f32(res, f_v, b_jp1v);
+                    b[j]   = vgetq_lane_f32(res, 0);
+                    b[j+2] = vgetq_lane_f32(res, 1);
+                    b[j+4] = vgetq_lane_f32(res, 2);
+                    b[j+6] = vgetq_lane_f32(res, 3);
+                }
+            } else {
+                for (; j + 3 < off; j += 4) {
+                    float64x2x2_t bv   = vld2q_f64(b + j - 1);
+                    float64x2_t b_jp1v = vld2q_f64(b + j + 1).val[0];
+                    float64x2_t inv_d_v = vld2q_f64(inv_d_bs_.data() + j - 1).val[1];
+                    float64x2_t e_v     = vld2q_f64(e_bs_.data()     + j - 1).val[1];
+                    float64x2_t f_v     = vld2q_f64(f_bs_.data()     + j - 1).val[1];
+                    float64x2_t res = vmulq_f64(inv_d_v, bv.val[1]);
+                    res = vmlsq_f64(res, e_v, bv.val[0]);
+                    res = vmlsq_f64(res, f_v, b_jp1v);
+                    b[j]   = vgetq_lane_f64(res, 0);
+                    b[j+2] = vgetq_lane_f64(res, 1);
+                }
+            }
+            for (; j + 1 < off; j += 2)
+                b[j] = inv_d_bs_[j]*b[j] - e_bs_[j]*b[j-1] - f_bs_[j]*b[j+1];
+            for (; j < off; j += 2)
+                b[j] = inv_d_bs_[j]*b[j] - e_bs_[j]*b[j-1];
+
+            off    -= n_next;
+            n_curr  = n_next;
+        }
+    }
+
+private:
+    int n_, q_;
+    T   inv_d_mid_;
+    std::vector<T> alpha_fwd_, gamma_fwd_; // at contiguous dst positions
+    std::vector<T> inv_d_bs_, e_bs_, f_bs_; // at stride-2 j positions
+};
 
 } // namespace fdm
 #endif // __ARM_NEON
