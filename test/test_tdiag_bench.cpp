@@ -8,6 +8,7 @@
 #include "asp_gauss.h"
 #include "blas.h"
 #include "cyclic_reduction.h"
+#include "cyclic_reduction_neon.h"
 #include "unixbench_score.h"
 
 using namespace fdm;
@@ -163,6 +164,18 @@ int main() {
         );
         output(N, stats, "crkg(d)");
 
+#ifdef __ARM_NEON
+        stats = benchmark_tdiag<double>(N, iterations,
+            [](double *A1, double *A2, double *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cyclic_reduction_kershaw_general_neon(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkg_neon(d)");
+#endif
+
         stats = benchmark_tdiag<double>(N, iterations,
             [&](double *A1, double *A2, double *A3, int N) -> void* {
                 std::vector<double> tmp(2*N);
@@ -174,6 +187,20 @@ int main() {
             }
         );
         output(N, stats, "crkgc(d)");
+
+#ifdef __ARM_NEON
+        stats = benchmark_tdiag<double>(N, iterations,
+            [&](double *A1, double *A2, double *A3, int N) -> void* {
+                std::vector<double> tmp(2*N);
+                cyclic_reduction_kershaw_general(A2, A1, A3, tmp.data(), power, N);
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cyclic_reduction_kershaw_general_continue_neon(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkgc_neon(d)");
+#endif
 
         CyclicReduction<double> cr(N);
         stats = benchmark_tdiag<double>(N, iterations,
@@ -284,6 +311,18 @@ int main() {
         );
         output(N, stats, "crkg(f)");
 
+#ifdef __ARM_NEON
+        stats = benchmark_tdiag<float>(N, iterations,
+            [](float *A1, float *A2, float *A3, int N) -> void* {
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                cyclic_reduction_kershaw_general_neon(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkg_neon(f)");
+#endif
+
 
         stats = benchmark_tdiag<float>(N, iterations,
             [&](float *A1, float *A2, float *A3, int N) -> void* {
@@ -296,6 +335,20 @@ int main() {
             }
         );
         output(N, stats, "crkgc(f)");
+
+#ifdef __ARM_NEON
+        stats = benchmark_tdiag<float>(N, iterations,
+            [&](float *A1, float *A2, float *A3, int N) -> void* {
+                std::vector<float> tmp(2*N);
+                cyclic_reduction_kershaw_general(A2, A1, A3, tmp.data(), power, N);
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                cyclic_reduction_kershaw_general_continue_neon(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkgc_neon(f)");
+#endif
 
         CyclicReduction<float> crf(N);
         stats = benchmark_tdiag<float>(N, iterations,
