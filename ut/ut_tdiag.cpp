@@ -12,6 +12,8 @@
 #include "blas.h"
 #include "config.h"
 #include "cyclic_reduction.h"
+#include "cyclic_reduction_avx.h"
+#include "cyclic_reduction_neon.h"
 
 extern "C" {
 #include <cmocka.h>
@@ -680,6 +682,378 @@ void test_crkgC_float(void** s) {
     test_crkgC<float>(s);
 }
 
+// crkg_avx2 / crkgc_avx2 / crkgPN_avx2
+#ifdef __AVX2__
+template<typename T>
+void test_crkg_avx2(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 9);
+    vector<T> A1(2*N), A2(2*N), A3(2*N), B(2*N), B1(2*N), B2(2*N);
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    for (int i = 0; i < N; i++) {
+        A1[i] = distribution(generator);
+        A2[i] = distribution(generator);
+        A3[i] = distribution(generator);
+        B[i]  = distribution(generator);
+    }
+    A1[0] = 0;
+
+    { // reference
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B1 = B;
+        if constexpr(std::is_same_v<T, double>)
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+        else
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+    }
+
+    { // avx2
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B2 = B;
+        int q = ceil(log2(N+1));
+        cyclic_reduction_kershaw_general_avx2(A21.data(), A11.data(), A31.data(), B2.data(), q, N);
+    }
+
+    double tol = 1e-10;
+    if constexpr(std::is_same_v<T, float>) tol = 1e-3;
+    for (int i = 0; i < N; i++) assert_float_equal(B1[i], B2[i], tol);
+}
+
+template<typename T>
+void test_crkgc_avx2(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 9);
+    vector<T> A1(2*N), A2(2*N), A3(2*N), B(2*N), B1(2*N), B2(2*N);
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    for (int i = 0; i < N; i++) {
+        A1[i] = distribution(generator);
+        A2[i] = distribution(generator);
+        A3[i] = distribution(generator);
+        B[i]  = distribution(generator);
+    }
+    A1[0] = 0;
+
+    { // reference
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B1 = B;
+        if constexpr(std::is_same_v<T, double>)
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+        else
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+    }
+
+    { // prepare + continue avx2
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B2 = B;
+        int q = ceil(log2(N+1));
+        cyclic_reduction_kershaw_general(A21.data(), A11.data(), A31.data(), B2.data(), q, N);
+        B2 = B;
+        cyclic_reduction_kershaw_general_continue_avx2(A21.data(), A11.data(), A31.data(), B2.data(), q, N);
+    }
+
+    double tol = 1e-10;
+    if constexpr(std::is_same_v<T, float>) tol = 1e-3;
+    for (int i = 0; i < N; i++) assert_float_equal(B1[i], B2[i], tol);
+}
+
+template<typename T>
+void test_crkgPN_avx2(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 9);
+    vector<T> A1(N), A2(N), A3(N), B(2*N), B1(N), B2(2*N);
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    for (int i = 0; i < N; i++) {
+        A1[i] = distribution(generator);
+        A2[i] = distribution(generator);
+        A3[i] = distribution(generator);
+        B[i]  = distribution(generator);
+    }
+    A1[0] = 0;
+
+    { // reference
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B1.assign(B.begin(), B.begin()+N);
+        if constexpr(std::is_same_v<T, double>)
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+        else
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+    }
+
+    { // CyclicReductionAVX2 — execute needs buffer of size 2*N
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B2 = B;
+        CyclicReductionAVX2<T> cr(N);
+        cr.prepare(A21.data(), A11.data(), A31.data());
+        cr.execute(B2.data());
+    }
+
+    double tol = 1e-10;
+    if constexpr(std::is_same_v<T, float>) tol = 1e-3;
+    for (int i = 0; i < N; i++) assert_float_equal(B1[i], B2[i], tol);
+}
+
+void test_crkg_avx2_double(void** s)   { test_crkg_avx2<double>(s); }
+void test_crkg_avx2_float(void** s)    { test_crkg_avx2<float>(s); }
+void test_crkgc_avx2_double(void** s)  { test_crkgc_avx2<double>(s); }
+void test_crkgc_avx2_float(void** s)   { test_crkgc_avx2<float>(s); }
+void test_crkgPN_avx2_double(void** s) { test_crkgPN_avx2<double>(s); }
+void test_crkgPN_avx2_float(void** s)  { test_crkgPN_avx2<float>(s); }
+#endif // __AVX2__
+
+// crkg_avx512 / crkgc_avx512 / crkgPN_avx512
+#ifdef __AVX512F__
+template<typename T>
+void test_crkg_avx512(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 9);
+    vector<T> A1(2*N), A2(2*N), A3(2*N), B(2*N), B1(2*N), B2(2*N);
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    for (int i = 0; i < N; i++) {
+        A1[i] = distribution(generator);
+        A2[i] = distribution(generator);
+        A3[i] = distribution(generator);
+        B[i]  = distribution(generator);
+    }
+    A1[0] = 0;
+
+    { // reference
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B1 = B;
+        if constexpr(std::is_same_v<T, double>)
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+        else
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+    }
+
+    { // avx512
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B2 = B;
+        int q = ceil(log2(N+1));
+        cyclic_reduction_kershaw_general_avx512(A21.data(), A11.data(), A31.data(), B2.data(), q, N);
+    }
+
+    double tol = 1e-10;
+    if constexpr(std::is_same_v<T, float>) tol = 1e-3;
+    for (int i = 0; i < N; i++) assert_float_equal(B1[i], B2[i], tol);
+}
+
+template<typename T>
+void test_crkgc_avx512(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 9);
+    vector<T> A1(2*N), A2(2*N), A3(2*N), B(2*N), B1(2*N), B2(2*N);
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    for (int i = 0; i < N; i++) {
+        A1[i] = distribution(generator);
+        A2[i] = distribution(generator);
+        A3[i] = distribution(generator);
+        B[i]  = distribution(generator);
+    }
+    A1[0] = 0;
+
+    { // reference
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B1 = B;
+        if constexpr(std::is_same_v<T, double>)
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+        else
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+    }
+
+    { // prepare + continue avx512
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B2 = B;
+        int q = ceil(log2(N+1));
+        cyclic_reduction_kershaw_general(A21.data(), A11.data(), A31.data(), B2.data(), q, N);
+        B2 = B;
+        cyclic_reduction_kershaw_general_continue_avx512(A21.data(), A11.data(), A31.data(), B2.data(), q, N);
+    }
+
+    double tol = 1e-10;
+    if constexpr(std::is_same_v<T, float>) tol = 1e-3;
+    for (int i = 0; i < N; i++) assert_float_equal(B1[i], B2[i], tol);
+}
+
+template<typename T>
+void test_crkgPN_avx512(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 9);
+    vector<T> A1(N), A2(N), A3(N), B(2*N), B1(N), B2(2*N);
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    for (int i = 0; i < N; i++) {
+        A1[i] = distribution(generator);
+        A2[i] = distribution(generator);
+        A3[i] = distribution(generator);
+        B[i]  = distribution(generator);
+    }
+    A1[0] = 0;
+
+    { // reference
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B1.assign(B.begin(), B.begin()+N);
+        if constexpr(std::is_same_v<T, double>)
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+        else
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+    }
+
+    { // CyclicReductionAVX512 — execute needs buffer of size 2*N
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B2 = B;
+        CyclicReductionAVX512<T> cr(N);
+        cr.prepare(A21.data(), A11.data(), A31.data());
+        cr.execute(B2.data());
+    }
+
+    double tol = 1e-10;
+    if constexpr(std::is_same_v<T, float>) tol = 1e-3;
+    for (int i = 0; i < N; i++) assert_float_equal(B1[i], B2[i], tol);
+}
+
+void test_crkg_avx512_double(void** s)   { test_crkg_avx512<double>(s); }
+void test_crkg_avx512_float(void** s)    { test_crkg_avx512<float>(s); }
+void test_crkgc_avx512_double(void** s)  { test_crkgc_avx512<double>(s); }
+void test_crkgc_avx512_float(void** s)   { test_crkgc_avx512<float>(s); }
+void test_crkgPN_avx512_double(void** s) { test_crkgPN_avx512<double>(s); }
+void test_crkgPN_avx512_float(void** s)  { test_crkgPN_avx512<float>(s); }
+#endif // __AVX512F__
+
+// crkg_neon / crkgc_neon / crkgPN_neon
+#ifdef __ARM_NEON
+template<typename T>
+void test_crkg_neon(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 9);
+    vector<T> A1(2*N), A2(2*N), A3(2*N), B(2*N), B1(2*N), B2(2*N);
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    for (int i = 0; i < N; i++) {
+        A1[i] = distribution(generator);
+        A2[i] = distribution(generator);
+        A3[i] = distribution(generator);
+        B[i]  = distribution(generator);
+    }
+    A1[0] = 0;
+
+    { // reference
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B1 = B;
+        if constexpr(std::is_same_v<T, double>)
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+        else
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+    }
+
+    { // neon
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B2 = B;
+        int q = ceil(log2(N+1));
+        cyclic_reduction_kershaw_general_neon(A21.data(), A11.data(), A31.data(), B2.data(), q, N);
+    }
+
+    double tol = 1e-10;
+    if constexpr(std::is_same_v<T, float>) tol = 1e-3;
+    for (int i = 0; i < N; i++) assert_float_equal(B1[i], B2[i], tol);
+}
+
+template<typename T>
+void test_crkgc_neon(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 9);
+    vector<T> A1(2*N), A2(2*N), A3(2*N), B(2*N), B1(2*N), B2(2*N);
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    for (int i = 0; i < N; i++) {
+        A1[i] = distribution(generator);
+        A2[i] = distribution(generator);
+        A3[i] = distribution(generator);
+        B[i]  = distribution(generator);
+    }
+    A1[0] = 0;
+
+    { // reference
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B1 = B;
+        if constexpr(std::is_same_v<T, double>)
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+        else
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+    }
+
+    { // prepare + continue neon
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B2 = B;
+        int q = ceil(log2(N+1));
+        cyclic_reduction_kershaw_general(A21.data(), A11.data(), A31.data(), B2.data(), q, N);
+        B2 = B;
+        cyclic_reduction_kershaw_general_continue_neon(A21.data(), A11.data(), A31.data(), B2.data(), q, N);
+    }
+
+    double tol = 1e-10;
+    if constexpr(std::is_same_v<T, float>) tol = 1e-3;
+    for (int i = 0; i < N; i++) assert_float_equal(B1[i], B2[i], tol);
+}
+
+template<typename T>
+void test_crkgPN_neon(void** data) {
+    Config* c = static_cast<Config*>(*data);
+    int N = c->get("test", "N", 9);
+    vector<T> A1(N), A2(N), A3(N), B(2*N), B1(N), B2(2*N);
+
+    std::default_random_engine generator;
+    std::uniform_real_distribution<T> distribution(-1, 1);
+    for (int i = 0; i < N; i++) {
+        A1[i] = distribution(generator);
+        A2[i] = distribution(generator);
+        A3[i] = distribution(generator);
+        B[i]  = distribution(generator);
+    }
+    A1[0] = 0;
+
+    { // reference
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B1.assign(B.begin(), B.begin()+N);
+        if constexpr(std::is_same_v<T, double>)
+            solve_tdiag_linear_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+        else
+            solve_tdiag_linearf_my(B1.data(), A11.data()+1, A21.data(), A31.data(), N);
+    }
+
+    { // CyclicReductionNeon — execute needs buffer of size 2*N
+        auto A11 = A1, A21 = A2, A31 = A3;
+        B2 = B;
+        CyclicReductionNeon<T> cr(N);
+        cr.prepare(A21.data(), A11.data(), A31.data());
+        cr.execute(B2.data());
+    }
+
+    double tol = 1e-10;
+    if constexpr(std::is_same_v<T, float>) tol = 1e-3;
+    for (int i = 0; i < N; i++) assert_float_equal(B1[i], B2[i], tol);
+}
+
+void test_crkg_neon_double(void** s)   { test_crkg_neon<double>(s); }
+void test_crkg_neon_float(void** s)    { test_crkg_neon<float>(s); }
+void test_crkgc_neon_double(void** s)  { test_crkgc_neon<double>(s); }
+void test_crkgc_neon_float(void** s)   { test_crkgc_neon<float>(s); }
+void test_crkgPN_neon_double(void** s) { test_crkgPN_neon<double>(s); }
+void test_crkgPN_neon_float(void** s)  { test_crkgPN_neon<float>(s); }
+#endif // __ARM_NEON
+
 int main(int argc, char** argv) {
     string config_fn = "ut_tdiag.ini";
     Config c;
@@ -703,6 +1077,30 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_crkgc_double, &c),
         cmocka_unit_test_prestate(test_crkgC_float, &c),
         cmocka_unit_test_prestate(test_crkgC_double, &c),
+#ifdef __AVX2__
+        cmocka_unit_test_prestate(test_crkg_avx2_float, &c),
+        cmocka_unit_test_prestate(test_crkg_avx2_double, &c),
+        cmocka_unit_test_prestate(test_crkgc_avx2_float, &c),
+        cmocka_unit_test_prestate(test_crkgc_avx2_double, &c),
+        cmocka_unit_test_prestate(test_crkgPN_avx2_float, &c),
+        cmocka_unit_test_prestate(test_crkgPN_avx2_double, &c),
+#endif
+#ifdef __AVX512F__
+        cmocka_unit_test_prestate(test_crkg_avx512_float, &c),
+        cmocka_unit_test_prestate(test_crkg_avx512_double, &c),
+        cmocka_unit_test_prestate(test_crkgc_avx512_float, &c),
+        cmocka_unit_test_prestate(test_crkgc_avx512_double, &c),
+        cmocka_unit_test_prestate(test_crkgPN_avx512_float, &c),
+        cmocka_unit_test_prestate(test_crkgPN_avx512_double, &c),
+#endif
+#ifdef __ARM_NEON
+        cmocka_unit_test_prestate(test_crkg_neon_float, &c),
+        cmocka_unit_test_prestate(test_crkg_neon_double, &c),
+        cmocka_unit_test_prestate(test_crkgc_neon_float, &c),
+        cmocka_unit_test_prestate(test_crkgc_neon_double, &c),
+        cmocka_unit_test_prestate(test_crkgPN_neon_float, &c),
+        cmocka_unit_test_prestate(test_crkgPN_neon_double, &c),
+#endif
     };
 
     return cmocka_run_group_tests(tests, nullptr, nullptr);
