@@ -9,6 +9,7 @@
 #include "blas.h"
 #include "cyclic_reduction.h"
 #include "cyclic_reduction_neon.h"
+#include "cyclic_reduction_avx.h"
 #include "unixbench_score.h"
 
 using namespace fdm;
@@ -214,6 +215,72 @@ int main() {
         output(N, stats, "crkgPN(d)");
 #endif
 
+#ifdef __AVX2__
+        stats = benchmark_tdiag<double>(N, iterations,
+            [](double *A1, double *A2, double *A3, int N) -> void* { return nullptr; },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cyclic_reduction_kershaw_general_avx2(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkg_avx2(d)");
+
+        stats = benchmark_tdiag<double>(N, iterations,
+            [&](double *A1, double *A2, double *A3, int N) -> void* {
+                std::vector<double> tmp(2*N);
+                cyclic_reduction_kershaw_general(A2, A1, A3, tmp.data(), power, N);
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cyclic_reduction_kershaw_general_continue_avx2(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkgc_avx2(d)");
+
+        CyclicReductionAVX2<double> crA2d(N);
+        stats = benchmark_tdiag<double>(N, iterations,
+            [&](double *A1, double *A2, double *A3, int N) -> void* {
+                crA2d.prepare(A2, A1, A3); return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                crA2d.execute(B);
+            }
+        );
+        output(N, stats, "crkgPN_avx2(d)");
+#endif
+
+#ifdef __AVX512F__
+        stats = benchmark_tdiag<double>(N, iterations,
+            [](double *A1, double *A2, double *A3, int N) -> void* { return nullptr; },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cyclic_reduction_kershaw_general_avx512(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkg_avx512(d)");
+
+        stats = benchmark_tdiag<double>(N, iterations,
+            [&](double *A1, double *A2, double *A3, int N) -> void* {
+                std::vector<double> tmp(2*N);
+                cyclic_reduction_kershaw_general(A2, A1, A3, tmp.data(), power, N);
+                return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                cyclic_reduction_kershaw_general_continue_avx512(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkgc_avx512(d)");
+
+        CyclicReductionAVX512<double> crA512d(N);
+        stats = benchmark_tdiag<double>(N, iterations,
+            [&](double *A1, double *A2, double *A3, int N) -> void* {
+                crA512d.prepare(A2, A1, A3); return nullptr;
+            },
+            [&](void*, double *A1, double *A2, double *A3, double *B, int N) {
+                crA512d.execute(B);
+            }
+        );
+        output(N, stats, "crkgPN_avx512(d)");
+#endif
+
         CyclicReduction<double> cr(N);
         stats = benchmark_tdiag<double>(N, iterations,
             [&](double *A1, double *A2, double *A3, int N) -> void* {
@@ -372,6 +439,72 @@ int main() {
             }
         );
         output(N, stats, "crkgPN(f)");
+#endif
+
+#ifdef __AVX2__
+        stats = benchmark_tdiag<float>(N, iterations,
+            [](float *A1, float *A2, float *A3, int N) -> void* { return nullptr; },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                cyclic_reduction_kershaw_general_avx2(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkg_avx2(f)");
+
+        stats = benchmark_tdiag<float>(N, iterations,
+            [&](float *A1, float *A2, float *A3, int N) -> void* {
+                std::vector<float> tmp(2*N);
+                cyclic_reduction_kershaw_general(A2, A1, A3, tmp.data(), power, N);
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                cyclic_reduction_kershaw_general_continue_avx2(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkgc_avx2(f)");
+
+        CyclicReductionAVX2<float> crA2f(N);
+        stats = benchmark_tdiag<float>(N, iterations,
+            [&](float *A1, float *A2, float *A3, int N) -> void* {
+                crA2f.prepare(A2, A1, A3); return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                crA2f.execute(B);
+            }
+        );
+        output(N, stats, "crkgPN_avx2(f)");
+#endif
+
+#ifdef __AVX512F__
+        stats = benchmark_tdiag<float>(N, iterations,
+            [](float *A1, float *A2, float *A3, int N) -> void* { return nullptr; },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                cyclic_reduction_kershaw_general_avx512(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkg_avx512(f)");
+
+        stats = benchmark_tdiag<float>(N, iterations,
+            [&](float *A1, float *A2, float *A3, int N) -> void* {
+                std::vector<float> tmp(2*N);
+                cyclic_reduction_kershaw_general(A2, A1, A3, tmp.data(), power, N);
+                return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                cyclic_reduction_kershaw_general_continue_avx512(A2, A1, A3, B, power, N);
+            }
+        );
+        output(N, stats, "crkgc_avx512(f)");
+
+        CyclicReductionAVX512<float> crA512f(N);
+        stats = benchmark_tdiag<float>(N, iterations,
+            [&](float *A1, float *A2, float *A3, int N) -> void* {
+                crA512f.prepare(A2, A1, A3); return nullptr;
+            },
+            [&](void*, float *A1, float *A2, float *A3, float *B, int N) {
+                crA512f.execute(B);
+            }
+        );
+        output(N, stats, "crkgPN_avx512(f)");
 #endif
 
         CyclicReduction<float> crf(N);
