@@ -1,3 +1,5 @@
+#include <boost/multiprecision/cpp_bin_float.hpp>
+
 #include "big_float.h"
 #include <sycl/sycl.hpp>
 #include <chrono>
@@ -8,8 +10,6 @@
 #include <map>
 #include <random>
 #include <complex>
-
-#include <boost/multiprecision/cpp_bin_float.hpp>
 
 #include "unixbench_score.h"
 
@@ -185,7 +185,7 @@ int get_iteration_mandelbrot(T x0, T y0, int max_iterations) {
         x2=x*x; y2=y*y;
         xn = x2 - y2 + x0;
         if constexpr(std::is_same_v<T,double> || std::is_same_v<T,float> || std::is_same_v<T,boost_float256>) {
-            y = T(2.0)*x*y + y0;
+            y = T(2)*x*y + y0;
         } else {
             y = (x*y).Mul2() + y0;
         }
@@ -207,7 +207,7 @@ unsigned char get_iteration_mandelbrot2(T x0, T y0, int max_iterations) {
         x2=x*x; y2=y*y;
         xn = x2 - y2 + x0;
         if constexpr(std::is_same_v<T,double> || std::is_same_v<T,float>) {
-            y = T(2.0)*x*y + y0;
+            y = T(2)*x*y + y0;
         } else {
             y = (x*y).Mul2() + y0;
         }
@@ -245,7 +245,7 @@ void get_iteration_mandelbrot3(std::pair<T,T>& c, std::vector<std::complex<doubl
         x2=x*x; y2=y*y;
         xn = x2 - y2 + x0;
         if constexpr(std::is_same_v<T,double> || std::is_same_v<T,float> || std::is_same_v<T,boost_float256>) {
-            y = T(2.0)*x*y + y0;
+            y = T(2)*x*y + y0;
         } else {
             y = (x*y).Mul2() + y0;
         }
@@ -300,17 +300,25 @@ template<int blocks, typename BlockType = uint32_t>
 void mandelbrot()
 {
     sycl::queue q{ sycl::default_selector_v };
+    using T = typename TypeSelector<blocks, BlockType>::T;
+
+    if constexpr (std::is_same_v<T, double>) {
+        if (!q.get_device().has(sycl::aspect::fp64)) {
+            std::cerr << "Skipping double variant (fp64 not supported on "
+                      << q.get_device().get_info<sycl::info::device::name>() << ")\n";
+            return;
+        }
+    }
+
     int height = 1000;
     int width = 1000;
-    using T = typename TypeSelector<blocks, BlockType>::T;
 
     int* buffer = sycl::malloc_device<int>(height * width, q);
 
     T view_width = 4.0;
     T center_x = -0.75;
     T center_y = 0.0;
-    double _1_w = 1.0 / width;
-    T pixel_size = view_width * T(_1_w);
+    T pixel_size = view_width * T(1.0 / width);
     int tries = 10;
     int max_iterations = 400;
 
@@ -322,8 +330,8 @@ void mandelbrot()
                 int x = idx[0];
                 int y = idx[1];
 
-                T x0 = center_x + T(x - width / 2.0) * pixel_size;
-                T y0 = center_y + T(y - height / 2.0) * pixel_size;
+                T x0 = center_x + T(x - width / 2) * pixel_size;
+                T y0 = center_y + T(y - height / 2) * pixel_size;
 
                 buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
             });
@@ -368,8 +376,8 @@ void mandelbrot_omp()
 #pragma omp parallel for collapse(2)
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
-                T x0 = center_x + T(x - width / 2.0) * pixel_size;
-                T y0 = center_y + T(y - height / 2.0) * pixel_size;
+                T x0 = center_x + T(x - width / 2) * pixel_size;
+                T y0 = center_y + T(y - height / 2) * pixel_size;
 
                 buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
             }
@@ -458,8 +466,8 @@ void spiral_search(
             // Top edge
             int y = center_y - radius;
             if (y >= 0 && y < height) {
-                T x0 = center_xx + T(x - width / 2.0) * pixel_size;
-                T y0 = center_yy + T(y - height / 2.0) * pixel_size;
+                T x0 = center_xx + T(x - width / 2) * pixel_size;
+                T y0 = center_yy + T(y - height / 2) * pixel_size;
                 if ((found = lambda(x0, y0))) {
                     break;
                 }
@@ -468,8 +476,8 @@ void spiral_search(
             // Bottom edge
             y = center_y + radius;
             if (y >= 0 && y < height) {
-                T x0 = center_xx + T(x - width / 2.0) * pixel_size;
-                T y0 = center_yy + T(y - height / 2.0) * pixel_size;
+                T x0 = center_xx + T(x - width / 2) * pixel_size;
+                T y0 = center_yy + T(y - height / 2) * pixel_size;
                 if ((found = lambda(x0, y0))) {
                     break;
                 }
@@ -484,8 +492,8 @@ void spiral_search(
             // Left edge
             int x = center_x - radius;
             if (x >= 0 && x < width) {
-                T x0 = center_xx + T(x - width / 2.0) * pixel_size;
-                T y0 = center_yy + T(y - height / 2.0) * pixel_size;
+                T x0 = center_xx + T(x - width / 2) * pixel_size;
+                T y0 = center_yy + T(y - height / 2) * pixel_size;
                 if ((found = lambda(x0, y0))) {
                     break;
                 }
@@ -494,8 +502,8 @@ void spiral_search(
             // Right edge
             x = center_x + radius;
             if (x >= 0 && x < width) {
-                T x0 = center_xx + T(x - width / 2.0) * pixel_size;
-                T y0 = center_yy + T(y - height / 2.0) * pixel_size;
+                T x0 = center_xx + T(x - width / 2) * pixel_size;
+                T y0 = center_yy + T(y - height / 2) * pixel_size;
                 if ((found = lambda(x0, y0))) {
                     break;
                 }
@@ -548,12 +556,12 @@ sycl::event color(unsigned char* output, const int* in, int width, int height, i
             float dzdx = ((rb + 2*r + rt) - (lb + 2*l + lt)) / kernelsize;
             float dzdy = ((lt + 2*t + rt) - (lb + 2*b + rb)) / kernelsize;
 
-            float slope = atan(z_factor * sqrt(dzdx*dzdx + dzdy*dzdy));
-            float aspect = atan2(dzdy, -dzdx);
-            float shade = ((cos(zenith)*cos(slope)) + (sin(zenith)*sin(slope)*cos(azimuth-aspect)));
+            float slope = std::atan(z_factor * std::sqrt(dzdx*dzdx + dzdy*dzdy));
+            float aspect = std::atan2(dzdy, -dzdx);
+            float shade = ((std::cos(zenith)*std::cos(slope)) + (std::sin(zenith)*std::sin(slope)*std::cos(azimuth-aspect)));
             shade = std::max<float>(0, shade);
 
-            float perc =  fract(mu / P);
+            float perc = fract(mu / P);
             float h = 360.0 * perc;
             float s = 1;
             float v = shade;
@@ -599,7 +607,9 @@ void calc_mandelbrot() {
     for (int frame = 0; frame < max_frames; frame++) {
         T pixel_size = view_width * T(_1_w);
         auto start = std::chrono::high_resolution_clock::now();
-        if (view_width < T(1e-1) && perturb) {
+        const bool use_perturb = perturb && (view_width < T(1e-1)) &&
+                                  q.get_device().has(sycl::aspect::fp64);
+        if (use_perturb) {
             spiral_search(lambda, center_x, center_y, view_width, width, height);
             q.memcpy(control_data, control.data(), sizeof(std::complex<double>)*control.size());
 
@@ -608,8 +618,8 @@ void calc_mandelbrot() {
                     int x = idx[0];
                     int y = idx[1];
 
-                    T x0 = center_x + T(x - width / 2.0) * pixel_size;
-                    T y0 = center_y + T(y - height / 2.0) * pixel_size;
+                    T x0 = center_x + T(x - width / 2) * pixel_size;
+                    T y0 = center_y + T(y - height / 2) * pixel_size;
 
                     buffer[y*width+x] = get_iteration_mandelbrot4(c, control_data, x0, y0, max_iterations);
                 });
@@ -621,8 +631,8 @@ void calc_mandelbrot() {
                     int x = idx[0];
                     int y = idx[1];
 
-                    T x0 = center_x + T(x - width / 2.0) * pixel_size;
-                    T y0 = center_y + T(y - height / 2.0) * pixel_size;
+                    T x0 = center_x + T(x - width / 2) * pixel_size;
+                    T y0 = center_y + T(y - height / 2) * pixel_size;
 
                     buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
                 });
@@ -695,8 +705,8 @@ double calc_mandelbrot_perturb_gpu() {
             int x = idx[0];
             int y = idx[1];
 
-            T x0 = center_x + T(x - width / 2.0) * pixel_size;
-            T y0 = center_y + T(y - height / 2.0) * pixel_size;
+            T x0 = center_x + T(x - width / 2) * pixel_size;
+            T y0 = center_y + T(y - height / 2) * pixel_size;
 
             //buffer[y*width+x] = get_iteration_mandelbrot4(c, control.data(), x0, y0, max_iterations);
             buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
@@ -749,8 +759,8 @@ double calc_mandelbrot_perturb_cpu() {
 #pragma omp parallel for collapse(2)
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
-            T x0 = center_x + T(x - width / 2.0) * pixel_size;
-            T y0 = center_y + T(y - height / 2.0) * pixel_size;
+            T x0 = center_x + T(x - width / 2) * pixel_size;
+            T y0 = center_y + T(y - height / 2) * pixel_size;
             //buffer[y*width+x] = get_iteration_mandelbrot4(c, control.data(), x0, y0, max_iterations);
             buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
         }
@@ -811,7 +821,11 @@ void run_bench()
     for (int i = 0; i < its; i++)
     {
         std::cerr << "Iteration: " << i << "/" << its << "... " << std::flush;
+#if defined(__x86_64__)
         times.emplace_back(calc_mandelbrot_perturb_cpu<8, uint32_t, BigFloat<8, uint32_t, AMD64PlatformSpec<uint32_t>>>());
+#else
+        times.emplace_back(calc_mandelbrot_perturb_cpu<8, uint32_t, BigFloat<8, uint32_t, DefaultPlatformSpec<uint32_t>>>());
+#endif
     }
     score = fdm::unixbench_score(times);
     std::cerr << "Score: " << score << " ms" << std::endl;
@@ -842,7 +856,11 @@ void run_bench()
     for (int i = 0; i < its; i++)
     {
         std::cerr << "Iteration: " << i << "/" << its << "... " << std::flush;
+#if defined(__x86_64__)
         times.emplace_back(calc_mandelbrot_perturb_cpu<4, uint64_t, BigFloat<4, uint64_t, AMD64PlatformSpec<uint64_t>>>());
+#else
+        times.emplace_back(calc_mandelbrot_perturb_cpu<4, uint64_t, BigFloat<4, uint64_t, DefaultPlatformSpec<uint64_t>>>());
+#endif
     }
     score = fdm::unixbench_score(times);
     std::cerr << "Score: " << score << " ms" << std::endl;
@@ -887,8 +905,8 @@ int main() {
     //calc_mandelbrot_perturb_cpu<8>();
 
     //calc_mandelbrot<double, false>();
-    calc_mandelbrot<BigFloat<4,uint64_t,GenericPlatformSpec<uint64_t>>, true>();
-    //run_bench();
+    //calc_mandelbrot<BigFloat<4,uint64_t,GenericPlatformSpec<uint64_t>>, true>();
+    run_bench();
 
     return 0;
 }
