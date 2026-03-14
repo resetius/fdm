@@ -3,7 +3,7 @@
 /*
 BSD 3-Clause License
 
-Copyright (c) 2025, Alexey Ozeritskiy
+Copyright (c) 2026, Alexey Ozeritskiy
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -47,8 +47,11 @@ public:
 
     explicit SoftDouble(double d)
         : value(std::bit_cast<uint64_t>(d))
-    {
-    }
+    { }
+
+    explicit SoftDouble(uint64_t value)
+        : value(value)
+    { }
 
     operator double() const {
         return std::bit_cast<double>(value);
@@ -268,7 +271,35 @@ public:
     }
 
     SoftDouble operator+(const SoftDouble& other) const {
+        static constexpr uint64_t hidden = 1ULL << 52;
+        static constexpr uint64_t carry = 1ULL << 53;
+        auto [s1, E1, f1] = unpack(value);
+        auto [s2, E2, f2] = unpack(other.value);
 
+        uint64_t M1 = f1 | hidden;
+        uint64_t M2 = f2 | hidden;
+
+        uint64_t E;
+        uint64_t M;
+
+        if (E1 > E2) {
+            uint64_t shift = E1 - E2;
+            M = M1 + (shift >= 64 ? 0 : (M2 >> shift));
+            E = E1;
+        } else if (E2 > E1) {
+            uint64_t shift = E2 - E1;
+            M = (shift >= 64 ? 0 : (M1 >> shift)) + M2;
+            E = E2;
+        } else {
+            M = M1 + M2;
+            E = E1;
+        }
+        if (M & carry) {
+            M >>= 1;
+            ++E;
+        }
+
+        return SoftDouble{pack(s1, E, M)};
     }
 
 private:
