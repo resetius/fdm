@@ -28,9 +28,21 @@ void test_conversion(void** s) {
     assert_float_equal(f2, 2.0f, 1e-6);
 }
 
+void test_sum(void** s) {
+    SoftDouble a(1./2. + 1./4.);
+    SoftDouble b(1./2.);
+    auto c = a+b;
+    double ans = 1./2. + 1./4. + 1/2.;
+
+    assert_float_equal((double)c, ans, 1e-20);
+
+    printf("%lx %lx\n", std::bit_cast<uint64_t>((double)c), std::bit_cast<uint64_t>(ans));
+}
+
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_conversion),
+        cmocka_unit_test(test_sum),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

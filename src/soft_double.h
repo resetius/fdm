@@ -43,18 +43,18 @@ https://github.com/resetius/fdm/blob/master/src/soft_double.h
 
 class SoftDouble {
 public:
-    SoftDouble() : value(0) {}
+    SoftDouble() : Value(0) {}
 
     explicit SoftDouble(double d)
-        : value(std::bit_cast<uint64_t>(d))
+        : Value(std::bit_cast<uint64_t>(d))
     { }
 
     explicit SoftDouble(uint64_t value)
-        : value(value)
+        : Value(value)
     { }
 
     operator double() const {
-        return std::bit_cast<double>(value);
+        return std::bit_cast<double>(Value);
     }
 
     explicit SoftDouble(float f)
@@ -67,7 +67,7 @@ public:
 
         // Zero (preserve sign: +0 / -0)
         if (exp_f == 0 && frac_f == 0) {
-            value = sign << 63;
+            Value = sign << 63;
             return;
         }
 
@@ -81,7 +81,7 @@ public:
                 frac_d = (uint64_t)frac_f << (52 - 23);
                 frac_d |= (1ull << 51); // qNaN bit
             }
-            value = (sign << 63) | (exp_d << 52) | (frac_d & ((1ull << 52) - 1));
+            Value = (sign << 63) | (exp_d << 52) | (frac_d & ((1ull << 52) - 1));
             return;
         }
 
@@ -89,7 +89,7 @@ public:
         if (exp_f != 0) {
             uint64_t exp_d = (uint64_t)exp_f + (1023 - 127);
             uint64_t frac_d = (uint64_t)frac_f << (52 - 23); // just widen fraction
-            value = (sign << 63) | (exp_d << 52) | (frac_d & ((1ull << 52) - 1));
+            Value = (sign << 63) | (exp_d << 52) | (frac_d & ((1ull << 52) - 1));
             return;
         }
 
@@ -110,13 +110,13 @@ public:
         uint64_t exp_d = (uint64_t)(exp2 + 1023);
 
         uint64_t frac_d = (uint64_t)m << (52 - 23);
-        value = (sign << 63) | (exp_d << 52) | (frac_d & ((1ull << 52) - 1));
+        Value = (sign << 63) | (exp_d << 52) | (frac_d & ((1ull << 52) - 1));
     }
 
     operator float() const {
-        const uint64_t sign = (value >> 63) & 1ull;
-        const uint64_t exp_d = (value >> 52) & 0x7FFull;
-        const uint64_t frac_d = value & ((1ull << 52) - 1);
+        const uint64_t sign = (Value >> 63) & 1ull;
+        const uint64_t exp_d = (Value >> 52) & 0x7FFull;
+        const uint64_t frac_d = Value & ((1ull << 52) - 1);
 
         auto pack = [&](uint32_t exp_f, uint32_t frac_f) -> float {
             uint32_t bits = (uint32_t)(sign << 31) | (exp_f << 23) | (frac_f & 0x7FFFFFu);
@@ -266,15 +266,20 @@ public:
     }
 
     SoftDouble& operator=(const SoftDouble& other) {
-        value = other.value;
+        Value = other.Value;
         return *this;
     }
 
     SoftDouble operator+(const SoftDouble& other) const {
+        return SoftDouble{AddUnchecked(Value, other.Value)};
+    }
+
+private:
+    static uint64_t AddUnchecked(uint64_t left, uint64_t right) {
         static constexpr uint64_t hidden = 1ULL << 52;
         static constexpr uint64_t carry = 1ULL << 53;
-        auto [s1, E1, f1] = unpack(value);
-        auto [s2, E2, f2] = unpack(other.value);
+        auto [s1, E1, f1] = Unpack(left);
+        auto [s2, E2, f2] = Unpack(right);
 
         uint64_t M1 = f1 | hidden;
         uint64_t M2 = f2 | hidden;
@@ -298,21 +303,19 @@ public:
             M >>= 1;
             ++E;
         }
-
-        return SoftDouble{pack(s1, E, M)};
+        return Pack(s1, E, M);
     }
 
-private:
-    static std::tuple<uint64_t, uint64_t, uint64_t> unpack(uint64_t value) {
+    static std::tuple<uint64_t, uint64_t, uint64_t> Unpack(uint64_t value) {
         uint64_t sign = (value >> 63) & 1ull;
         uint64_t exp = (value >> 52) & 0x7FFull;
         uint64_t frac = value & ((1ull << 52) - 1);
         return {sign, exp, frac};
     }
 
-    static uint64_t pack(uint64_t sign, uint64_t exp, uint64_t frac) {
+    static uint64_t Pack(uint64_t sign, uint64_t exp, uint64_t frac) {
         return (sign << 63) | (exp << 52) | (frac & ((1ull << 52) - 1));
     }
 
-    uint64_t value;
+    uint64_t Value;
 };
