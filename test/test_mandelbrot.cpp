@@ -701,16 +701,26 @@ double calc_mandelbrot_perturb_gpu() {
     auto start = std::chrono::high_resolution_clock::now();
 
     q.submit([&](sycl::handler& h) {
-        h.parallel_for(sycl::range<2>(height, width), [=](sycl::id<2> idx) {
-            int x = idx[0];
-            int y = idx[1];
+        constexpr int tile_rows = 4, tile_cols = 8; // 32 threads = one SIMD group
+        int rounded_h = ((height + tile_rows - 1) / tile_rows) * tile_rows;
+        int rounded_w = ((width  + tile_cols - 1) / tile_cols) * tile_cols;
+        h.parallel_for(
+            sycl::nd_range<2>(
+                sycl::range<2>(rounded_h, rounded_w),
+                sycl::range<2>(tile_rows, tile_cols)
+            ),
+            [=](sycl::nd_item<2> item) {
+                int x = item.get_global_id(0);
+                int y = item.get_global_id(1);
+                if (x >= height || y >= width) return;
 
-            T x0 = center_x + T(x - width / 2) * pixel_size;
-            T y0 = center_y + T(y - height / 2) * pixel_size;
+                T x0 = center_x + T(x - width / 2) * pixel_size;
+                T y0 = center_y + T(y - height / 2) * pixel_size;
 
-            //buffer[y*width+x] = get_iteration_mandelbrot4(c, control.data(), x0, y0, max_iterations);
-            buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
-        });
+                //buffer[y*width+x] = get_iteration_mandelbrot4(c, control.data(), x0, y0, max_iterations);
+                buffer[y*width+x] = get_iteration_mandelbrot(x0, y0, max_iterations);
+            }
+        );
     }).wait();
 
     auto end = std::chrono::high_resolution_clock::now();

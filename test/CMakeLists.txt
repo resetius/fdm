@@ -56,4 +56,7 @@ target_link_libraries(test_tdiag_bench fdm)
 if (SYCL_FOUND)
 add_executable(test_mandelbrot test_mandelbrot.cpp)
 target_link_libraries(test_mandelbrot fdm)
+
+add_executable(test_tile_bench test_tile_bench.cpp)
+target_link_libraries(test_tile_bench fdm)
 endif ()
