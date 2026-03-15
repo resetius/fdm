@@ -620,26 +620,391 @@ void bench_gemm_reg(Bench& b, int N, const std::string& label) {
     sycl::free(A, b.q); sycl::free(B, b.q); sycl::free(C, b.q);
 }
 
+// ============================================================================
+// 6c. Register-tiled GEMM v2 — large tile, 256 threads, 2D local_accessor (baseline)
+// Same algorithm as v3 but without #pragma unroll and using 2D accessor.
+// Kept for apples-to-apples comparison with v3.
+// ============================================================================
+
+template<int BM, int BN, int BK, int TM, int TN>
+void bench_gemm_v2(Bench& b, int N, const std::string& label) {
+    static_assert(BM % TM == 0 && BN % TN == 0);
+    constexpr int THREADS_M = BM / TM;
+    constexpr int THREADS_N = BN / TN;
+    constexpr int THREADS   = THREADS_M * THREADS_N;
+    constexpr int BK_A = BK + 1;
+    static_assert(BM * BK % THREADS == 0 && BK * BN % THREADS == 0);
+    constexpr int A_ITER = BM * BK / THREADS;
+    constexpr int B_ITER = BK * BN / THREADS;
+
+    size_t sz = (size_t)N * N;
+    float* A = sycl::malloc_device<float>(sz, b.q);
+    float* B = sycl::malloc_device<float>(sz, b.q);
+    float* C = sycl::malloc_device<float>(sz, b.q);
+
+    b.q.submit([&](sycl::handler& h) {
+        h.parallel_for(sycl::range<1>(sz), [=](sycl::id<1> i) {
+            A[i[0]] = (float)(i[0] % 17 + 1);
+            B[i[0]] = (float)(i[0] % 13 + 1);
+        });
+    }).wait();
+
+    int gm = (N + BM - 1) / BM;
+    int gn = (N + BN - 1) / BN;
+
+    b.run(label, [&] {
+        b.q.submit([&](sycl::handler& h) {
+            sycl::local_accessor<float, 2> lA({BM, BK_A}, h);
+            sycl::local_accessor<float, 2> lB({BK, BN},   h);
+            h.parallel_for(
+                sycl::nd_range<2>(sycl::range<2>(gm * THREADS_M, gn * THREADS_N),
+                                  sycl::range<2>(THREADS_M, THREADS_N)),
+                [=](sycl::nd_item<2> it) {
+                    int tr  = (int)it.get_local_id(0);
+                    int tc  = (int)it.get_local_id(1);
+                    int tid = tr * THREADS_N + tc;
+                    int bm  = (int)it.get_group(0) * BM;
+                    int bn  = (int)it.get_group(1) * BN;
+                    float acc[TM][TN] = {};
+                    for (int bk = 0; bk < N; bk += BK) {
+                        for (int s = 0; s < A_ITER; s++) {
+                            int idx = s * THREADS + tid;
+                            int sm = idx / BK, sk = idx % BK;
+                            lA[sm][sk] = A[(bm + sm) * N + bk + sk];
+                        }
+                        for (int s = 0; s < B_ITER; s++) {
+                            int idx = s * THREADS + tid;
+                            int sk = idx / BN, sn = idx % BN;
+                            lB[sk][sn] = B[(bk + sk) * N + bn + sn];
+                        }
+                        it.barrier(sycl::access::fence_space::local_space);
+                        for (int k = 0; k < BK; k++) {
+                            float aReg[TM], bReg[TN];
+                            for (int m = 0; m < TM; m++) aReg[m] = lA[tr * TM + m][k];
+                            for (int n = 0; n < TN; n++) bReg[n] = lB[k][tc * TN + n];
+                            for (int m = 0; m < TM; m++)
+                                for (int n = 0; n < TN; n++)
+                                    acc[m][n] += aReg[m] * bReg[n];
+                        }
+                        it.barrier(sycl::access::fence_space::local_space);
+                    }
+                    for (int m = 0; m < TM; m++)
+                        for (int n = 0; n < TN; n++) {
+                            int row = bm + tr * TM + m, col = bn + tc * TN + n;
+                            if (row < N && col < N) C[row * N + col] = acc[m][n];
+                        }
+                }
+            );
+        });
+    });
+    sycl::free(A, b.q); sycl::free(B, b.q); sycl::free(C, b.q);
+}
+
+// ============================================================================
+// 6c. Optimised register-tiled GEMM v3
+//
+// Root-cause fixes vs reg64 / v2 (which are equally slow):
+//   1. Occupancy   : 256 threads (8 warps/WG) vs 64 (2 warps) in reg64.
+//   2. Tile reuse  : BM=BN=128 → 4× fewer global loads per FLOP vs 64×64.
+//   3. #pragma unroll on ALL inner loops → acc[][]/aReg[]/bReg[] stay in regs.
+//   4. 1D flat local_accessor → removes SYCL 2D-accessor stride ambiguity.
+//   5. Bank-conflict-free A: +1 padding (BK_A=BK+1) eliminates stride-BM/2 conflict.
+//   6. Precomputed per-thread load indices (no runtime division in hot path):
+//        A: each thread always writes column  sk = tid % BK,  rows shift by THREADS/BK
+//        B: each thread always writes row column sn = tid % BN, k-rows shift by THREADS/BN
+//
+// Arithmetic intensity (BM=BN=128, BK=16, float):
+//   FMAs/global-byte = 2·128·128·16 / [(128·16 + 16·128)·4] = 32
+// ============================================================================
+
+template<int BM, int BN, int BK, int TM, int TN>
+void bench_gemm_v3(Bench& b, int N, const std::string& label) {
+    static_assert(BM % TM == 0 && BN % TN == 0);
+    static_assert((BK & (BK - 1)) == 0 && (BN & (BN - 1)) == 0, "BK, BN must be powers of 2");
+    constexpr int THREADS_M = BM / TM;
+    constexpr int THREADS_N = BN / TN;
+    constexpr int THREADS   = THREADS_M * THREADS_N;
+    // +1 col padding in A tile: row stride BK_A is odd → no two rows share a bank
+    constexpr int BK_A = BK + 1;
+    static_assert(THREADS % BK == 0 && THREADS % BN == 0,
+                  "THREADS must be divisible by BK and BN for index precomputation");
+    static_assert(BM * BK % THREADS == 0 && BK * BN % THREADS == 0);
+    constexpr int A_ITER     = BM * BK / THREADS;      // s-loop count for A load
+    constexpr int B_ITER     = BK * BN / THREADS;      // s-loop count for B load
+    constexpr int A_SM_STEP  = THREADS / BK;            // sm increment per s step
+    constexpr int B_SK_STEP  = THREADS / BN;            // sk increment per s step
+
+    size_t sz = (size_t)N * N;
+    float* A = sycl::malloc_device<float>(sz, b.q);
+    float* B = sycl::malloc_device<float>(sz, b.q);
+    float* C = sycl::malloc_device<float>(sz, b.q);
+
+    b.q.submit([&](sycl::handler& h) {
+        h.parallel_for(sycl::range<1>(sz), [=](sycl::id<1> i) {
+            A[i[0]] = (float)(i[0] % 17 + 1);
+            B[i[0]] = (float)(i[0] % 13 + 1);
+        });
+    }).wait();
+
+    int gm = (N + BM - 1) / BM;
+    int gn = (N + BN - 1) / BN;
+
+    b.run(label, [&] {
+        b.q.submit([&](sycl::handler& h) {
+            // 1D flat shared memory — full control over layout and stride
+            sycl::local_accessor<float, 1> lA_s(BM * BK_A, h);  // [BM][BK_A] row-major
+            sycl::local_accessor<float, 1> lB_s(BK * BN,   h);  // [BK][BN]   row-major
+
+            h.parallel_for(
+                sycl::nd_range<2>(sycl::range<2>(gm * THREADS_M, gn * THREADS_N),
+                                  sycl::range<2>(THREADS_M, THREADS_N)),
+                [=](sycl::nd_item<2> it) {
+                    int tr  = (int)it.get_local_id(0);
+                    int tc  = (int)it.get_local_id(1);
+                    int tid = tr * THREADS_N + tc;
+                    int bm  = (int)it.get_group(0) * BM;
+                    int bn  = (int)it.get_group(1) * BN;
+
+                    // Precompute per-thread load positions (no runtime division in loop)
+                    // A: sk constant, sm advances by A_SM_STEP each iteration
+                    int a_sk     = tid & (BK - 1);          // = tid % BK (BK is power-of-2)
+                    int a_sm_off = tid >> __builtin_ctz(BK); // = tid / BK
+                    // B: sn constant, sk_b advances by B_SK_STEP each iteration
+                    int b_sn     = tid & (BN - 1);          // = tid % BN
+                    int b_sk_off = tid >> __builtin_ctz(BN); // = tid / BN
+
+                    float acc[TM][TN] = {};
+
+                    for (int bk = 0; bk < N; bk += BK) {
+                        int a_gk = bk + a_sk;
+                        int b_gk_base = bk;
+
+                        // --- Load lA[BM][BK_A] ---
+                        // Each thread always loads column a_sk; rows march in steps of A_SM_STEP.
+                        // Consecutive tids cover consecutive columns → coalesced (BK elements/row).
+#pragma unroll
+                        for (int s = 0; s < A_ITER; s++) {
+                            int sm  = s * A_SM_STEP + a_sm_off;
+                            int gr  = bm + sm;
+                            lA_s[sm * BK_A + a_sk] = A[gr * N + a_gk];
+                        }
+                        // --- Load lB[BK][BN] ---
+                        // Each thread always loads column b_sn; k-rows march in steps of B_SK_STEP.
+                        // First 128 tids (per warp group) each cover a distinct column → coalesced.
+#pragma unroll
+                        for (int s = 0; s < B_ITER; s++) {
+                            int sk  = s * B_SK_STEP + b_sk_off;
+                            int gk  = b_gk_base + sk;
+                            int gn_ = bn + b_sn;
+                            lB_s[sk * BN + b_sn] = B[gk * N + gn_];
+                        }
+                        it.barrier(sycl::access::fence_space::local_space);
+
+                        // --- Register-tiled FMA ---
+                        // All loops are fully unrolled → acc/aReg/bReg live in registers.
+                        int a_row_base = tr * TM;
+                        int b_col_base = tc * TN;
+#pragma unroll
+                        for (int k = 0; k < BK; k++) {
+                            float aReg[TM], bReg[TN];
+                            int b_row = k * BN;
+#pragma unroll
+                            for (int m = 0; m < TM; m++)
+                                aReg[m] = lA_s[(a_row_base + m) * BK_A + k];
+#pragma unroll
+                            for (int n = 0; n < TN; n++)
+                                bReg[n] = lB_s[b_row + b_col_base + n];
+#pragma unroll
+                            for (int m = 0; m < TM; m++)
+#pragma unroll
+                                for (int n = 0; n < TN; n++)
+                                    acc[m][n] += aReg[m] * bReg[n];
+                        }
+                        it.barrier(sycl::access::fence_space::local_space);
+                    }
+
+                    // --- Writeback ---
+#pragma unroll
+                    for (int m = 0; m < TM; m++)
+#pragma unroll
+                        for (int n = 0; n < TN; n++) {
+                            int row = bm + tr * TM + m;
+                            int col = bn + tc * TN + n;
+                            if (row < N && col < N) C[row * N + col] = acc[m][n];
+                        }
+                }
+            );
+        });
+    });
+
+    sycl::free(A, b.q); sycl::free(B, b.q); sycl::free(C, b.q);
+}
+
+// ============================================================================
+// 6d. GEMM v4 — v3 + float4 vectorised global→shared loads
+//
+// Each thread issues one 128-bit ld.global.v4.f32 instead of 4 × 32-bit loads.
+// This reduces instruction count by 4× for the load phase and improves
+// memory-level parallelism for both A and B tiles.
+//
+// Requirements:
+//   BK, BN must be powers of 2.
+//   BM*BK and BK*BN must be divisible by THREADS*4 (float4 granularity).
+//   Global arrays must be float4-aligned (true for sycl::malloc_device).
+// ============================================================================
+
+template<int BM, int BN, int BK, int TM, int TN>
+void bench_gemm_v4(Bench& b, int N, const std::string& label) {
+    static_assert(BM % TM == 0 && BN % TN == 0);
+    static_assert((BK & (BK-1)) == 0 && (BN & (BN-1)) == 0);
+    constexpr int THREADS_M  = BM / TM;
+    constexpr int THREADS_N  = BN / TN;
+    constexpr int THREADS    = THREADS_M * THREADS_N;
+    constexpr int BK_A       = BK + 1;
+    static_assert(BM * BK % (THREADS * 4) == 0, "A not float4-divisible");
+    static_assert(BK * BN % (THREADS * 4) == 0, "B not float4-divisible");
+    constexpr int A_F4 = BM * BK / THREADS / 4;   // float4 loads per thread, A
+    constexpr int B_F4 = BK * BN / THREADS / 4;   // float4 loads per thread, B
+    // Precomputed index strides (no division in hot loop)
+    static_assert(THREADS % (BK / 4) == 0 && THREADS % (BN / 4) == 0);
+    constexpr int A_SM_STEP_F4 = THREADS / (BK / 4); // sm increment per float4-pass for A
+    constexpr int B_SK_STEP_F4 = THREADS / (BN / 4); // sk increment per float4-pass for B
+
+    size_t sz = (size_t)N * N;
+    float* A = sycl::malloc_device<float>(sz, b.q);
+    float* B = sycl::malloc_device<float>(sz, b.q);
+    float* C = sycl::malloc_device<float>(sz, b.q);
+
+    b.q.submit([&](sycl::handler& h) {
+        h.parallel_for(sycl::range<1>(sz), [=](sycl::id<1> i) {
+            A[i[0]] = (float)(i[0] % 17 + 1);
+            B[i[0]] = (float)(i[0] % 13 + 1);
+        });
+    }).wait();
+
+    int gm = (N + BM - 1) / BM;
+    int gn = (N + BN - 1) / BN;
+
+    b.run(label, [&] {
+        b.q.submit([&](sycl::handler& h) {
+            sycl::local_accessor<float, 1> lA_s(BM * BK_A, h);
+            sycl::local_accessor<float, 1> lB_s(BK * BN,   h);
+
+            h.parallel_for(
+                sycl::nd_range<2>(sycl::range<2>(gm * THREADS_M, gn * THREADS_N),
+                                  sycl::range<2>(THREADS_M, THREADS_N)),
+                [=](sycl::nd_item<2> it) {
+                    using f4 = sycl::vec<float, 4>;
+
+                    int tr  = (int)it.get_local_id(0);
+                    int tc  = (int)it.get_local_id(1);
+                    int tid = tr * THREADS_N + tc;
+                    int bm  = (int)it.get_group(0) * BM;
+                    int bn  = (int)it.get_group(1) * BN;
+
+                    // Per-thread float4 load indices (constant per thread)
+                    // A: sm = tid/(BK/4), sk = (tid%(BK/4))*4  (sk always multiple of 4)
+                    int a_sk     = (tid & (BK / 4 - 1)) * 4;
+                    int a_sm_off = tid >> __builtin_ctz(BK / 4);
+                    // B: sk_b = tid/(BN/4), sn = (tid%(BN/4))*4
+                    int b_sn     = (tid & (BN / 4 - 1)) * 4;
+                    int b_sk_off = tid >> __builtin_ctz(BN / 4);
+
+                    float acc[TM][TN] = {};
+
+                    for (int bk = 0; bk < N; bk += BK) {
+                        // --- Load lA via float4 ---
+#pragma unroll
+                        for (int s = 0; s < A_F4; s++) {
+                            int sm  = s * A_SM_STEP_F4 + a_sm_off;
+                            int gr  = bm + sm;
+                            f4 v = *reinterpret_cast<const f4*>(A + gr * N + bk + a_sk);
+                            lA_s[sm * BK_A + a_sk    ] = v[0];
+                            lA_s[sm * BK_A + a_sk + 1] = v[1];
+                            lA_s[sm * BK_A + a_sk + 2] = v[2];
+                            lA_s[sm * BK_A + a_sk + 3] = v[3];
+                        }
+                        // --- Load lB via float4 ---
+#pragma unroll
+                        for (int s = 0; s < B_F4; s++) {
+                            int sk  = s * B_SK_STEP_F4 + b_sk_off;
+                            int gk  = bk + sk;
+                            int gn_ = bn + b_sn;
+                            f4 v = *reinterpret_cast<const f4*>(B + gk * N + gn_);
+                            lB_s[sk * BN + b_sn    ] = v[0];
+                            lB_s[sk * BN + b_sn + 1] = v[1];
+                            lB_s[sk * BN + b_sn + 2] = v[2];
+                            lB_s[sk * BN + b_sn + 3] = v[3];
+                        }
+                        it.barrier(sycl::access::fence_space::local_space);
+
+                        // --- Register-tiled FMA (identical to v3) ---
+                        int a_row_base = tr * TM;
+                        int b_col_base = tc * TN;
+#pragma unroll
+                        for (int k = 0; k < BK; k++) {
+                            float aReg[TM], bReg[TN];
+                            int b_row = k * BN;
+#pragma unroll
+                            for (int m = 0; m < TM; m++)
+                                aReg[m] = lA_s[(a_row_base + m) * BK_A + k];
+#pragma unroll
+                            for (int n = 0; n < TN; n++)
+                                bReg[n] = lB_s[b_row + b_col_base + n];
+#pragma unroll
+                            for (int m = 0; m < TM; m++)
+#pragma unroll
+                                for (int n = 0; n < TN; n++)
+                                    acc[m][n] += aReg[m] * bReg[n];
+                        }
+                        it.barrier(sycl::access::fence_space::local_space);
+                    }
+
+                    // --- Writeback ---
+#pragma unroll
+                    for (int m = 0; m < TM; m++)
+#pragma unroll
+                        for (int n = 0; n < TN; n++) {
+                            int row = bm + tr * TM + m;
+                            int col = bn + tc * TN + n;
+                            if (row < N && col < N) C[row * N + col] = acc[m][n];
+                        }
+                }
+            );
+        });
+    });
+
+    sycl::free(A, b.q); sycl::free(B, b.q); sycl::free(C, b.q);
+}
+
 void bench_gemm(Bench& b) {
     // small N — fast baseline
     {
         const int N = 1024;
         std::cout << "\n=== Tiled GEMM " << N << "x" << N << " float ===\n";
         bench_gemm_naive(b, N);
-        bench_gemm_tile< 8>(b, N, "gemm tile=8  N=" + std::to_string(N));
-        bench_gemm_tile<16>(b, N, "gemm tile=16 N=" + std::to_string(N));
-        bench_gemm_tile<32>(b, N, "gemm tile=32 N=" + std::to_string(N));
-        // Register tiling: BM=BN=64, BK=8, TM=TN=8 → 64 threads, 64 outputs each
-        bench_gemm_reg<64, 64, 8, 8, 8>(b, N, "gemm reg64 TM=TN=8 N=" + std::to_string(N));
+        bench_gemm_tile<16>(b, N, "gemm tile=16        N=" + std::to_string(N));
+        bench_gemm_reg<64, 64, 8, 8, 8>(b, N, "gemm reg64          N=" + std::to_string(N));
+        bench_gemm_v2<128, 128, 16, 8, 8>(b, N, "gemm v2 BK=16       N=" + std::to_string(N));
+        bench_gemm_v3<128, 128, 16, 8, 8>(b, N, "gemm v3 BK=16       N=" + std::to_string(N));
+        // v4: float4 vectorised loads; smaller tiles for lower register pressure → more WGs/SM
+        bench_gemm_v4<128, 128, 16, 8, 8>(b, N, "gemm v4 128x128 BK=16 N=" + std::to_string(N));
+        bench_gemm_v4< 64, 128, 16, 4, 8>(b, N, "gemm v4  64x128 BK=16 N=" + std::to_string(N));
+        bench_gemm_v4<128,  64, 16, 8, 4>(b, N, "gemm v4 128x64  BK=16 N=" + std::to_string(N));
+        bench_gemm_v4< 64,  64, 16, 4, 4>(b, N, "gemm v4  64x64  BK=16 N=" + std::to_string(N));
     }
     // large N — should take seconds
     {
         const int N = 3072;
         std::cout << "\n=== Tiled GEMM " << N << "x" << N << " float ===\n";
-        bench_gemm_tile< 8>(b, N, "gemm tile=8  N=" + std::to_string(N));
-        bench_gemm_tile<16>(b, N, "gemm tile=16 N=" + std::to_string(N));
-        bench_gemm_tile<32>(b, N, "gemm tile=32 N=" + std::to_string(N));
-        bench_gemm_reg<64, 64, 8, 8, 8>(b, N, "gemm reg64 TM=TN=8 N=" + std::to_string(N));
+        bench_gemm_tile<16>(b, N, "gemm tile=16        N=" + std::to_string(N));
+        bench_gemm_reg<64, 64, 8, 8, 8>(b, N, "gemm reg64          N=" + std::to_string(N));
+        bench_gemm_v2<128, 128, 16, 8, 8>(b, N, "gemm v2 BK=16       N=" + std::to_string(N));
+        bench_gemm_v3<128, 128, 16, 8, 8>(b, N, "gemm v3 BK=16       N=" + std::to_string(N));
+        bench_gemm_v4<128, 128, 16, 8, 8>(b, N, "gemm v4 128x128 BK=16 N=" + std::to_string(N));
+        bench_gemm_v4< 64, 128, 16, 4, 8>(b, N, "gemm v4  64x128 BK=16 N=" + std::to_string(N));
+        bench_gemm_v4<128,  64, 16, 8, 4>(b, N, "gemm v4 128x64  BK=16 N=" + std::to_string(N));
+        bench_gemm_v4< 64,  64, 16, 4, 4>(b, N, "gemm v4  64x64  BK=16 N=" + std::to_string(N));
     }
 }
 
