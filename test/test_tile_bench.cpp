@@ -841,7 +841,22 @@ void bench_gemm_v3(Bench& b, int N, const std::string& label) {
 }
 
 // ============================================================================
-// 6d. GEMM v4 — v3 + float4 vectorised global→shared loads
+// 6d. GEMM v4 — v3 + float4 vectorised global→shared loads + XOR swizzle for lB
+//
+// Bank-conflict analysis for lB reads in v3:
+//   Within a warp (tr=0/1, tc=0..15), reading lB_s[k*BN + tc*TN + n]:
+//   bank = (tc*TN + n) % 32.  For TN=8: period = 32/gcd(8,32) = 4 → 4-way conflict.
+//   Padding cannot fix this: gcd(8,N) ≥ 8 for all N → period ≤ 4 always.
+//
+// XOR swizzle fix:
+//   Store  lB_s[sk*BN + sn]          at physical index  sk*BN + (sn ^ swizzle(sk))
+//   Read   lB_s[k *BN + tc*TN + n]   as                 k *BN + ((tc*TN+n) ^ swizzle(k))
+//   where  swizzle(row) = ((row & 3) * 8) & (BN - 1)
+//   → for BN=128: swizzle(0)=0, (1)=8, (2)=16, (3)=24, (4)=0, ...
+//
+//   This cyclically offsets each row of lB by 8 bank-positions.  The four conflicting
+//   tc groups (tc=0,4,8,12 / 1,5,9,13 / 2,6,10,14 / 3,7,11,15) now map to four
+//   DIFFERENT physical columns in different bank groups → conflict-free.
 //
 // Each thread issues one 128-bit ld.global.v4.f32 instead of 4 × 32-bit loads.
 // This reduces instruction count by 4× for the load phase and improves
@@ -977,6 +992,138 @@ void bench_gemm_v4(Bench& b, int N, const std::string& label) {
     sycl::free(A, b.q); sycl::free(B, b.q); sycl::free(C, b.q);
 }
 
+// v5: v4 + XOR swizzle on lB shared memory to redistribute bank conflicts.
+// Swizzle maps logical (sk, sn) → physical sn' = sn ^ ((sk & 3) << 3).
+// Applied at both store and read time so the mapping is transparent.
+// With BN=128, TN=8 the 4-way lB conflict is irreducible (BN/32=4), but the
+// swizzle spreads the hot bank across sk iterations, improving pipeline
+// efficiency when the memory scheduler sees varying bank pressure.
+template<int BM, int BN, int BK, int TM, int TN>
+void bench_gemm_v5(Bench& b, int N, const std::string& label) {
+    static_assert(BM % TM == 0 && BN % TN == 0);
+    static_assert((BK & (BK-1)) == 0 && (BN & (BN-1)) == 0);
+    constexpr int THREADS_M  = BM / TM;
+    constexpr int THREADS_N  = BN / TN;
+    constexpr int THREADS    = THREADS_M * THREADS_N;
+    constexpr int BK_A       = BK + 1;
+    static_assert(BM * BK % (THREADS * 4) == 0, "A not float4-divisible");
+    static_assert(BK * BN % (THREADS * 4) == 0, "B not float4-divisible");
+    constexpr int A_F4 = BM * BK / THREADS / 4;
+    constexpr int B_F4 = BK * BN / THREADS / 4;
+    static_assert(THREADS % (BK / 4) == 0 && THREADS % (BN / 4) == 0);
+    constexpr int A_SM_STEP_F4 = THREADS / (BK / 4);
+    constexpr int B_SK_STEP_F4 = THREADS / (BN / 4);
+
+    size_t sz = (size_t)N * N;
+    float* A = sycl::malloc_device<float>(sz, b.q);
+    float* B = sycl::malloc_device<float>(sz, b.q);
+    float* C = sycl::malloc_device<float>(sz, b.q);
+
+    b.q.submit([&](sycl::handler& h) {
+        h.parallel_for(sycl::range<1>(sz), [=](sycl::id<1> i) {
+            A[i[0]] = (float)(i[0] % 17 + 1);
+            B[i[0]] = (float)(i[0] % 13 + 1);
+        });
+    }).wait();
+
+    int gm = (N + BM - 1) / BM;
+    int gn = (N + BN - 1) / BN;
+
+    b.run(label, [&] {
+        b.q.submit([&](sycl::handler& h) {
+            sycl::local_accessor<float, 1> lA_s(BM * BK_A, h);
+            sycl::local_accessor<float, 1> lB_s(BK * BN,   h);
+
+            h.parallel_for(
+                sycl::nd_range<2>(sycl::range<2>(gm * THREADS_M, gn * THREADS_N),
+                                  sycl::range<2>(THREADS_M, THREADS_N)),
+                [=](sycl::nd_item<2> it) {
+                    using f4 = sycl::vec<float, 4>;
+
+                    int tr  = (int)it.get_local_id(0);
+                    int tc  = (int)it.get_local_id(1);
+                    int tid = tr * THREADS_N + tc;
+                    int bm  = (int)it.get_group(0) * BM;
+                    int bn  = (int)it.get_group(1) * BN;
+
+                    int a_sk     = (tid & (BK / 4 - 1)) * 4;
+                    int a_sm_off = tid >> __builtin_ctz(BK / 4);
+                    int b_sn     = (tid & (BN / 4 - 1)) * 4;
+                    int b_sk_off = tid >> __builtin_ctz(BN / 4);
+
+                    float acc[TM][TN] = {};
+
+                    for (int bk = 0; bk < N; bk += BK) {
+                        // --- Load lA (no swizzle, padding-based conflict avoidance) ---
+#pragma unroll
+                        for (int s = 0; s < A_F4; s++) {
+                            int sm  = s * A_SM_STEP_F4 + a_sm_off;
+                            int gr  = bm + sm;
+                            f4 v = *reinterpret_cast<const f4*>(A + gr * N + bk + a_sk);
+                            lA_s[sm * BK_A + a_sk    ] = v[0];
+                            lA_s[sm * BK_A + a_sk + 1] = v[1];
+                            lA_s[sm * BK_A + a_sk + 2] = v[2];
+                            lA_s[sm * BK_A + a_sk + 3] = v[3];
+                        }
+                        // --- Load lB with XOR swizzle ---
+                        // physical column: sn ^ ((sk & 3) << 3)
+#pragma unroll
+                        for (int s = 0; s < B_F4; s++) {
+                            int sk   = s * B_SK_STEP_F4 + b_sk_off;
+                            int gk   = bk + sk;
+                            int gn_  = bn + b_sn;
+                            f4 v = *reinterpret_cast<const f4*>(B + gk * N + gn_);
+                            int shift = (sk & 3) << 3;
+                            int sn0 = (b_sn    ) ^ shift;
+                            int sn1 = (b_sn + 1) ^ shift;
+                            int sn2 = (b_sn + 2) ^ shift;
+                            int sn3 = (b_sn + 3) ^ shift;
+                            lB_s[sk * BN + sn0] = v[0];
+                            lB_s[sk * BN + sn1] = v[1];
+                            lB_s[sk * BN + sn2] = v[2];
+                            lB_s[sk * BN + sn3] = v[3];
+                        }
+                        it.barrier(sycl::access::fence_space::local_space);
+
+                        // --- Register-tiled FMA with swizzled lB read ---
+                        int a_row_base = tr * TM;
+                        int b_col_base = tc * TN;
+#pragma unroll
+                        for (int k = 0; k < BK; k++) {
+                            float aReg[TM], bReg[TN];
+                            int shift = (k & 3) << 3;
+#pragma unroll
+                            for (int m = 0; m < TM; m++)
+                                aReg[m] = lA_s[(a_row_base + m) * BK_A + k];
+#pragma unroll
+                            for (int n = 0; n < TN; n++)
+                                bReg[n] = lB_s[k * BN + ((b_col_base + n) ^ shift)];
+#pragma unroll
+                            for (int m = 0; m < TM; m++)
+#pragma unroll
+                                for (int n = 0; n < TN; n++)
+                                    acc[m][n] += aReg[m] * bReg[n];
+                        }
+                        it.barrier(sycl::access::fence_space::local_space);
+                    }
+
+                    // --- Writeback ---
+#pragma unroll
+                    for (int m = 0; m < TM; m++)
+#pragma unroll
+                        for (int n = 0; n < TN; n++) {
+                            int row = bm + tr * TM + m;
+                            int col = bn + tc * TN + n;
+                            if (row < N && col < N) C[row * N + col] = acc[m][n];
+                        }
+                }
+            );
+        });
+    });
+
+    sycl::free(A, b.q); sycl::free(B, b.q); sycl::free(C, b.q);
+}
+
 void bench_gemm(Bench& b) {
     // small N — fast baseline
     {
@@ -987,11 +1134,12 @@ void bench_gemm(Bench& b) {
         bench_gemm_reg<64, 64, 8, 8, 8>(b, N, "gemm reg64          N=" + std::to_string(N));
         bench_gemm_v2<128, 128, 16, 8, 8>(b, N, "gemm v2 BK=16       N=" + std::to_string(N));
         bench_gemm_v3<128, 128, 16, 8, 8>(b, N, "gemm v3 BK=16       N=" + std::to_string(N));
-        // v4: float4 vectorised loads; smaller tiles for lower register pressure → more WGs/SM
-        bench_gemm_v4<128, 128, 16, 8, 8>(b, N, "gemm v4 128x128 BK=16 N=" + std::to_string(N));
-        bench_gemm_v4< 64, 128, 16, 4, 8>(b, N, "gemm v4  64x128 BK=16 N=" + std::to_string(N));
-        bench_gemm_v4<128,  64, 16, 8, 4>(b, N, "gemm v4 128x64  BK=16 N=" + std::to_string(N));
-        bench_gemm_v4< 64,  64, 16, 4, 4>(b, N, "gemm v4  64x64  BK=16 N=" + std::to_string(N));
+        bench_gemm_v4<128, 128, 16, 8, 8>(b, N, "gemm v4 BK=16       N=" + std::to_string(N));
+        bench_gemm_v4<128, 128, 32, 8, 8>(b, N, "gemm v4 BK=32       N=" + std::to_string(N));
+        bench_gemm_v4<128, 128, 64, 8, 8>(b, N, "gemm v4 BK=64       N=" + std::to_string(N));
+        bench_gemm_v5<128, 128, 16, 8, 8>(b, N, "gemm v5 swz BK=16   N=" + std::to_string(N));
+        bench_gemm_v5<128, 128, 32, 8, 8>(b, N, "gemm v5 swz BK=32   N=" + std::to_string(N));
+        bench_gemm_v5<128, 128, 64, 8, 8>(b, N, "gemm v5 swz BK=64   N=" + std::to_string(N));
     }
     // large N — should take seconds
     {
@@ -1001,10 +1149,12 @@ void bench_gemm(Bench& b) {
         bench_gemm_reg<64, 64, 8, 8, 8>(b, N, "gemm reg64          N=" + std::to_string(N));
         bench_gemm_v2<128, 128, 16, 8, 8>(b, N, "gemm v2 BK=16       N=" + std::to_string(N));
         bench_gemm_v3<128, 128, 16, 8, 8>(b, N, "gemm v3 BK=16       N=" + std::to_string(N));
-        bench_gemm_v4<128, 128, 16, 8, 8>(b, N, "gemm v4 128x128 BK=16 N=" + std::to_string(N));
-        bench_gemm_v4< 64, 128, 16, 4, 8>(b, N, "gemm v4  64x128 BK=16 N=" + std::to_string(N));
-        bench_gemm_v4<128,  64, 16, 8, 4>(b, N, "gemm v4 128x64  BK=16 N=" + std::to_string(N));
-        bench_gemm_v4< 64,  64, 16, 4, 4>(b, N, "gemm v4  64x64  BK=16 N=" + std::to_string(N));
+        bench_gemm_v4<128, 128, 16, 8, 8>(b, N, "gemm v4 BK=16       N=" + std::to_string(N));
+        bench_gemm_v4<128, 128, 32, 8, 8>(b, N, "gemm v4 BK=32       N=" + std::to_string(N));
+        bench_gemm_v4<128, 128, 64, 8, 8>(b, N, "gemm v4 BK=64       N=" + std::to_string(N));
+        bench_gemm_v5<128, 128, 16, 8, 8>(b, N, "gemm v5 swz BK=16   N=" + std::to_string(N));
+        bench_gemm_v5<128, 128, 32, 8, 8>(b, N, "gemm v5 swz BK=32   N=" + std::to_string(N));
+        bench_gemm_v5<128, 128, 64, 8, 8>(b, N, "gemm v5 swz BK=64   N=" + std::to_string(N));
     }
 }
 
