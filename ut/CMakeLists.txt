@@ -36,5 +36,8 @@ endif ()
 ut(tdiag ut_tdiag.cpp)
 ut(bigloat ut_bigfloat.cpp)
 ut(softdouble ut_softdouble.cpp)
+if (SYCL_FOUND)
+ut(bigfloat_sycl ut_bigfloat_sycl.cpp)
+endif ()
 
 endif()
