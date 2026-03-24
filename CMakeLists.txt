@@ -2,10 +2,11 @@ cmake_minimum_required(VERSION 3.20)
 project(fdm)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_program(ICPX_EXECUTABLE
-    NAMES icpx
+find_program(SYCL_COMPILER_EXECUTABLE
+    NAMES icpx acpp
     HINTS
       ENV SYCL_ROOT
+      $ENV{HOME}/opt/adaptivecpp/bin
       /opt/intel/oneapi/compiler/latest/bin
       $ENV{ONEAPI_ROOT}/compiler/latest/bin
 )
@@ -16,21 +17,58 @@ find_path(ONEMATH_INCLUDE_DIR
       /usr/local/include
 )
 
-if (ICPX_EXECUTABLE AND ONEMATH_INCLUDE_DIR)
-    message(STATUS "Found icpx: ${ICPX_EXECUTABLE}")
-    message(STATUS "Found oneapi/math.hpp in: ${ONEMATH_INCLUDE_DIR}")
-    set(SYCL_FOUND TRUE CACHE BOOL "Found SYCL/icpx + oneapi/math.hpp")
+find_library(ONEMATH_LIBRARY
+    NAMES onemath
+    HINTS
+      /usr/local/lib
+)
+
+if (SYCL_COMPILER_EXECUTABLE)
+    get_filename_component(_sycl_compiler_name ${SYCL_COMPILER_EXECUTABLE} NAME)
+    if (_sycl_compiler_name STREQUAL "icpx")
+        set(_sycl_flags_default "-fsycl -fsycl-targets=nvptx64-nvidia-cuda,spir64 -qopenmp")
+        set(_sycl_omp_libraries_default "")
+    else()
+        # acpp on macOS needs explicit libomp
+        if (APPLE)
+            find_library(LIBOMP_LIBRARY NAMES omp
+                HINTS /opt/homebrew/opt/libomp/lib)
+            find_path(LIBOMP_INCLUDE_DIR NAMES omp.h
+                HINTS /opt/homebrew/opt/libomp/include)
+            if (LIBOMP_LIBRARY AND LIBOMP_INCLUDE_DIR)
+                get_filename_component(_libomp_lib_dir ${LIBOMP_LIBRARY} DIRECTORY)
+                set(_sycl_flags_default "--acpp-targets=generic -fopenmp -I${LIBOMP_INCLUDE_DIR}")
+                set(_sycl_omp_libraries_default "${_libomp_lib_dir}")
+            else()
+                set(_sycl_flags_default "--acpp-targets=generic")
+                set(_sycl_omp_libraries_default "")
+            endif()
+        else()
+            set(_sycl_flags_default "--acpp-targets=generic -fopenmp")
+            set(_sycl_omp_libraries_default "")
+        endif()
+    endif()
+    set(SYCL_FLAGS "${_sycl_flags_default}" CACHE STRING "Flags passed to the SYCL compiler")
+    set(SYCL_OMP_LIBRARIES "${_sycl_omp_libraries_default}" CACHE STRING "OpenMP libraries for SYCL compiler (auto-set for acpp on macOS)")
+
+    message(STATUS "Found SYCL compiler: ${SYCL_COMPILER_EXECUTABLE}")
+    message(STATUS "SYCL flags: ${SYCL_FLAGS}")
+    set(SYCL_FOUND TRUE CACHE BOOL "Found SYCL compiler (icpx or acpp)")
+    set(CMAKE_CXX_COMPILER ${SYCL_COMPILER_EXECUTABLE} CACHE FILEPATH "C++ compiler for SYCL" FORCE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SYCL_FLAGS}")
 else()
-    message(WARNING "SYCL compiler (icpx) or oneapi/math.hpp not found")
-    set(SYCL_FOUND FALSE CACHE BOOL "Found SYCL/icpx + oneapi/math.hpp")
+    message(STATUS "SYCL compiler (icpx/acpp) not found — SYCL targets will be skipped")
+    set(SYCL_FOUND FALSE CACHE BOOL "Found SYCL compiler (icpx or acpp)")
 endif()
 
-if (SYCL_FOUND)
-set(CMAKE_CXX_COMPILER ${ICPX_EXECUTABLE} CACHE FILEPATH "C++ compiler for SYCL target" FORCE)
-set(CMAKE_CXX_FLAGS
-   "${CMAKE_CXX_FLAGS} -qopenmp -fsycl -fsycl-targets=nvptx64-nvidia-cuda,spir64 -DHAVE_ONEMATH"
-)
-endif ()
+if (ONEMATH_INCLUDE_DIR AND ONEMATH_LIBRARY)
+    message(STATUS "Found oneapi/math.hpp in: ${ONEMATH_INCLUDE_DIR}")
+    message(STATUS "Found onemath library: ${ONEMATH_LIBRARY}")
+    set(ONEMATH_FOUND TRUE CACHE BOOL "Found oneMath headers and library")
+else()
+    message(STATUS "oneMath not found (oneapi/math.hpp or libonemath) — HAVE_ONEMATH disabled")
+    set(ONEMATH_FOUND FALSE CACHE BOOL "Found oneMath headers and library")
+endif()
 
 find_package(PkgConfig REQUIRED)
 find_package(OpenMP)
@@ -171,10 +209,14 @@ target_link_directories(fdm PUBLIC ${PLPLOT_LIBRARY_DIRS} ${BLAS_LIBRARY_DIRS} $
 target_link_libraries(fdm PUBLIC ${PLPLOT_LIBRARIES} ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES} arpack superlu umfpack ${FFTW3_LIBRARIES} ${FFTW3F_LIBRARIES} ${NETCDF_LIBRARIES})
 if (OpenMP_CXX_FOUND)
     target_link_libraries(fdm PUBLIC OpenMP::OpenMP_CXX)
+elseif (SYCL_OMP_LIBRARIES)
+    target_link_directories(fdm PUBLIC ${SYCL_OMP_LIBRARIES})
 endif()
-if (SYCL_FOUND)
-    target_link_libraries(fdm PUBLIC onemath_dft_mklgpu onemath)
-endif ()
+if (ONEMATH_FOUND)
+    target_compile_definitions(fdm PUBLIC HAVE_ONEMATH)
+    target_include_directories(fdm PUBLIC ${ONEMATH_INCLUDE_DIR})
+    target_link_libraries(fdm PUBLIC onemath_dft_mklgpu ${ONEMATH_LIBRARY})
+endif()
 
 add_subdirectory(test)
 add_subdirectory(utils)

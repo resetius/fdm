@@ -54,9 +54,15 @@ add_executable(test_tdiag_bench test_tdiag_bench.cpp)
 target_link_libraries(test_tdiag_bench fdm)
 
 if (SYCL_FOUND)
-add_executable(test_mandelbrot test_mandelbrot.cpp)
-target_link_libraries(test_mandelbrot fdm)
-
 add_executable(test_tile_bench test_tile_bench.cpp)
 target_link_libraries(test_tile_bench fdm)
+
+find_package(Boost QUIET)
+if (Boost_FOUND)
+add_executable(test_mandelbrot test_mandelbrot.cpp)
+target_link_libraries(test_mandelbrot fdm)
+target_include_directories(test_mandelbrot PRIVATE ${Boost_INCLUDE_DIRS})
+else()
+message(STATUS "Boost not found — test_mandelbrot skipped")
+endif()
 endif ()
