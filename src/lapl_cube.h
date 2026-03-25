@@ -79,14 +79,17 @@ public:
         , mxdim(std::max({nx+1,ny+1,nz+1}))
         , indices({1,nz,1,ny,1,nx})
 
-        , ft_x_table(xpoints)
-        , ft_y_table((xpoints==ypoints&&xpoints==zpoints)?1:ypoints)
-        , ft_z_table((xpoints==ypoints&&xpoints==zpoints)?1:zpoints)
 #ifdef HAVE_FFTW3
+        , ft_x_table(1)
+        , ft_y_table(1)
+        , ft_z_table(1)
         , ft_x(xpoints)
         , ft_y_(ypoints)
         , ft_z_(zpoints)
 #else
+        , ft_x_table(xpoints)
+        , ft_y_table((xpoints==ypoints&&xpoints==zpoints)?1:ypoints)
+        , ft_z_table((xpoints==ypoints&&xpoints==zpoints)?1:zpoints)
         , ft_x(ft_x_table, xpoints)
         , ft_y_(ft_y_table, ypoints)
         , ft_z_(ft_z_table, zpoints)

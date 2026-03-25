@@ -53,6 +53,37 @@ target_link_libraries(test_fft_3d_bench fdm)
 add_executable(test_tdiag_bench test_tdiag_bench.cpp)
 target_link_libraries(test_tdiag_bench fdm)
 
+if (SYCL_FOUND AND APPLE)
+find_path(METAL_CPP_INCLUDE_DIR NAMES Metal/Metal.hpp
+    HINTS $ENV{HOME}/Projects/AdaptiveCpp/metal-cpp)
+find_package(PkgConfig QUIET)
+if (PkgConfig_FOUND)
+    pkg_check_modules(SDL2 QUIET sdl2)
+endif()
+if (METAL_CPP_INCLUDE_DIR AND SDL2_FOUND)
+    add_executable(ns_cube_sycl_demo
+        ns_cube_sycl_demo.cpp
+        ns_cube_sycl_demo_metal_impl.cpp)
+    target_link_libraries(ns_cube_sycl_demo fdm)
+    target_include_directories(ns_cube_sycl_demo PRIVATE
+        ${METAL_CPP_INCLUDE_DIR}
+        ${SDL2_INCLUDE_DIRS})
+    target_link_directories(ns_cube_sycl_demo PRIVATE
+        ${SDL2_LIBRARY_DIRS}
+        $ENV{HOME}/opt/adaptivecpp/lib/hipSYCL)
+    target_link_libraries(ns_cube_sycl_demo
+        ${SDL2_LIBRARIES}
+        rt-backend-metal
+        "-framework Metal"
+        "-framework Foundation"
+        "-framework QuartzCore")
+    set_target_properties(ns_cube_sycl_demo PROPERTIES
+        BUILD_RPATH "$ENV{HOME}/opt/adaptivecpp/lib/hipSYCL")
+else()
+    message(STATUS "metal-cpp or SDL2 not found — ns_cube_sycl_demo skipped")
+endif()
+endif()
+
 if (SYCL_FOUND)
 add_executable(test_tile_bench test_tile_bench.cpp)
 target_link_libraries(test_tile_bench fdm)
