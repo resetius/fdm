@@ -189,35 +189,72 @@ private:
     }
 };
 
-template<typename T, int rank, bool check=true, typename F = tensor_flags<>>
-class tensor {
-public:
+template<int N>
+std::array<int, N/2-1> tensor_sizes(const std::array<int,N>& offsets)
+{
+    constexpr int rank = N/2;
+    std::array<int, rank-1> s;
+    int prev = 1; int j = 0;
+    for (int i = rank-1; i >= 1; i--) {
+        int size = prev*(offsets[2*i+1] - offsets[2*i] + 1);
+        s[j++] = size;
+        prev = size;
+    }
+    std::reverse(&s[0], &s[0]+j);
+    return s;
+}
+
+template<int rank>
+struct tensor_layout {
     const std::array<int,rank*2> offsets;
     const std::array<int,rank-1> sizes;
     const int size;
+
+    // z1,z2 y1,y2 x1,x2
+    tensor_layout(const std::array<int,rank*2>& offsets)
+        : offsets(offsets)
+        , sizes(tensor_sizes<rank*2>(offsets))
+        , size((offsets[1]-offsets[0]+1)*sizes[0])
+    { }
+};
+
+template<typename T, int rank, bool check=true, typename F = tensor_flags<>>
+class tensor_view : public tensor_layout<rank> {
+public:
+    T* vec;
+
+    tensor_view(const std::array<int,rank*2>& offsets, T* data)
+        : tensor_layout<rank>(offsets)
+        , vec(data)
+    { }
+
+    tensor_accessor<T, rank, check, F> accessor() {
+        return tensor_accessor<T, rank, check, F>(vec, &this->sizes[0], &this->offsets[0], 0);
+    }
+};
+
+template<typename T, int rank, bool check=true, typename F = tensor_flags<>>
+class tensor : public tensor_layout<rank> {
+public:
     std::vector<T> storage;
     T* vec;
     tensor_accessor<T, rank, check, F> acc;
 
 public:
     // z1,z2 y1,y2 x1,x2
-    tensor(const std::array<int,rank*2>& offsets_, T* data = nullptr)
-        : offsets(offsets_)
-        , sizes{}
-        , size(calc_size())
-        , storage(data ? 0 : size)
+    tensor(const std::array<int,rank*2>& offsets, T* data = nullptr)
+        : tensor_layout<rank>(offsets)
+        , storage(data ? 0 : this->size)
         , vec(data ? data : &storage[0])
-        , acc(&vec[0], &sizes[0], &offsets[0], 0)
+        , acc(&vec[0], &this->sizes[0], &this->offsets[0], 0)
     {
     }
 
     tensor(const tensor& other)
-        : offsets(other.offsets)
-        , sizes(other.sizes)
-        , size(other.size)
+        : tensor_layout<rank>(other)
         , storage(other.storage)
         , vec(storage.empty() ? other.vec: &storage[0])
-        , acc(&vec[0], &sizes[0], &offsets[0], 0)
+        , acc(&vec[0], &this->sizes[0], &this->offsets[0], 0)
     {
     }
 
@@ -230,14 +267,14 @@ public:
     }
 
     T maxabs() const {
-        return std::accumulate(vec, vec+size, 0.0, [](T a, T b) {
+        return std::accumulate(vec, vec+this->size, 0.0, [](T a, T b) {
             a = std::abs(a); b = std::abs(b);
             return a<b?b:a;
         });
     }
 
     T norm2() const {
-        return blas::nrm2(size, vec, 1);
+        return blas::nrm2(this->size, vec, 1);
     }
 
     tensor<T,rank,check,F>& operator=(const tensor<T,rank,check,F>& other) {
@@ -248,20 +285,6 @@ public:
     void use(T* vec) {
         this->vec = vec;
         acc.use(vec);
-    }
-
-private:
-    int calc_size() {
-        int* s = const_cast<int*>(&sizes[0]);
-        int prev = 1; int j = 0;
-        for (int i = rank-1; i >= 1; i--) {
-            int size = prev*(offsets[2*i+1] - offsets[2*i] + 1);
-            s[j++] = size;
-            prev = size;
-        }
-        std::reverse(&s[0], &s[0]+j);
-
-        return (offsets[1]-offsets[0]+1)*sizes[0];
     }
 };
 
