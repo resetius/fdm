@@ -7,7 +7,23 @@
 #include "asp_misc.h"
 #include "verify.h"
 
+#include <stdexcept>
+#include <string>
+
 namespace fdm {
+
+namespace detail {
+
+inline int checked_radix2_fft_size(int size, const char* direction) {
+    if (size <= 0 || (size & (size-1)) != 0) {
+        throw std::invalid_argument(
+            std::string("LaplCyl3FFT2: built-in FFT requires a power-of-two ")
+            + direction + " size, got " + std::to_string(size));
+    }
+    return size;
+}
+
+} // namespace detail
 
 struct LaplCyl3Data {
     const double dr, dz, dphi;
@@ -217,8 +233,15 @@ public:
         , RHS(indices), ANS(indices), RHSm(indices)
         , s(std::max(nphi, zn+1)), S(std::max(nphi, zn+1))
 
-        , ft_phi_table(nphi)
-        , ft_z_table_(nphi == zpoints ? 1 : zpoints)
+#ifdef HAVE_FFTW3
+        // Таблицы radix-2 не используются в ветке FFTW.
+        , ft_phi_table(1)
+        , ft_z_table_(1)
+#else
+        , ft_phi_table(detail::checked_radix2_fft_size(nphi, "azimuthal"))
+        , ft_z_table_(nphi == zpoints ? 1
+                      : detail::checked_radix2_fft_size(zpoints, "axial"))
+#endif
         , ft_z_table(nphi == zpoints ? &ft_phi_table : &ft_z_table_)
 
 #ifdef HAVE_FFTW3

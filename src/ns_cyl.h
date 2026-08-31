@@ -23,7 +23,7 @@ public:
 
     const double R, r0;
     const double h1, h2;
-    double U0; // скорость вращения внутреннего цилиндра
+    double U0; // азимутальная скорость поверхности внутреннего цилиндра
 
     const double Re;
     const double dt;
@@ -100,7 +100,8 @@ public:
             std::default_random_engine generator;
             std::uniform_real_distribution<T> distribution(-1e-3, 1e-3);
             for (int i = 0; i < nphi; i++) {
-                for (int k = z1; k <= zn; k++) {
+                // v задана на z-гранях; k=0,nz — стенки непериодического цилиндра.
+                for (int k = z1; k < nz; k++) {
                     for (int j = 1; j <= nr; j++) {
                         v[i][k][j] = distribution(generator);
                     }
@@ -113,6 +114,14 @@ public:
 
     int size() const {
         return u.size+v.size+w.size+p.size;
+    }
+
+    // Азимутальная скорость Куэтта при неподвижном внешнем цилиндре.
+    double couette_velocity(double r) const {
+        const double denominator = R*R-r0*r0;
+        const double A = -U0*r0/denominator;
+        const double B = U0*r0*R*R/denominator;
+        return A*r+B/r;
     }
 
     void step();

@@ -6,6 +6,8 @@
 #include "mgsch.h"
 #include "projection.h"
 
+#include <stdexcept>
+
 using namespace fdm;
 using namespace asp;
 using std::vector;
@@ -16,7 +18,7 @@ void calc(const Config& c) {
     using namespace std::chrono;
 
     Config c1;
-    using Task = NSCyl<T, true, zflag>;
+    using Task = NSCyl<T, check, zflag>;
     using tensor = typename Task::tensor;
     Task ns(c);
 
@@ -45,12 +47,18 @@ void calc(const Config& c) {
     p.use(&vec[off]); off += p.size;
 
     if (stabilize) {
+        if (ststep <= 0) {
+            throw std::invalid_argument("st:step must be positive when stabilization is enabled");
+        }
         eigenvectors_storage s(fn);
         s.load(eigenvectors, c1);
+        if (eigenvectors.empty()) {
+            throw std::runtime_error("stabilization input contains no eigenvectors");
+        }
         mgsch<T>(eigenvectors, (int) eigenvectors.size(), (int) eigenvectors[0].size());
     }
 
-    velocity_plotter<T,true,typename NSCyl<T, true, zflag>::tensor_flags> plot(
+    velocity_plotter<T,check,typename Task::tensor_flags> plot(
         ns.dr, ns.dz, ns.dphi,
         ns.nr, ns.nz, ns.nphi,
         ns.r0, ns.R,
@@ -88,7 +96,7 @@ void calc(const Config& c) {
                 plot.vtk_out(format("step_%07d.vtk", ns.time_index), ns.time_index);
             }
         }
-        if ((i+1) % ststep == 0) {
+        if (stabilize && (i+1) % ststep == 0) {
             u = ns.u; v = ns.v; w = ns.w; p = ns.p;
             ortoproj_along(&vec[0], eigenvectors, eigenvectors.size(), eig_size);
             ns.u = u; ns.v = v; ns.w = w; ns.p = p;

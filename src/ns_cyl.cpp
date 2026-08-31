@@ -105,7 +105,7 @@ void NSCyl<T,check,zflag>::init_bound() {
 
     if constexpr(zflag==tensor_flag::none) {
         for (int i = 0; i < nphi; i++) {
-            for (int j = z0; j <= znn; j++) {
+            for (int j = 0; j <= nr+1; j++) {
                 v[i][-1][j]   = v[i][1][j];
                 v[i][nz+1][j] = v[i][nz-1][j];
             }
@@ -127,30 +127,10 @@ void NSCyl<T,check,zflag>::init_bound() {
         }
     }
 
-    // давление
-    // check me
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) {
-            int j = 0;
-            double r = r0+j*dr-dr/2;
-            verify(std::abs(u[i][k][j]) < 1e-15);
-            verify(std::abs(u[i][k][j-1]-u[i][k][j+1])<1e-15);
-
-            //p[i][k][0]  = (r+0.5*dr)/(r-0.5*dr) * p[i][k][1] -
-            //    ((r+0.5*dr)*u[i][k][1]/r-2*u[i][k][0]+(r-0.5*dr)*u[i][k][-1]/r)/Re/dr;
-            p[i][k][0]  = p[i][k][1] -
-                ((r+0.5*dr)*u[i][k][1]/r-2*u[i][k][0]+(r-0.5*dr)*u[i][k][-1]/r)/Re/dr;
-
-            j = nr;
-            r = r0+j*dr-dr/2;
-
-            verify(std::abs(u[i][k][j]) < 1e-15);
-            verify(std::abs(u[i][k][j-1]-u[i][k][j+1])<1e-15);
-
-            //p[i][k][nr+1] = (r-0.5*dr)/(r+0.5*dr) * p[i][k][nr]+
-            //    ((r+0.5*dr)*u[i][k][nr+1]/r-2*u[i][k][nr]+(r-0.5*dr)*u[i][k][nr-1]/r)/Re/dr;
-            p[i][k][nr+1] = p[i][k][nr]+
-                ((r+0.5*dr)*u[i][k][nr+1]/r-2*u[i][k][nr]+(r-0.5*dr)*u[i][k][nr-1]/r)/Re/dr;
+            verify(std::abs(u[i][k][0]) < 1e-15);
+            verify(std::abs(u[i][k][nr]) < 1e-15);
         }
     }
     if constexpr(zflag==tensor_flag::none) {
@@ -161,11 +141,6 @@ void NSCyl<T,check,zflag>::init_bound() {
 
                 verify(std::abs(v[i][1][j]-v[i][-1][j]) < 1e-15);
                 verify(std::abs(v[i][nz+1][j]-v[i][nz-1][j]) < 1e-15);
-
-                p[i][0][j]    = p[i][1][j] -
-                    (v[i][1][j]-2*v[i][0][j]+v[i][-1][j])/Re/dz;
-                p[i][nz+1][j] = p[i][nz][j]+
-                    (v[i][nz+1][j]-2*v[i][nz][j]+v[i][nz-1][j])/Re/dz;
             }
         }
     }
@@ -297,8 +272,8 @@ void NSCyl<T,check,zflag>::L_FGH() {
                     (   u[i][k+1][j]-2*u[i][k][j]+   u[i][k-1][j])/Re/dz2+
                     (   u[i+1][k][j]-2*u[i][k][j]+   u[i-1][k][j])/Re/dphi2/rr-
 
-                    (r2*(0.5*u[i][k][j]+u[i][k][j+1])*(u0[i][k][j]+u0[i][k][j+1])
-                     -r1*(0.5*u[i][k][j-1]+u[i][k][j])*(u0[i][k][j-1]+u0[i][k][j]))/dr-
+                    0.5*(r2*(u[i][k][j]+u[i][k][j+1])*(u0[i][k][j]+u0[i][k][j+1])
+                         -r1*(u[i][k][j-1]+u[i][k][j])*(u0[i][k][j-1]+u0[i][k][j]))/dr-
 
                     0.25*((u[i][k]  [j]+u[i][k+1][j])*(v0[i][k]  [j+1]+v0[i][k]  [j])-
                           (u[i][k-1][j]+u[i][k]  [j])*(v0[i][k-1][j+1]+v0[i][k-1][j])
@@ -406,6 +381,23 @@ void NSCyl<T,check,zflag>::L_FGH() {
 
 template<typename T, bool check, tensor_flag zflag>
 void NSCyl<T,check,zflag>::poisson() {
+    // На стенке 0 = F_n - dt*dp/dn; F/G содержат все члены импульса.
+    // Значение p внутри области взято с прошлого шага, поэтому давление запаздывает.
+    for (int i = 0; i < nphi; i++) {
+        for (int k = z1; k <= zn; k++) {
+            p[i][k][0] = p[i][k][1] - dr*F[i][k][0]/dt;
+            p[i][k][nr+1] = p[i][k][nr] + dr*F[i][k][nr]/dt;
+        }
+    }
+    if constexpr(zflag==tensor_flag::none) {
+        for (int i = 0; i < nphi; i++) {
+            for (int j = 1; j <= nr; j++) {
+                p[i][0][j] = p[i][1][j] - dz*G[i][0][j]/dt;
+                p[i][nz+1][j] = p[i][nz][j] + dz*G[i][nz][j]/dt;
+            }
+        }
+    }
+
 #pragma omp parallel for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) {

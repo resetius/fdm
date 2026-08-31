@@ -56,13 +56,13 @@ double ansp(int i, int k, int j, double dr, double dz, double dphi, double r0, d
 double rpp(int i, int k, int j, double dr, double dz, double dphi, double r0, double R, double h0, double h1)
 {
     double r = r0+dr*j-dr/2;
-    double z = h0+dz*(k+1)-dz/2;
+    double z = h0+dz*k-dz/2;
     double phi = dphi*(i+1)-dphi/2;
 
     return -4*sq(sin(z))+4*sq(cos(z))
         +((-sin(phi)-cos(phi))*(r-R)*(r-r0))/r/r
-        +(2*(sin(phi)+cos(phi))*(r-r0)
-          +2*(sin(phi)+cos(phi))*(r-R)+(2*sin(phi)+2*cos(phi))*r)/r;
+        +((sin(phi)+cos(phi))*(r-r0)
+          +(sin(phi)+cos(phi))*(r-R)+(2*sin(phi)+2*cos(phi))*r)/r;
 }
 
 template<typename T,template<typename> class Solver>
@@ -304,8 +304,8 @@ void test_lapl_cyl_zp(void** data) {
         printf("It took me '%f' seconds, err = '%e'\n", interval.count(), nrm);
     }
 
-    // TODO: check me
-    //assert_true(nrm < 1e-3);
+    // RHS задан непрерывным оператором, поэтому остаётся ошибка O(h^2).
+    assert_true(nrm < 1.5e-3);
 }
 
 void test_lapl_cyl_zp_double(void** data) {
@@ -314,6 +314,124 @@ void test_lapl_cyl_zp_double(void** data) {
 
 void test_lapl_cyl_zp_float(void** data) {
     test_lapl_cyl_zp<float>(data);
+}
+
+template<typename T, tensor_flag zflag>
+void test_lapl_cyl_fft2_discrete_impl(void** data, const int nr,
+                                      const int nz, const int nphi) {
+    constexpr bool check = true;
+    constexpr bool periodic_z = zflag == tensor_flag::periodic;
+    using tensor_flags = typename fdm::short_flags<tensor_flag::periodic, zflag>::value;
+
+    Config* c = static_cast<Config*>(*data);
+    int verbose = c->get("test", "verbose", 0);
+
+    const int z1 = periodic_z ? 0 : 1;
+    const int zn = periodic_z ? nz-1 : nz;
+    const double r0 = 1.25;
+    const double R = 2.75;
+    const double lz = 2.0;
+    const double dr = (R-r0)/nr;
+    const double dz = lz/nz;
+    const double dphi = 2*M_PI/nphi;
+
+    LaplCyl3FFT2<T, check, zflag> lapl(
+        dr, dz, r0-dr/2, R-r0+dr,
+        periodic_z ? lz : lz+dz, nr, nz, nphi);
+
+    std::array<int,6> indices = {0, nphi-1, z1, zn, 1, nr};
+    tensor<T,3,check,tensor_flags> rhs(indices);
+    tensor<T,3,check,tensor_flags> numerical(indices);
+
+    auto exact = [&](int i, int k, int j) {
+        const double radial = sin(M_PI*j/(nr+1));
+        const double azimuthal = 1.0
+            + 0.20*cos(2*M_PI*i/nphi)
+            + 0.15*sin(4*M_PI*i/nphi);
+        const double axial = periodic_z
+            ? 1.0 + 0.25*cos(2*M_PI*k/nz) + 0.10*sin(4*M_PI*k/nz)
+            : sin(M_PI*k/(nz+1));
+        return radial*azimuthal*axial;
+    };
+
+    // RHS формируется тем же дискретным оператором; фиктивные значения равны нулю.
+    for (int i = 0; i < nphi; i++) {
+        for (int k = z1; k <= zn; k++) {
+            for (int j = 1; j <= nr; j++) {
+                const double r = r0+dr*j-dr/2;
+                const double center = exact(i,k,j);
+                rhs[i][k][j] =
+                    ((r+dr/2)*exact(i,k,j+1)-2*r*center
+                     +(r-dr/2)*exact(i,k,j-1))/(r*dr*dr)
+                    +(exact(i,k+1,j)-2*center+exact(i,k-1,j))/(dz*dz)
+                    +(exact(i+1,k,j)-2*center+exact(i-1,k,j))/(r*r*dphi*dphi);
+            }
+        }
+    }
+
+    lapl.solve(&numerical[0][z1][1], &rhs[0][z1][1]);
+
+    double max_error = 0;
+    double max_exact = 0;
+    for (int i = 0; i < nphi; i++) {
+        for (int k = z1; k <= zn; k++) {
+            for (int j = 1; j <= nr; j++) {
+                max_error = std::max(
+                    max_error, std::abs(static_cast<double>(numerical[i][k][j])-exact(i,k,j)));
+                max_exact = std::max(max_exact, std::abs(exact(i,k,j)));
+            }
+        }
+    }
+    const double relative_error = max_error/max_exact;
+    if (verbose) {
+        printf("FFT2 discrete inverse (%s, %s): err = %e\n",
+               periodic_z ? "periodic z" : "Dirichlet z",
+               std::is_same_v<T,double> ? "double" : "float",
+               relative_error);
+    }
+
+    const double tolerance = std::is_same_v<T,double> ? 1e-11 : 2e-5;
+    assert_true(relative_error < tolerance);
+}
+
+template<typename T, tensor_flag zflag>
+void test_lapl_cyl_fft2_discrete(void** data) {
+    constexpr bool periodic_z = zflag == tensor_flag::periodic;
+    test_lapl_cyl_fft2_discrete_impl<T,zflag>(
+        data, 9, periodic_z ? 8 : 7, 16);
+}
+
+void test_lapl_cyl_fft2_discrete_dirichlet_double(void** data) {
+    test_lapl_cyl_fft2_discrete<double,tensor_flag::none>(data);
+}
+
+void test_lapl_cyl_fft2_discrete_dirichlet_float(void** data) {
+    test_lapl_cyl_fft2_discrete<float,tensor_flag::none>(data);
+}
+
+void test_lapl_cyl_fft2_discrete_periodic_double(void** data) {
+    test_lapl_cyl_fft2_discrete<double,tensor_flag::periodic>(data);
+}
+
+void test_lapl_cyl_fft2_discrete_periodic_float(void** data) {
+    test_lapl_cyl_fft2_discrete<float,tensor_flag::periodic>(data);
+}
+
+void test_lapl_cyl_fft2_size_handling(void** data) {
+#ifdef HAVE_FFTW3
+    // Размеры 10 и 6 допустимы для FFTW, но не для встроенного radix-2 FFT.
+    test_lapl_cyl_fft2_discrete_impl<double,tensor_flag::periodic>(
+        data, 7, 6, 10);
+#else
+    bool rejected = false;
+    try {
+        LaplCyl3FFT2<double, true, tensor_flag::periodic> lapl(
+            0.1, 0.2, 0.95, 0.8, 1.2, 7, 6, 10);
+    } catch (const std::invalid_argument& error) {
+        rejected = std::string(error.what()).find("power-of-two") != std::string::npos;
+    }
+    assert_true(rejected);
+#endif
 }
 
 template<typename T>
@@ -506,6 +624,11 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_lapl_cyl_float, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_zp_double, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_zp_float, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_fft2_discrete_dirichlet_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_fft2_discrete_dirichlet_float, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_fft2_discrete_periodic_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_fft2_discrete_periodic_float, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_fft2_size_handling, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_fft1_fft2_cmp, &c),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);

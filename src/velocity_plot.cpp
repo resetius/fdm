@@ -174,22 +174,14 @@ void velocity_plotter<T,check,F>::vtk_out(const string& name, int time_index)
             for (int k = y1; k <= yn; k++) {
                 for (int j = 1; j <= nx; j++) {
                     double phi = dz*i+dz/2;
-                    double r = xx1+dx*j+dx/2;
 
                     double u0 = 0.5*(u[i][k][j]+u[i][k][j-1]);
                     double v0 = 0.5*(v[i][k][j]+v[i][k-1][j]);
                     double w0 = 0.5*(w[i][k][j]+w[i-1][k][j]);
 
-                    double l = sqrt(u0*u0+v0*v0+r*r*w0*w0);
-                    u0 /= l; v0 /= l; w0 /= l;
-
                     double x = u0 * cos(phi) - w0 * sin(phi);
                     double y = u0 * sin(phi) + w0 * cos(phi);
                     double z = v0;
-                    if (std::abs(l) < 1e-7) {
-                        l = 1e-4; // hack
-                    }
-                    x *= l; y *=l; z *= l;
 
                     fprintf(f, "%f %f %f\n", x, y, z);
                 }

@@ -65,12 +65,13 @@ void calc(const Config& c) {
 
     for (int i = 0; i < nphi; i++) {
         for (int k = 0; k < nz; k++) {
-            for (int j = 0; j <= nr; j++) {
-                double r = ns.r0+ns.dr*j+ns.dr/2;
-                ns.w0[i][k][j] =
-                    -ns.U0*sq(ns.r0)/(sq(ns.R)-sq(ns.r0))
-                    + ns.U0*sq(ns.r0)*sq(ns.R)/(sq(ns.R)-sq(ns.r0))/r/r;
+            for (int j = 1; j <= nr; j++) {
+                const double r = ns.r0+(j-0.5)*ns.dr;
+                ns.w0[i][k][j] = ns.couette_velocity(r);
             }
+            // Условия прилипания в фиктивных узлах базового течения.
+            ns.w0[i][k][0] = 2*ns.U0-ns.w0[i][k][1];
+            ns.w0[i][k][nr+1] = -ns.w0[i][k][nr];
         }
     }
     int off = 0;
@@ -135,6 +136,7 @@ void calc(const Config& c) {
 
         for (int  i = 0; i < count; i++) {
             int j = indices[i];
+            off = 0;
             u.use(&eigenvectors[j][off]); off += u.size;
             v.use(&eigenvectors[j][off]); off += v.size;
             w.use(&eigenvectors[j][off]); off += w.size;

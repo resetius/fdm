@@ -6,7 +6,10 @@ Run parameters:
 ./test/fdm_ns_cyl --plot:png=0 --plot:vtk=1 --plot:interval=1000 --ns:steps=10000 \
   --ns:Re=200 --ns:dt=0.01 --ns:h1=0 --ns:h2=10
 ```
-Other defaults: r=pi/2, R=pi, nr=nz=nphi=32, u0=1
+Other defaults: r=pi/2, R=pi, nr=32, nz=31, nphi=32, u0=1
+
+When the project is built without FFTW, the built-in FFT requires `nphi` and
+`nz+1` (or `nz` for `--ns:zperiod=1`) to be powers of two.
 
 ![Taylor](/img/taylor_200.png?raw=true)
 
