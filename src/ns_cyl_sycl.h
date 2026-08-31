@@ -60,7 +60,10 @@ private:
         return sycl::malloc_shared<T>(n, q);
     }
 
+public:
     // ── build CylAcc from USM block ───────────────────────────────────────────
+    // Public like the fields of the CPU NSCyl: tests and callers read the
+    // shared USM fields through these.
     CylAcc<T> ua() const { return {u_mem,   nphi, nz, -1, nr+1}; }
     CylAcc<T> va() const { return {v_mem,   nphi, nz,  0, nr+1}; }
     CylAcc<T> wa() const { return {w_mem,   nphi, nz,  0, nr+1}; }
@@ -71,7 +74,6 @@ private:
     CylAcc<T> Ha() const { return {H_mem,   nphi, nz,  1, nr  }; }
     CylAcc<T> Ra() const { return {RHS_mem, nphi, nz,  1, nr  }; }
 
-public:
     NSCylSycl(sycl::queue& q_,
               int nr_, int nz_, int nphi_,
               T r0_, T R_, T lz_,
@@ -116,17 +118,33 @@ public:
     void step() {
         kernel_init_bound();
         kernel_FGH();
+        kernel_pressure_bound();
         kernel_poisson_rhs();
         lapl_solver.solve(x_mem, RHS_mem);
         kernel_update_uvwp();
     }
 
+    // Colour source written into the render buffer's 4th component.
+    enum ParticleColor {
+        color_tag    = 0,   // fixed per-particle value from col[]: a Lagrangian
+                            // marker, so it shows where fluid came from
+        color_axial  = 1,   // axial velocity v_z, mapped to [0,1] with 0.5 at
+                            // rest -- the up/down jets of the Taylor cells
+        color_radial = 2,   // radial velocity v_r: the in/outflow between cells
+    };
+
     // Advect np particles stored as Cartesian (px,py,pz).
-    // render_buf: float4[np] = {x/R, y/R, z_norm, hue} for Metal.
+    // render_buf: float4[np] = {x/R, z_norm, y/R, shade} for Metal.
     void advect_particles(float* px, float* py, float* pz,
                           const float* col, float* render_buf,
-                          int np, uint32_t frame)
+                          int np, uint32_t frame,
+                          int color_mode = color_axial)
     {
+        // Secondary (vortex) velocities run at some tenths of the wall speed,
+        // so this sets where the palette saturates.  tanh rather than a clamp
+        // keeps the strongest jets distinguishable instead of flattening them.
+        const float fvscale = 0.2f*(float)U0;
+        const int   cmode   = color_mode;
         const float fdr=(float)dr, fdz=(float)dz, fdphi=(float)dphi;
         const float fr0=(float)r0, fR=(float)R, flz=(float)lz;
         const float fdt=(float)dt;
@@ -156,6 +174,12 @@ public:
             float ur   = (float)ua_(iphi, iz, ir);     // u at face (ir+1/2)
             float uz   = (float)va_(iphi, iz, ir+1);   // v at cell center
             float uphi = (float)wa_(iphi, iz, ir+1);   // w at cell center
+
+            // Sampled before the reseed below, so the shade always belongs to
+            // the place the particle actually was this frame.
+            float shade = (cmode == 1) ? 0.5f + 0.5f*sycl::tanh(uz/fvscale)
+                        : (cmode == 2) ? 0.5f + 0.5f*sycl::tanh(ur/fvscale)
+                        :                col[ip];
 
             // Advance in cylindrical space
             pr   += ur    * fdt;
@@ -192,7 +216,7 @@ public:
             render_buf[4*ip+0] = (nx / fR) * kZoom;
             render_buf[4*ip+1] = (pz_ / flz * 2.f - 1.f) * kZoom;
             render_buf[4*ip+2] = (ny / fR) * kZoom;
-            render_buf[4*ip+3] = col[ip];
+            render_buf[4*ip+3] = shade;
         });
         q.wait();
     }
@@ -200,9 +224,9 @@ public:
 private:
     // ── Boundary conditions ───────────────────────────────────────────────────
     void kernel_init_bound() {
-        auto ua_=ua(), va_=va(), wa_=wa(), pa_=pa();
+        auto ua_=ua(), va_=va(), wa_=wa();
         const int nr_=nr, nz_=nz, nphi_=nphi;
-        const T U0_=U0, Re_=Re, dr_=dr, r0_=r0;
+        const T U0_=U0;
 
         // w, v at inner/outer walls; u ghost cells
         q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
@@ -215,21 +239,25 @@ private:
                 ua_(i,k,-1)   = ua_(i,k,1);               // ghost (div-free)
                 ua_(i,k,nr_+1) = ua_(i,k,nr_-1);
             });
+    }
 
-        // Pressure ghost cells (from radial momentum at r-walls)
+    // ── Pressure boundary values at the cylinder walls ────────────────────────
+    // The corrected radial velocity has to stay zero on both walls:
+    //   0 = F_n - dt/dr * (p_outside - p_inside),
+    // so the ghost pressure must come from the *complete* intermediate radial
+    // momentum F, which only exists after kernel_FGH().  Deriving it from a
+    // single viscous term instead drops w^2/r and breaks the Taylor--Couette
+    // radial balance.
+    void kernel_pressure_bound() {
+        auto pa_=pa(), Fa_=Fa();
+        const int nr_=nr;
+        const T dt_=dt, dr_=dr;
+
         q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
             [=](sycl::id<2> id) {
                 int i=(int)id[0], k=(int)id[1];
-                // inner wall j=0
-                T r  = r0_ - dr_*T(0.5);
-                T r2 = (r + T(0.5)*dr_)/r, r1 = (r - T(0.5)*dr_)/r;
-                pa_(i,k,0) = pa_(i,k,1)
-                    - (r2*ua_(i,k,1) - T(2)*ua_(i,k,0) + r1*ua_(i,k,-1))/Re_/dr_;
-                // outer wall j=nr
-                r  = r0_ + nr_*dr_ - dr_*T(0.5);
-                r2 = (r + T(0.5)*dr_)/r;  r1 = (r - T(0.5)*dr_)/r;
-                pa_(i,k,nr_+1) = pa_(i,k,nr_)
-                    + (r2*ua_(i,k,nr_+1) - T(2)*ua_(i,k,nr_) + r1*ua_(i,k,nr_-1))/Re_/dr_;
+                pa_(i,k,0)     = pa_(i,k,1)   - dr_*Fa_(i,k,0)/dt_;
+                pa_(i,k,nr_+1) = pa_(i,k,nr_) + dr_*Fa_(i,k,nr_)/dt_;
             });
     }
 
@@ -357,8 +385,9 @@ private:
                 ua_(i,k,j) = Fa_(i,k,j) - dt_/dr_*(xa_(i,k,j+1) - xa_(i,k,j));
             });
 
-        // v: axial faces k=0..nz-1 (periodic), j=1..nr
-        q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)(nz_-1), (size_t)nr_),
+        // v: axial faces k=0..nz-1, j=1..nr.  z is periodic, so every one of
+        // the nz faces is an unknown -- there is no wall face to leave alone.
+        q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)nz_, (size_t)nr_),
             [=](sycl::id<3> id) {
                 int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
                 va_(i,k,j) = Ga_(i,k,j) - dt_/dz_*(xa_(i,k+1,j) - xa_(i,k,j));
