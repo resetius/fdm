@@ -20,11 +20,13 @@
 #include "ns_cyl_sycl.h"
 
 // ── Standard ──────────────────────────────────────────────────────────────────
+#include <charconv>
 #include <cmath>
 #include <cstring>
 #include <iostream>
 #include <random>
 #include <chrono>
+#include <string_view>
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Metal shaders
@@ -189,6 +191,9 @@ struct Demo {
     // (useful for measuring), --fps reports what it turns into.
     bool     vsync      = true;
     bool     showFps    = false;
+    int      stepsPerFrame = 3;
+    double   t_wait_drawable = 0, t_sycl = 0, t_render = 0;
+    int      drawableW = 0, drawableH = 0;
     float    angle_h    = 0.2f;   // slight horizontal rotation to show 3D depth
     float    angle_v    = 0.0f;   // no vertical tilt — keep cylinder axis strict vertical
 
@@ -279,6 +284,8 @@ struct Demo {
         layer->setPixelFormat(MTL::PixelFormatBGRA8Unorm_sRGB);
         layer->setFramebufferOnly(false);
         layer->setDisplaySyncEnabled(vsync);
+        std::cout << "DIAG displaySyncEnabled=" << layer->displaySyncEnabled()
+                  << " maxDrawables=" << layer->maximumDrawableCount() << "\n";
         clearCycle  = int(layer->maximumDrawableCount());
         if (clearCycle < 1) clearCycle = 3;
         clearFrames = clearCycle;   // start from a clean set of drawables
@@ -379,7 +386,8 @@ struct Demo {
         std::cout << "Grid: r=[" << kR0 << "," << kR << "]  phi=" << kNPHI
                   << "  z=" << kNZ << "  r=" << kNR
                   << "  Re=" << sim.Re << "  dt=" << sim.dt
-                  << "  particles=" << kNP << "\n";
+                  << "  particles=" << kNP
+                  << "  steps/frame=" << stepsPerFrame << "\n";
         std::cout << "Keys: arrows rotate, space pauses, C cycles colour, Esc quits\n"
                      "colour: " << color_name(colorMode) << "\n";
         return true;
@@ -388,6 +396,7 @@ struct Demo {
     void step()
     {
         if (showFps) report_fps();
+        auto t_f0 = std::chrono::steady_clock::now();
 
         // Metal has to finish reading renderMetalBuf before SYCL overwrites it.
         // With interop that dependency lives on the GPU: the imported event is
@@ -408,7 +417,7 @@ struct Demo {
         }
 
         if (!paused)
-            for (int k = 0; k < 3; k++) sim.step();
+            for (int k = 0; k < stepsPerFrame; k++) sim.step();
         sim.advect_particles(part_px, part_py, part_pz, color_buf, render_buf,
                              kNP, frame++, colorMode);
         // In-order queue: whatever is enqueued here runs after advect.  With
@@ -419,8 +428,14 @@ struct Demo {
                      : syclQ.memcpy(renderMetalBuf->contents(), render_buf,
                                     kNP * 4 * sizeof(float));
         if (!interop) syclQ.wait();
+        t_sycl += std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - t_f0).count();
+        auto t_r0 = std::chrono::steady_clock::now();
 
+        auto t_nd0 = std::chrono::steady_clock::now();
         CA::MetalDrawable* drawable = layer->nextDrawable();
+        t_wait_drawable += std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - t_nd0).count();
         if (!drawable) return;
 
         auto* rpd = MTL::RenderPassDescriptor::alloc()->init();
@@ -440,6 +455,8 @@ struct Demo {
             cb->encodeWait(h.event, h.value);
         }
 #endif
+        drawableW = int(drawable->texture()->width());
+        drawableH = int(drawable->texture()->height());
         auto* enc = cb->renderCommandEncoder(rpd);
 
         // 1. Fade
@@ -467,6 +484,8 @@ struct Demo {
         cb->commit();
         if (prevCB) prevCB->release();
         prevCB = cb;   // kept so the next frame (or ~Demo) can wait on this one
+        t_render += std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - t_r0).count();
     }
 
     void report_fps()
@@ -474,6 +493,11 @@ struct Demo {
         static auto t0 = std::chrono::steady_clock::now();
         static int  n  = 0;
         if (++n < 240) return;
+        std::cout << "DIAG nextDrawable=" << (t_wait_drawable/n*1000)
+                  << "  sycl=" << (t_sycl/n*1000)
+                  << "  render=" << (t_render/n*1000) << " ms/frame  drawable="
+                  << drawableW << "x" << drawableH << "\n";
+        t_wait_drawable = t_sycl = t_render = 0;
         const double dt = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - t0).count();
         std::cout << "fps: " << n/dt << std::endl;
@@ -504,11 +528,40 @@ struct Demo {
 int main(int argc, char** argv)
 {
     bool vsync = true, showFps = false;
+    int stepsPerFrame = 3;
+    const auto parseSteps = [](std::string_view text, int& value) {
+        int parsed = 0;
+        const auto result = std::from_chars(
+            text.data(), text.data()+text.size(), parsed);
+        if (result.ec != std::errc() || result.ptr != text.data()+text.size()
+            || parsed <= 0) {
+            return false;
+        }
+        value = parsed;
+        return true;
+    };
+    const auto usage = [&]() {
+        std::cerr << "usage: " << argv[0]
+                  << " [--no-vsync] [--fps] [--steps-per-frame=N]\n";
+    };
+
     for (int i = 1; i < argc; i++) {
-        if      (!std::strcmp(argv[i], "--no-vsync")) vsync   = false;
-        else if (!std::strcmp(argv[i], "--fps"))      showFps = true;
-        else {
-            std::cerr << "usage: " << argv[0] << " [--no-vsync] [--fps]\n";
+        const std::string_view arg = argv[i];
+        constexpr std::string_view prefix = "--steps-per-frame=";
+        if      (arg == "--no-vsync") vsync   = false;
+        else if (arg == "--fps")      showFps = true;
+        else if (arg.starts_with(prefix)) {
+            if (!parseSteps(arg.substr(prefix.size()), stepsPerFrame)) {
+                usage();
+                return 1;
+            }
+        } else if (arg == "--steps-per-frame") {
+            if (++i == argc || !parseSteps(argv[i], stepsPerFrame)) {
+                usage();
+                return 1;
+            }
+        } else {
+            usage();
             return 1;
         }
     }
@@ -537,6 +590,7 @@ int main(int argc, char** argv)
     Demo demo;
     demo.vsync   = vsync;
     demo.showFps = showFps;
+    demo.stepsPerFrame = stepsPerFrame;
     if (!demo.init(metalView)) return 1;
 
     bool running = true;
