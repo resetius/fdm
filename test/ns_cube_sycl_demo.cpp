@@ -131,7 +131,7 @@ struct Demo {
     Demo()
         : sim(syclQ, kNX, kNY, kNZ,
               float(2*M_PI), float(2*M_PI), float(2*M_PI),
-              /*U0=*/1.f, /*Re=*/400.f, /*dt=*/0.005f)
+              /*U0=*/1.f, /*Re=*/40.f, /*dt=*/0.005f)
     {}
 
     bool init(SDL_MetalView sdlView)

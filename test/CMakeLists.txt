@@ -69,6 +69,7 @@ if (METAL_CPP_INCLUDE_DIR AND SDL2_FOUND)
         ${METAL_CPP_INCLUDE_DIR}
         ${SDL2_INCLUDE_DIRS})
     target_link_directories(ns_cube_sycl_demo PRIVATE
+        $ENV{HOME}/opt/adaptivecpp/lib
         ${SDL2_LIBRARY_DIRS}
         $ENV{HOME}/opt/adaptivecpp/lib/hipSYCL)
     target_link_libraries(ns_cube_sycl_demo
@@ -79,8 +80,28 @@ if (METAL_CPP_INCLUDE_DIR AND SDL2_FOUND)
         "-framework QuartzCore")
     set_target_properties(ns_cube_sycl_demo PROPERTIES
         BUILD_RPATH "$ENV{HOME}/opt/adaptivecpp/lib/hipSYCL")
+
+    add_executable(ns_cyl_sycl_demo
+        ns_cyl_sycl_demo.cpp
+        ns_cyl_sycl_demo_metal_impl.cpp)
+    target_link_libraries(ns_cyl_sycl_demo fdm)
+    target_include_directories(ns_cyl_sycl_demo PRIVATE
+        ${METAL_CPP_INCLUDE_DIR}
+        ${SDL2_INCLUDE_DIRS})
+    target_link_directories(ns_cyl_sycl_demo PRIVATE
+        $ENV{HOME}/opt/adaptivecpp/lib
+        ${SDL2_LIBRARY_DIRS}
+        $ENV{HOME}/opt/adaptivecpp/lib/hipSYCL)
+    target_link_libraries(ns_cyl_sycl_demo
+        ${SDL2_LIBRARIES}
+        rt-backend-metal
+        "-framework Metal"
+        "-framework Foundation"
+        "-framework QuartzCore")
+    set_target_properties(ns_cyl_sycl_demo PROPERTIES
+        BUILD_RPATH "$ENV{HOME}/opt/adaptivecpp/lib/hipSYCL")
 else()
-    message(STATUS "metal-cpp or SDL2 not found — ns_cube_sycl_demo skipped")
+    message(STATUS "metal-cpp or SDL2 not found — sycl demos skipped")
 endif()
 endif()
 

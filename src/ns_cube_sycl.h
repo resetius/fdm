@@ -159,11 +159,11 @@ public:
     }
 
     void step() {
-        kernel_init_bound();  q.wait();
-        kernel_FGH();         q.wait();
-        kernel_poisson_rhs(); q.wait();
+        kernel_init_bound();
+        kernel_FGH();
+        kernel_poisson_rhs();
         lapl_solver.solve(x.vec, RHS.vec);
-        kernel_update_uvwp(); q.wait();
+        kernel_update_uvwp();
     }
 
 private:
