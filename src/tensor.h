@@ -80,17 +80,9 @@ public:
         , index(index)
     { }
 
-    auto operator[](int y) {
-        y = adjust_and_check(y);
-        return tensor_accessor<T,rank-1,check,typename F::tail>(
-            &vec[(y-offsets[2*index])*sizes[index]],
-            sizes, offsets, index+1
-            );
-    }
-
     auto operator[](int y) const {
         y = adjust_and_check(y);
-        return tensor_accessor<const T,rank-1,check,typename F::tail>(
+        return tensor_accessor<T,rank-1,check,typename F::tail>(
             &vec[(y-offsets[2*index])*sizes[index]],
             sizes, offsets, index+1
             );
@@ -147,12 +139,7 @@ public:
         , index(index)
     { }
 
-    T& operator[](int x) {
-        x = adjust_and_check(x);
-        return vec[x];
-    }
-
-    T operator[](int x) const {
+    T& operator[](int x) const {
         x = adjust_and_check(x);
         return vec[x];
     }
