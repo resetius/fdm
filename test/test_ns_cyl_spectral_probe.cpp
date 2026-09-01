@@ -2,6 +2,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <cstring>
 #include <exception>
 #include <limits>
 #include <memory>
@@ -15,6 +16,7 @@
 #endif
 
 #include "arpack_solver.h"
+#include "blas.h"
 #include "config.h"
 #include "ns_cyl_fourier_block.h"
 
@@ -23,13 +25,6 @@ using fdm::NSCylFourierBlockReference;
 using std::complex;
 using std::string;
 using std::vector;
-
-extern "C" int LAPACKE_dgeev(
-    int matrix_layout, char jobvl, char jobvr, int n, double* a, int lda,
-    double* wr, double* wi, double* vl, int ldvl, double* vr, int ldvr);
-extern "C" int LAPACKE_sgeev(
-    int matrix_layout, char jobvl, char jobvr, int n, float* a, int lda,
-    float* wr, float* wi, float* vl, int ldvl, float* vr, int ldvr);
 
 namespace {
 
@@ -72,20 +67,17 @@ vector<int> sorted_indices(const vector<complex<T>>& eigenvalues) {
     return indices;
 }
 
+// matrix - column major, разрушается
 template<typename T>
 int dense_geev(int n, T* matrix, T* real, T* imaginary) {
-    constexpr int lapack_column_major = 102;
     T unused_left = 0;
     T unused_right = 0;
-    if constexpr (std::is_same_v<T, double>) {
-        return LAPACKE_dgeev(lapack_column_major, 'N', 'N', n,
-                             matrix, n, real, imaginary,
-                             &unused_left, 1, &unused_right, 1);
-    } else {
-        return LAPACKE_sgeev(lapack_column_major, 'N', 'N', n,
-                             matrix, n, real, imaginary,
-                             &unused_left, 1, &unused_right, 1);
-    }
+    vector<T> work(4*n);
+    int info = 0;
+    fdm::lapack::geev("N", "N", n, matrix, n, real, imaginary,
+                      &unused_left, 1, &unused_right, 1,
+                      work.data(), 4*n, &info);
+    return info;
 }
 
 template<typename T>
@@ -250,7 +242,7 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
                                     imaginary.data());
         if (info != 0) {
             throw std::runtime_error(
-                "LAPACKE geev failed with info="+std::to_string(info));
+                "geev failed with info="+std::to_string(info));
         }
 
         result.dense_computed = true;
@@ -448,8 +440,15 @@ void run(const Config& config) {
 } // namespace
 
 int main(int argc, char** argv) {
+    string config_name = "ns_cyl_spectral_probe.ini";
+    for (int i = 1; i+1 < argc; ++i) {
+        if (!strcmp(argv[i], "-c")) {
+            config_name = argv[i+1];
+        }
+    }
+
     Config config;
-    config.open("ns_rect.ini");
+    config.open(config_name);
     config.rewrite(argc, argv);
 
     const string datatype = config.get("solver", "datatype", "double");

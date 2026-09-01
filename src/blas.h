@@ -21,6 +21,10 @@ extern "C" void dgttrf_(int* n, double* low, double* diag, double* up, double* u
 extern "C" void sgttrs_(const char* trans, int* n, int* nrhs, float* low, float* diag, float* up, float* up2, int* ipiv, float* b, int* ldb, int*info);
 extern "C" void dgttrs_(const char* trans, int* n, int* nrhs, double* low, double* diag, double* up, double* up2, int* ipiv, double* b, int* ldb, int*info);
 
+// left and right eigenvectors of a general matrix
+extern "C" void sgeev_(const char* jobvl, const char* jobvr, int* n, float* a, int* lda, float* wr, float* wi, float* vl, int* ldvl, float* vr, int* ldvr, float* work, int* lwork, int* info);
+extern "C" void dgeev_(const char* jobvl, const char* jobvr, int* n, double* a, int* lda, double* wr, double* wi, double* vl, int* ldvl, double* vr, int* ldvr, double* work, int* lwork, int* info);
+
 namespace fdm {
 namespace blas {
 
@@ -88,6 +92,16 @@ inline void gttrs(const char* trans, int n, int nrhs, float* low, float* diag, f
 
 inline void gttrs(const char* trans, int n, int nrhs, double* low, double* diag, double* up, double* up2, int* ipiv, double* b, int ldb, int* info) {
     dgttrs_(trans, &n, &nrhs, low, diag, up, up2, ipiv, b, &ldb, info);
+}
+
+// a - column major, разрушается. Для комплексно сопряженной пары j, j+1
+// собственные вектора это vl/vr столбцы j (Re) и j+1 (Im).
+inline void geev(const char* jobvl, const char* jobvr, int n, float* a, int lda, float* wr, float* wi, float* vl, int ldvl, float* vr, int ldvr, float* work, int lwork, int* info) {
+    sgeev_(jobvl, jobvr, &n, a, &lda, wr, wi, vl, &ldvl, vr, &ldvr, work, &lwork, info);
+}
+
+inline void geev(const char* jobvl, const char* jobvr, int n, double* a, int lda, double* wr, double* wi, double* vl, int ldvl, double* vr, int ldvr, double* work, int lwork, int* info) {
+    dgeev_(jobvl, jobvr, &n, a, &lda, wr, wi, vl, &ldvl, vr, &ldvr, work, &lwork, info);
 }
 
 } // namespace lapack
