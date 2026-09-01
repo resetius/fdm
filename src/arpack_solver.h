@@ -11,7 +11,12 @@ template<typename T>
 class arpack_solver {
     int n;
     int maxit;
+    int requested_ncv = 0;
     std::vector<T> resid;
+    int last_naupd_info_ = 0;
+    int last_neupd_info_ = 0;
+    int last_nconv_ = 0;
+    int last_iterations_ = 0;
 
 public:
 /*  Mode 1:  A*x = lambda*x. */
@@ -93,6 +98,17 @@ public:
     }
 
     void set_resid_random(T a, T b);
+
+    // Number of Arnoldi vectors. Zero keeps the historical 2*nev+2 choice.
+    // The value is checked against nev and n when solve() is called.
+    void set_ncv(int value) {
+        requested_ncv = value;
+    }
+
+    int last_naupd_info() const { return last_naupd_info_; }
+    int last_neupd_info() const { return last_neupd_info_; }
+    int last_nconv() const { return last_nconv_; }
+    int last_iterations() const { return last_iterations_; }
 
     void solve(
         const std::function<void(T*, const T*)>& OP,

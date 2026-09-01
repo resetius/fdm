@@ -1,4 +1,5 @@
 #include <cstring>
+#include <algorithm>
 #include <vector>
 #include <complex>
 #include <random>
@@ -13,6 +14,10 @@ using namespace asp;
 using std::vector;
 using std::complex;
 using std::is_same;
+
+// The bundled ARPACK is translated by f2c. Its character arguments carry
+// explicit trailing lengths; ftnlen is long on the supported non-alpha ABI.
+using arpack_ftnlen = long int;
 
 extern "C" void dnaupd_(
     int* ido,
@@ -30,7 +35,9 @@ extern "C" void dnaupd_(
     double* workd,
     double* workl,
     int* lworkl,
-    int* info);
+    int* info,
+    arpack_ftnlen bmat_len,
+    arpack_ftnlen which_len);
 extern "C" void snaupd_(
     int* ido,
     char* bmat,
@@ -47,7 +54,9 @@ extern "C" void snaupd_(
     float* workd,
     float* workl,
     int* lworkl,
-    int* info);
+    int* info,
+    arpack_ftnlen bmat_len,
+    arpack_ftnlen which_len);
 extern "C" void dneupd_(
     int* rvec,
     char* howmany,
@@ -73,7 +82,10 @@ extern "C" void dneupd_(
     double* workd,
     double* workl,
     int* lworkl,
-    int* info);
+    int* info,
+    arpack_ftnlen howmany_len,
+    arpack_ftnlen bmat_len,
+    arpack_ftnlen which_len);
 extern "C" void sneupd_(
     int* rvec,
     char* howmany,
@@ -99,7 +111,10 @@ extern "C" void sneupd_(
     float* workd,
     float* workl,
     int* lworkl,
-    int* info);
+    int* info,
+    arpack_ftnlen howmany_len,
+    arpack_ftnlen bmat_len,
+    arpack_ftnlen which_len);
 
 
 template<typename T>
@@ -111,6 +126,10 @@ void arpack_solver<T>::solve(
     int n_eigenvalues
     )
 {
+    last_naupd_info_ = 0;
+    last_neupd_info_ = 0;
+    last_nconv_ = 0;
+    last_iterations_ = 0;
     int ido = 0;
 /*  NEV     Integer.  (INPUT/OUTPUT) */
 /*          Number of eigenvalues of OP to be computed. 0 < NEV < N-1. */
@@ -187,7 +206,11 @@ void arpack_solver<T>::solve(
 /*          iteration. Most of the cost in generating each Arnoldi vector is */
 /*          in the matrix-vector operation OP*x. */
 
-    int ncv = (2*nev+2)<n?(2*nev+2):n;
+    int ncv = requested_ncv > 0
+        ? requested_ncv
+        : std::min(2*nev+2, n);
+    verify(ncv <= n);
+    verify(ncv-nev >= 2);
     int ldv = n;
 
 /*  V       Double precision array N by NCV.  (OUTPUT) */
@@ -237,7 +260,9 @@ void arpack_solver<T>::solve(
                 &workd[0],
                 &workl[0],
                 &lworkl,
-                &info
+                &info,
+                1,
+                2
                 );
         } else {
             snaupd_(
@@ -256,7 +281,9 @@ void arpack_solver<T>::solve(
                 &workd[0],
                 &workl[0],
                 &lworkl,
-                &info
+                &info,
+                1,
+                2
                 );
         }
 
@@ -301,6 +328,9 @@ void arpack_solver<T>::solve(
         }
     }
 
+    last_naupd_info_ = info;
+    last_iterations_ = iparam[2];
+    last_nconv_ = iparam[4];
     verify(info >= 0, format("*naupd: %d: ", info).c_str());
 /*             RVEC = .FALSE.     Compute Ritz values only. */
 
@@ -359,7 +389,10 @@ void arpack_solver<T>::solve(
             &workd[0],
             &workl[0],
             &lworkl,
-            &info);
+            &info,
+            1,
+            1,
+            2);
     } else {
         sneupd_(
             &rvec,
@@ -386,9 +419,13 @@ void arpack_solver<T>::solve(
             &workd[0],
             &workl[0],
             &lworkl,
-            &info);
+            &info,
+            1,
+            1,
+            2);
     }
 
+    last_neupd_info_ = info;
     verify(info == 0, format("*neupd: %d: ", info).c_str());
 //    int nconv = std::min(iparam[4], nev);
     int nconv = iparam[4];
