@@ -53,8 +53,12 @@ struct ProbeResult {
     int dense_operator_calls = 0;
     int dense_unstable_count = 0;
     string error;
+    double dense_max_right_residual = 0;
+    double dense_max_left_residual = 0;
     vector<complex<T>> eigenvalues;
     vector<complex<T>> dense_eigenvalues;
+    vector<double> dense_right_residual;
+    vector<double> dense_left_residual;
 };
 
 template<typename T>
@@ -67,17 +71,128 @@ vector<int> sorted_indices(const vector<complex<T>>& eigenvalues) {
     return indices;
 }
 
-// matrix - column major, разрушается
+// matrix - column major, разрушается. Для комплексно сопряженной пары i, i+1
+// собственный вектор это столбец i (Re) и столбец i+1 (Im).
 template<typename T>
-int dense_geev(int n, T* matrix, T* real, T* imaginary) {
-    T unused_left = 0;
-    T unused_right = 0;
-    vector<T> work(4*n);
+int dense_geev(int n, T* matrix, T* real, T* imaginary, T* left, T* right) {
+    vector<T> work(8*n);
     int info = 0;
-    fdm::lapack::geev("N", "N", n, matrix, n, real, imaginary,
-                      &unused_left, 1, &unused_right, 1,
-                      work.data(), 4*n, &info);
+    fdm::lapack::geev("V", "V", n, matrix, n, real, imaginary,
+                      left, n, right, n, work.data(), 8*n, &info);
     return info;
+}
+
+// y = A x, a - column major
+template<typename T>
+void matvec(int n, const T* a, const T* x, T* y) {
+    for (int row = 0; row < n; ++row) {
+        y[row] = 0;
+    }
+    for (int column = 0; column < n; ++column) {
+        const T value = x[column];
+        for (int row = 0; row < n; ++row) {
+            y[row] += a[static_cast<std::size_t>(column)*n+row]*value;
+        }
+    }
+}
+
+// y = A^t x
+template<typename T>
+void matvec_transposed(int n, const T* a, const T* x, T* y) {
+    for (int row = 0; row < n; ++row) {
+        T sum = 0;
+        for (int column = 0; column < n; ++column) {
+            sum += a[static_cast<std::size_t>(row)*n+column]*x[column];
+        }
+        y[row] = sum;
+    }
+}
+
+template<typename T>
+double norm2(int n, const T* x) {
+    double sum = 0;
+    for (int i = 0; i < n; ++i) {
+        sum += static_cast<double>(x[i])*x[i];
+    }
+    return sum;
+}
+
+// Невязки считаются независимо от lapack:
+//   right = ||A r - mu r|| / (||A|| ||r||)
+//   left  = ||A^t l - conj(mu) l|| / (||A|| ||l||)
+// Вещественное mu -- один столбец, сопряженная пара -- два соседних, и оба
+// вектора пары дают одну и ту же невязку.
+template<typename T>
+void eigen_residuals(int n, const T* a, const T* real, const T* imaginary,
+                     const T* left, const T* right, double matrix_norm,
+                     vector<double>& right_residual,
+                     vector<double>& left_residual)
+{
+    right_residual.assign(n, 0);
+    left_residual.assign(n, 0);
+
+    vector<T> ar(n);
+    vector<T> ai(n);
+
+    for (int i = 0; i < n; ) {
+        const int count = (imaginary[i] == T(0)) ? 1 : 2;
+        const T* vr = right+static_cast<std::size_t>(i)*n;
+        const T* vl = left+static_cast<std::size_t>(i)*n;
+        const T wr = real[i];
+        const T wi = imaginary[i];
+
+        double residual = 0;
+        double scale = 0;
+
+        if (count == 1) {
+            matvec(n, a, vr, ar.data());
+            for (int k = 0; k < n; ++k) {
+                ar[k] -= wr*vr[k];
+            }
+            residual = norm2(n, ar.data());
+            scale = norm2(n, vr);
+        } else {
+            const T* vr2 = vr+n;
+            matvec(n, a, vr, ar.data());
+            matvec(n, a, vr2, ai.data());
+            for (int k = 0; k < n; ++k) {
+                ar[k] -= wr*vr[k]-wi*vr2[k];
+                ai[k] -= wr*vr2[k]+wi*vr[k];
+            }
+            residual = norm2(n, ar.data())+norm2(n, ai.data());
+            scale = norm2(n, vr)+norm2(n, vr2);
+        }
+        const double value = std::sqrt(residual)/(matrix_norm*std::sqrt(scale));
+        for (int k = 0; k < count; ++k) {
+            right_residual[i+k] = value;
+        }
+
+        if (count == 1) {
+            matvec_transposed(n, a, vl, ar.data());
+            for (int k = 0; k < n; ++k) {
+                ar[k] -= wr*vl[k];
+            }
+            residual = norm2(n, ar.data());
+            scale = norm2(n, vl);
+        } else {
+            const T* vl2 = vl+n;
+            matvec_transposed(n, a, vl, ar.data());
+            matvec_transposed(n, a, vl2, ai.data());
+            for (int k = 0; k < n; ++k) {
+                ar[k] -= wr*vl[k]+wi*vl2[k];
+                ai[k] -= wr*vl2[k]-wi*vl[k];
+            }
+            residual = norm2(n, ar.data())+norm2(n, ai.data());
+            scale = norm2(n, vl)+norm2(n, vl2);
+        }
+        const double left_value =
+            std::sqrt(residual)/(matrix_norm*std::sqrt(scale));
+        for (int k = 0; k < count; ++k) {
+            left_residual[i+k] = left_value;
+        }
+
+        i += count;
+    }
 }
 
 template<typename T>
@@ -238,11 +353,28 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
 
         vector<T> real(n);
         vector<T> imaginary(n);
-        const int info = dense_geev(n, matrix.data(), real.data(),
-                                    imaginary.data());
+        vector<T> left(static_cast<std::size_t>(n)*n);
+        vector<T> rightv(static_cast<std::size_t>(n)*n);
+        vector<T> factored(matrix);   // geev разрушает матрицу
+        const int info = dense_geev(n, factored.data(), real.data(),
+                                    imaginary.data(), left.data(),
+                                    rightv.data());
         if (info != 0) {
             throw std::runtime_error(
                 "geev failed with info="+std::to_string(info));
+        }
+
+        const double matrix_norm = std::sqrt(
+            norm2(static_cast<int>(matrix.size()), matrix.data()));
+        eigen_residuals(n, matrix.data(), real.data(), imaginary.data(),
+                        left.data(), rightv.data(), matrix_norm,
+                        result.dense_right_residual,
+                        result.dense_left_residual);
+        for (int i = 0; i < n; ++i) {
+            result.dense_max_right_residual = std::max(
+                result.dense_max_right_residual, result.dense_right_residual[i]);
+            result.dense_max_left_residual = std::max(
+                result.dense_max_left_residual, result.dense_left_residual[i]);
         }
 
         result.dense_computed = true;
@@ -374,14 +506,17 @@ void run(const Config& config) {
                 /(operator_steps*dt);
             printf("DENSE_COUNT m=%d l=%d unstable=%d total=%d calls=%d "
                    "leading_abs=%.16e leading_real=%.16e "
-                   "leading_imag=%+.16e leading_growth=%+.9e\n",
+                   "leading_imag=%+.16e leading_growth=%+.9e "
+                   "max_right_res=%.3e max_left_res=%.3e\n",
                    result.block.m, result.block.l,
                    result.dense_unstable_count,
                    static_cast<int>(result.dense_eigenvalues.size()),
                    result.dense_operator_calls,
                    leading_magnitude,
                    static_cast<double>(leading.real()),
-                   static_cast<double>(leading.imag()), leading_growth);
+                   static_cast<double>(leading.imag()), leading_growth,
+                   result.dense_max_right_residual,
+                   result.dense_max_left_residual);
 
             int unstable_position = 0;
             for (int dense_index : dense_indices) {
@@ -394,10 +529,13 @@ void run(const Config& config) {
                     continue;
                 }
                 printf("DENSE_UNSTABLE m=%d l=%d index=%d abs=%.16e "
-                       "real=%.16e imag=%+.16e growth=%+.9e\n",
+                       "real=%.16e imag=%+.16e growth=%+.9e "
+                       "right_res=%.3e left_res=%.3e\n",
                        result.block.m, result.block.l, unstable_position++,
                        magnitude, static_cast<double>(value.real()),
-                       static_cast<double>(value.imag()), growth);
+                       static_cast<double>(value.imag()), growth,
+                       result.dense_right_residual[dense_index],
+                       result.dense_left_residual[dense_index]);
             }
         } else if (result.guard_reached) {
             printf("DENSE_COUNT m=%d l=%d unstable=0 total=0 calls=0 "
