@@ -3,6 +3,7 @@
 #include <complex>
 #include <cstdio>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <string>
@@ -121,8 +122,10 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
     const int residual_seed = config.get("spectral", "residual_seed", 0);
     const int probe_starts = std::max(
         1, config.get("spectral", "probe_starts", 3));
+    const double default_tolerance = std::max(
+        1e-8, 8.0*static_cast<double>(std::numeric_limits<T>::epsilon()));
     const T tolerance = static_cast<T>(
-        config.get("spectral", "tol", 1e-8));
+        config.get("spectral", "tol", default_tolerance));
     const double growth_tolerance = config.get(
         "spectral", "growth_tol", 1e-8);
     const double dt = config.get("ns", "dt", 0.001);
@@ -173,19 +176,12 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
             vector<vector<T>> eigenvectors;
             int calls = 0;
             double max_leakage = 0;
-            // The bundled f2c ARPACK keeps static routine state. Its calls
-            // are serialized; dense verification may still run per block.
-#ifdef _OPENMP
-#pragma omp critical(fdm_ns_cyl_probe_arpack_call)
-#endif
-            {
-                solver.solve([&](T* y, const T* x) {
-                    block->apply(y, x);
-                    max_leakage = std::max(max_leakage,
-                                           block->last_fourier_leakage());
-                    ++calls;
-                }, eigenvalues, eigenvectors, nev);
-            }
+            solver.solve([&](T* y, const T* x) {
+                block->apply(y, x);
+                max_leakage = std::max(max_leakage,
+                                       block->last_fourier_leakage());
+                ++calls;
+            }, eigenvalues, eigenvectors, nev);
 
             result.operator_calls += calls;
             result.max_leakage = std::max(result.max_leakage, max_leakage);
@@ -457,8 +453,10 @@ int main(int argc, char** argv) {
     config.rewrite(argc, argv);
 
     const string datatype = config.get("solver", "datatype", "double");
-    verify(datatype == "double",
-           "fdm_ns_cyl_spectral_probe currently requires double precision");
-    run<double>(config);
+    if (datatype == "float") {
+        run<float>(config);
+    } else {
+        run<double>(config);
+    }
     return 0;
 }
