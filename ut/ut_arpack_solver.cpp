@@ -19,12 +19,10 @@ using namespace std;
 using namespace fdm;
 using namespace asp;
 
-void test_laplace(void** ) {
-    using T = double;
-
+template<typename T>
+void check_laplace(T tol, T eigenvalue_tolerance) {
     int n = 100;
     int nev = 6;
-    T tol = 1e-7;
     int maxit = 10000;
     int rndresid = 1;
     T fixedresid = 1;
@@ -61,12 +59,14 @@ void test_laplace(void** ) {
         solver.set_resid_random(from, to);
     }
 
-    int it = 0;
-
     solver.solve([&](T* y, const T* x) {
         mat.mul(y, x);
-        it ++;
     }, eigenvalues, eigenvectors, nev);
+
+    assert_int_equal(solver.last_naupd_info(), 0);
+    assert_int_equal(solver.last_neupd_info(), 0);
+    assert_true(solver.last_nconv() >= nev);
+    assert_true(solver.last_iterations() > 0);
 
     int nconv = static_cast<int>(eigenvalues.size());
     vector<int> indices(nconv);
@@ -78,13 +78,18 @@ void test_laplace(void** ) {
     for (int  i = 0; i < nconv; i++) {
         int j = indices[i];
         complex<T> ans = complex<T>(4*sq(sin(M_PI*(n-i)/(n+1)/2.)), 0);
-        assert_float_equal(abs(ans - eigenvalues[j]), 0.0, 1e-7);
+        assert_float_equal(abs(ans - eigenvalues[j]), 0.0,
+                           eigenvalue_tolerance);
     }
+}
+
+void test_laplace_double(void**) {
+    check_laplace<double>(1e-7, 1e-7);
 }
 
 int main() {
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test(test_laplace),
+        cmocka_unit_test(test_laplace_double),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
