@@ -128,6 +128,10 @@ public:
 
     void L_step();
 
+    void apply_boundary_conditions() {
+        init_bound();
+    }
+
 private:
     void init_bound();
 

@@ -11,12 +11,14 @@
 
 #include "config.h"
 #include "ns_cyl.h"
+#include "ns_cyl_state.h"
 
 extern "C" {
 #include <cmocka.h>
 }
 
 using fdm::NSCyl;
+using fdm::NSCylStateLayout;
 using fdm::tensor_flag;
 
 namespace {
@@ -54,23 +56,10 @@ void check_discrete_couette_projection() {
     using Task = NSCyl<T, true, tensor_flag::periodic>;
     Config config = make_config(10, 8, 8);
     Task ns(config);
+    NSCylStateLayout<T> layout(ns);
 
     // Давление точно компенсирует дискретный центробежный член w^2/r.
-    for (int i = 0; i < ns.nphi; ++i) {
-        for (int k = 0; k < ns.nz; ++k) {
-            for (int j = 1; j <= ns.nr; ++j) {
-                const double r = ns.r0+(j-0.5)*ns.dr;
-                ns.w[i][k][j] = static_cast<T>(ns.couette_velocity(r));
-            }
-            ns.p[i][k][1] = T(0);
-            for (int j = 1; j < ns.nr; ++j) {
-                const double r_face = ns.r0+j*ns.dr;
-                const double w_face = 0.5*(ns.w[i][k][j]+ns.w[i][k][j+1]);
-                ns.p[i][k][j+1] = static_cast<T>(
-                    ns.p[i][k][j]+ns.dr*w_face*w_face/r_face);
-            }
-        }
-    }
+    layout.initialize_couette_state(ns);
 
     ns.step();
 
@@ -114,6 +103,138 @@ void test_couette_profile_is_azimuthal_velocity(void**) {
     NSCyl<double, true, tensor_flag::periodic> ns(config);
     assert_float_equal(ns.couette_velocity(ns.r0), ns.U0, 1e-14);
     assert_float_equal(ns.couette_velocity(ns.R), 0.0, 1e-14);
+}
+
+void test_state_layout_round_trip_and_boundaries(void**) {
+    using Task = NSCyl<double, true, tensor_flag::periodic>;
+    Config config = make_config(5, 4, 8, false, 0.75);
+    Task ns(config);
+    NSCylStateLayout<double> layout(ns);
+
+    assert_int_equal(layout.u_radial_offset, 0);
+    assert_int_equal(layout.v_radial_offset, ns.nr-1);
+    assert_int_equal(layout.w_radial_offset, 2*ns.nr-1);
+    assert_int_equal(layout.p_radial_offset, 3*ns.nr-1);
+    assert_int_equal(layout.radial_size, 4*ns.nr-1);
+    assert_int_equal(layout.u_size, ns.nphi*ns.nz*(ns.nr-1));
+    assert_int_equal(layout.v_size, ns.nphi*ns.nz*ns.nr);
+    assert_int_equal(layout.w_size, ns.nphi*ns.nz*ns.nr);
+    assert_int_equal(layout.p_size, ns.nphi*ns.nz*ns.nr);
+
+    std::vector<double> input(layout.state_size);
+    for (int index = 0; index < layout.state_size; ++index) {
+        input[index] = 0.01*index-0.25;
+    }
+    layout.unpack(ns, input.data());
+    const auto output = layout.pack(ns);
+    assert_memory_equal(output.data(), input.data(),
+                        input.size()*sizeof(input[0]));
+
+    for (int i = 0; i < ns.nphi; ++i) {
+        for (int k = 0; k < ns.nz; ++k) {
+            assert_float_equal(ns.u[i][k][0], 0.0, 1e-15);
+            assert_float_equal(ns.u[i][k][ns.nr], 0.0, 1e-15);
+            assert_float_equal(ns.u[i][k][-1], ns.u[i][k][1], 1e-15);
+            assert_float_equal(ns.u[i][k][ns.nr+1],
+                               ns.u[i][k][ns.nr-1], 1e-15);
+            assert_float_equal(ns.v[i][k][0], -ns.v[i][k][1], 1e-15);
+            assert_float_equal(ns.v[i][k][ns.nr+1],
+                               -ns.v[i][k][ns.nr], 1e-15);
+            assert_float_equal(ns.w[i][k][0],
+                               2*ns.U0-ns.w[i][k][1], 1e-15);
+            assert_float_equal(ns.w[i][k][ns.nr+1],
+                               -ns.w[i][k][ns.nr], 1e-15);
+        }
+    }
+}
+
+template<typename T>
+void check_full_couette_state_and_pressure_gauge() {
+    using Task = NSCyl<T, true, tensor_flag::periodic>;
+    Config config = make_config(10, 4, 8, false, 0.9);
+    Task ns(config);
+    NSCylStateLayout<T> layout(ns);
+    layout.initialize_couette_state(ns);
+
+    const double tolerance = std::is_same_v<T, double> ? 2e-14 : 2e-6;
+    assert_true(std::abs(layout.pressure_mean(ns)) < tolerance);
+
+    for (int i = 0; i < ns.nphi; ++i) {
+        for (int k = 0; k < ns.nz; ++k) {
+            assert_true(std::abs(0.5*(ns.w[i][k][0]+ns.w[i][k][1])
+                                 -ns.U0) < tolerance);
+            assert_true(std::abs(0.5*(ns.w[i][k][ns.nr]
+                                     +ns.w[i][k][ns.nr+1])) < tolerance);
+            for (int j = 1; j < ns.nr; ++j) {
+                const double r_face = ns.r0+j*ns.dr;
+                const double w_face = 0.5*(ns.w[i][k][j]
+                                           +ns.w[i][k][j+1]);
+                const double residual = ns.p[i][k][j+1]-ns.p[i][k][j]
+                    -ns.dr*w_face*w_face/r_face;
+                assert_true(std::abs(residual) < tolerance);
+            }
+        }
+    }
+
+    const auto couette = layout.pack(ns);
+    std::vector<T> perturbation(layout.state_size);
+    layout.pack_difference(ns, couette, perturbation.data());
+    for (T value : perturbation) {
+        assert_true(value == T(0));
+    }
+
+    std::vector<T> pressure_before(ns.p.vec, ns.p.vec+ns.p.size);
+    const auto velocity_before = couette;
+    for (int index = 0; index < ns.p.size; ++index) {
+        ns.p.vec[index] += T(2.5);
+    }
+    layout.normalize_pressure(ns);
+    const auto normalized = layout.pack(ns);
+    assert_true(std::abs(layout.pressure_mean(ns)) < tolerance);
+    for (int index = 0; index < layout.p_offset; ++index) {
+        assert_true(normalized[index] == velocity_before[index]);
+    }
+    for (int index = 0; index < ns.p.size; ++index) {
+        assert_true(std::abs(static_cast<double>(
+            ns.p.vec[index]-pressure_before[index])) < tolerance);
+    }
+}
+
+void test_full_couette_state_and_pressure_gauge_double(void**) {
+    check_full_couette_state_and_pressure_gauge<double>();
+}
+
+void test_full_couette_state_and_pressure_gauge_float(void**) {
+    check_full_couette_state_and_pressure_gauge<float>();
+}
+
+void test_discrete_couette_state_is_stationary(void**) {
+    using Task = NSCyl<double, true, tensor_flag::periodic>;
+    Config config = make_config(16, 8, 8, false, 1.0, 44.0, 1e-4);
+    Task ns(config);
+    NSCylStateLayout<double> layout(ns);
+    layout.initialize_couette_state(ns);
+    const auto before = layout.pack(ns);
+
+    ns.step();
+    layout.normalize_pressure(ns);
+    const auto after = layout.pack(ns);
+
+    double velocity_change = 0;
+    double pressure_change = 0;
+    for (int index = 0; index < layout.p_offset; ++index) {
+        velocity_change = std::max(velocity_change,
+                                   std::abs(after[index]-before[index]));
+    }
+    for (int index = layout.p_offset; index < layout.state_size; ++index) {
+        pressure_change = std::max(pressure_change,
+                                   std::abs(after[index]-before[index]));
+    }
+    printf("Couette one-step drift: velocity=%e pressure=%e\n",
+           velocity_change, pressure_change);
+
+    assert_true(velocity_change < 1e-12);
+    assert_true(pressure_change < 1e-10);
 }
 
 void test_nonperiodic_random_v_respects_staggered_walls(void**) {
@@ -443,6 +564,10 @@ int main() {
         cmocka_unit_test(test_discrete_couette_projection_double),
         cmocka_unit_test(test_discrete_couette_projection_float),
         cmocka_unit_test(test_couette_profile_is_azimuthal_velocity),
+        cmocka_unit_test(test_state_layout_round_trip_and_boundaries),
+        cmocka_unit_test(test_full_couette_state_and_pressure_gauge_double),
+        cmocka_unit_test(test_full_couette_state_and_pressure_gauge_float),
+        cmocka_unit_test(test_discrete_couette_state_is_stationary),
         cmocka_unit_test(test_nonperiodic_random_v_respects_staggered_walls),
         cmocka_unit_test(test_linearized_step_matches_central_difference),
         cmocka_unit_test(test_z_bounds_match_flag),

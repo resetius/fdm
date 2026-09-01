@@ -9,6 +9,7 @@
 
 #include "fft.h"
 #include "ns_cyl.h"
+#include "ns_cyl_state.h"
 
 namespace fdm {
 
@@ -120,16 +121,19 @@ class NSCylFourierBlockReference {
 public:
     using Task = NSCyl<T, check, tensor_flag::periodic>;
     using tensor = typename Task::tensor;
+    using StateLayout = NSCylStateLayout<T>;
+    using Component = typename StateLayout::Component;
 
     NSCylFourierBlockReference(const Config& config, int m, int l,
                                int operator_steps=1)
         : ns_(config)
+        , layout_(ns_)
         , fft_(ns_.nphi, ns_.nz)
         , m_(m)
         , l_(l)
         , phi_indices_(packed_indices(m, ns_.nphi))
         , z_indices_(packed_indices(l, ns_.nz))
-        , radial_size_(4*ns_.nr-1)
+        , radial_size_(layout_.radial_size)
         , block_size_(radial_size_*phase_count())
         , operator_steps_(operator_steps)
         , coefficients_(fft_.size())
@@ -183,6 +187,10 @@ public:
         return ns_;
     }
 
+    const StateLayout& state_layout() const {
+        return layout_;
+    }
+
     // Put a packed block vector into the full physical NSCyl state.
     void lift(const T* x) {
         std::fill(ns_.u.vec, ns_.u.vec+ns_.u.size, T(0));
@@ -190,19 +198,9 @@ public:
         std::fill(ns_.w.vec, ns_.w.vec+ns_.w.size, T(0));
         std::fill(ns_.p.vec, ns_.p.vec+ns_.p.size, T(0));
 
-        int state_index = 0;
-        for (int j = 1; j < ns_.nr; ++j) {
-            lift_radial_slice(ns_.u, j, state_index++, x);
-        }
-        for (int j = 1; j <= ns_.nr; ++j) {
-            lift_radial_slice(ns_.v, j, state_index++, x);
-        }
-        for (int j = 1; j <= ns_.nr; ++j) {
-            lift_radial_slice(ns_.w, j, state_index++, x);
-        }
-        for (int j = 1; j <= ns_.nr; ++j) {
-            lift_radial_slice(ns_.p, j, state_index++, x);
-        }
+        layout_.for_each_radial([&](Component component, int j, int index) {
+            lift_radial_slice(field(component), j, index, x);
+        });
     }
 
     // Extract the selected packed block and report energy leaked to all other
@@ -210,24 +208,10 @@ public:
     void extract(T* y) {
         double selected_norm2 = 0;
         double other_norm2 = 0;
-        int state_index = 0;
-
-        for (int j = 1; j < ns_.nr; ++j) {
-            extract_radial_slice(ns_.u, j, state_index++, y,
+        layout_.for_each_radial([&](Component component, int j, int index) {
+            extract_radial_slice(field(component), j, index, y,
                                  selected_norm2, other_norm2);
-        }
-        for (int j = 1; j <= ns_.nr; ++j) {
-            extract_radial_slice(ns_.v, j, state_index++, y,
-                                 selected_norm2, other_norm2);
-        }
-        for (int j = 1; j <= ns_.nr; ++j) {
-            extract_radial_slice(ns_.w, j, state_index++, y,
-                                 selected_norm2, other_norm2);
-        }
-        for (int j = 1; j <= ns_.nr; ++j) {
-            extract_radial_slice(ns_.p, j, state_index++, y,
-                                 selected_norm2, other_norm2);
-        }
+        });
 
         const double total = selected_norm2+other_norm2;
         last_fourier_leakage_ = total > 0
@@ -245,6 +229,7 @@ public:
 
 private:
     Task ns_;
+    StateLayout layout_;
     PeriodicPackedFFT2<T> fft_;
     int m_;
     int l_;
@@ -268,20 +253,21 @@ private:
     }
 
     void initialize_couette_base() {
-        for (int i = 0; i < ns_.nphi; ++i) {
-            for (int k = 0; k < ns_.nz; ++k) {
-                for (int j = 1; j <= ns_.nr; ++j) {
-                    const double r = ns_.r0+(j-0.5)*ns_.dr;
-                    ns_.w0[i][k][j] = static_cast<T>(ns_.couette_velocity(r));
-                }
-                ns_.w0[i][k][0] = T(2)*static_cast<T>(ns_.U0)-ns_.w0[i][k][1];
-                ns_.w0[i][k][ns_.nr+1] = -ns_.w0[i][k][ns_.nr];
-            }
-        }
+        layout_.initialize_couette_linearization(ns_);
 
         // L_step advances a perturbation with homogeneous wall conditions;
         // the moving-wall velocity is already contained in w0.
         ns_.U0 = 0;
+    }
+
+    tensor& field(Component component) {
+        switch (component) {
+        case Component::u: return ns_.u;
+        case Component::v: return ns_.v;
+        case Component::w: return ns_.w;
+        case Component::p: return ns_.p;
+        }
+        throw std::logic_error("unknown NSCyl state component");
     }
 
     std::size_t plane_index(int i, int k) const {

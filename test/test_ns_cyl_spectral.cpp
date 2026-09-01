@@ -1,4 +1,5 @@
 #include "ns_cyl.h"
+#include "ns_cyl_state.h"
 #include "arpack_solver.h"
 #include "velocity_plot.h"
 #include "eigenvectors_storage.h"
@@ -14,8 +15,8 @@ void calc(const Config& c) {
     using namespace std::chrono;
 
     using Task = NSCyl<T, check, tensor_flag::periodic>;
-    using tensor = typename Task::tensor;
     Task ns(c);
+    NSCylStateLayout<T> layout(ns);
     velocity_plotter<T,true, typename Task::tensor_flags> plot(
         ns.dr, ns.dz, ns.dphi,
         ns.nr, ns.nz, ns.nphi,
@@ -36,14 +37,7 @@ void calc(const Config& c) {
     //const int plot_interval = c.get("plot", "interval", 100);
     //const int png = c.get("plot", "png", 1);
     //const int vtk = c.get("plot", "vtk", 0);
-    int i, nphi, nz, nr;
-    nphi = ns.nphi; nz = ns.nz; nr = ns.nr;
-    tensor u{{0, nphi-1, 0, nz-1, 1, nr-1}};
-    tensor v{{0, nphi-1, 0, nz-1, 1, nr}};
-    tensor w{{0, nphi-1, 0, nz-1, 1, nr}};
-    tensor p({0, nphi-1, 0, nz-1, 1, nr});
-
-    int n = u.size+v.size+w.size+p.size;
+    const int n = layout.state_size;
     arpack_solver<T> solver(
         n, maxit,
         arpack_solver<T>::standard,
@@ -63,18 +57,7 @@ void calc(const Config& c) {
     vector<complex<T>> eigenvalues;
     vector<vector<T>> eigenvectors;
 
-    for (int i = 0; i < nphi; i++) {
-        for (int k = 0; k < nz; k++) {
-            for (int j = 1; j <= nr; j++) {
-                const double r = ns.r0+(j-0.5)*ns.dr;
-                ns.w0[i][k][j] = ns.couette_velocity(r);
-            }
-            // Условия прилипания в фиктивных узлах базового течения.
-            ns.w0[i][k][0] = 2*ns.U0-ns.w0[i][k][1];
-            ns.w0[i][k][nr+1] = -ns.w0[i][k][nr];
-        }
-    }
-    int off = 0;
+    layout.initialize_couette_linearization(ns);
 
     // Мы решаем спектральную задачу для возмущения
     // На возмущение накладываются нулевые граничные условия
@@ -86,18 +69,11 @@ void calc(const Config& c) {
         // copy to inner domain
         auto t1 = steady_clock::now();
 
-        memcpy(y, x, n*sizeof(T));
-        off = 0;
-        u.use(y + off); off += u.size;
-        v.use(y + off); off += v.size;
-        w.use(y + off); off += w.size;
-        p.use(y + off); off += p.size;
-        ns.u = u; ns.v = v; ns.w = w; ns.p = p;
-        for (i = 0; i < steps; i++) {
+        layout.unpack(ns, x);
+        for (int i = 0; i < steps; i++) {
             ns.L_step();
         }
-        // copy out
-        u = ns.u; v = ns.v; w = ns.w; p = ns.p;
+        layout.pack(ns, y);
         it++;
         auto t2 = steady_clock::now();
         auto interval1 = duration_cast<duration<double>>(t2 - t1);
@@ -136,13 +112,7 @@ void calc(const Config& c) {
 
         for (int  i = 0; i < count; i++) {
             int j = indices[i];
-            off = 0;
-            u.use(&eigenvectors[j][off]); off += u.size;
-            v.use(&eigenvectors[j][off]); off += v.size;
-            w.use(&eigenvectors[j][off]); off += w.size;
-            p.use(&eigenvectors[j][off]); off += p.size;
-
-            ns.u = u; ns.v = v; ns.w = w; ns.p = p;
+            layout.unpack(ns, eigenvectors[j].data());
 
             plot.update();
             plot.plot(format("eigenvector_%07d.png", i), 0);
