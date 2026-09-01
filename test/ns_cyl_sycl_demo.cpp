@@ -124,20 +124,23 @@ fragment float4 ns_frag(VOut in [[stage_in]],
 // ═════════════════════════════════════════════════════════════════════════════
 // Demo
 // ═════════════════════════════════════════════════════════════════════════════
-static constexpr int kNR=32, kNZ=64, kNPHI=64;
+//static constexpr int kNR=32, kNZ=64, kNPHI=64;
+static constexpr int kNR=32, kNZ=32, kNPHI=32;
 static constexpr int kNP=32768;
 
-static constexpr float kR0   = 1.0f;   // inner cylinder radius
-static constexpr float kR    = 2.0f;   // outer cylinder radius
+static constexpr float kR0   = 1.5707963267948966;   // inner cylinder radius
+static constexpr float kR    = 3.141592653589793;   // outer cylinder radius
 
 // Axial period.  A Taylor vortex is nearly square in cross-section, so its
 // height is about the gap width d = kR - kR0 = 1.  z is periodic, so only
 // whole wavelengths fit and one wavelength holds a counter-rotating pair:
 // the vortex count is kLZ/d rounded to an even number.  Formally it is
 // 2*round(k_c*kLZ/2pi) with the critical Taylor wavenumber k_c*d ~ 3.16.
-// The flow is never seeded -- it starts from rest and the fastest growing
-// mode wins over round-off noise -- so the count below is what you get.
-static constexpr float kLZ = 2.0f;            //  2 vortices (k=3.14, best fit)
+// The flow is never seeded: it starts from the Couette base state and the
+// fastest growing mode wins over round-off noise -- so the count below is
+// what you get.
+static constexpr float kLZ = 10.0f;
+//static constexpr float kLZ = 2.0f;            //  2 vortices (k=3.14, best fit)
 //static constexpr float kLZ = float(M_PI);     //  4 vortices (borderline: the
                                                 //  box admits only k=2 or k=4,
                                                 //  both far from k_c; 2 vortices
@@ -237,8 +240,44 @@ struct Demo {
     Demo()
         : sim(syclQ, kNR, kNZ, kNPHI,
               float(kR0), float(kR), float(kLZ),
-              /*U0=*/1.f, /*Re=*/400.f, /*dt=*/0.002f)
-    {}
+              /*U0=*/1.f, /*Re=*/100.f, /*dt=*/0.002f)
+    {
+        init_couette_base();
+    }
+
+    // Start from the Couette profile w_C(r) = A*r + B/r instead of from rest.
+    // This is the same steady state the spectral probe linearises around, see
+    // initialize_couette_base() in src/ns_cyl_fourier_block.h: same formula,
+    // same cell-centred radii, same ghost values.  Starting from rest reaches
+    // the same flow eventually, but only after a spin-up transient that has
+    // nothing to do with the linear operator; from here the early growth of a
+    // Taylor mode is directly comparable with the growth_rate the probe
+    // reports for its (m,l) block.
+    //
+    // Unlike the probe we keep U0 as it is: the probe zeroes it because
+    // L_step advances a perturbation with homogeneous wall conditions, while
+    // here the moving wall is part of the flow being integrated.
+    void init_couette_base()
+    {
+        const float denominator = sim.R*sim.R - sim.r0*sim.r0;
+        const float A = -sim.U0*sim.r0/denominator;
+        const float B =  sim.U0*sim.r0*sim.R*sim.R/denominator;
+
+        auto w = sim.wa();
+        for (int i = 0; i < sim.nphi; i++) {
+            for (int k = 0; k < sim.nz; k++) {
+                for (int j = 1; j <= sim.nr; j++) {
+                    const float r = sim.r0+(j-0.5f)*sim.dr;
+                    w(i,k,j) = A*r+B/r;
+                }
+                w(i,k,0)        = 2.f*sim.U0-w(i,k,1);   // inner rotating
+                w(i,k,sim.nr+1) = -w(i,k,sim.nr);         // outer no-slip
+            }
+        }
+        // u, v stay zero: that is the velocity part of the base state.  p also
+        // stays zero -- the first projection builds the pressure balancing
+        // w^2/r, so the run opens with one pressure transient and no more.
+    }
 
     bool init(SDL_MetalView sdlView)
     {
@@ -388,6 +427,8 @@ struct Demo {
                   << "  Re=" << sim.Re << "  dt=" << sim.dt
                   << "  particles=" << kNP
                   << "  steps/frame=" << stepsPerFrame << "\n";
+        std::cout << "Initial state: Couette base w(r)=A*r+B/r "
+                     "(same base as the spectral probe)\n";
         std::cout << "Keys: arrows rotate, space pauses, C cycles colour, Esc quits\n"
                      "colour: " << color_name(colorMode) << "\n";
         return true;
