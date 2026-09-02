@@ -1,11 +1,12 @@
 #include "ns_cyl.h"
 
-#include "umfpack_solver.h"
+#include "ns_cyl_spectral_filter.h"
+#include "ns_cyl_spectral_storage.h"
+#include "ns_cyl_state.h"
 #include "velocity_plot.h"
-#include "eigenvectors_storage.h"
-#include "mgsch.h"
-#include "projection.h"
 
+#include <fstream>
+#include <memory>
 #include <stdexcept>
 
 using namespace fdm;
@@ -13,49 +14,142 @@ using namespace asp;
 using std::vector;
 using std::string;
 
+template<typename T>
+NSCylSpectralMetadata runtime_spectral_metadata(
+    const Config& config, const NSCylSpectralMetadata& stored) {
+    const auto current = make_ns_cyl_spectral_metadata<T>(config);
+    auto expected = stored;
+    expected.scalar_type = current.scalar_type;
+    expected.nr = current.nr;
+    expected.nphi = current.nphi;
+    expected.nz = current.nz;
+    expected.radial_size = current.radial_size;
+    expected.u_offset = current.u_offset;
+    expected.v_offset = current.v_offset;
+    expected.w_offset = current.w_offset;
+    expected.p_offset = current.p_offset;
+    expected.r = current.r;
+    expected.R = current.R;
+    expected.h1 = current.h1;
+    expected.h2 = current.h2;
+    expected.reynolds = current.reynolds;
+    expected.dt = current.dt;
+    expected.wall_speed = current.wall_speed;
+    return expected;
+}
+
+void require_spectral_threshold(const char* name, double requested,
+                                double stored) {
+    if (requested != stored) {
+        throw std::invalid_argument(
+            string("st:")+name+" does not match the spectral file");
+    }
+}
+
 template<typename T, bool check, tensor_flag zflag>
 void calc(const Config& c) {
     using namespace std::chrono;
 
-    Config c1;
     using Task = NSCyl<T, check, zflag>;
-    using tensor = typename Task::tensor;
     Task ns(c);
+    NSCylStateLayout<T> layout(ns);
 
     const int steps = c.get("ns", "steps", 1);
     const int plot_interval = c.get("plot", "interval", 100);
     const int png = c.get("plot", "png", 1);
     const int vtk = c.get("plot", "vtk", 0);
-    const int stabilize = c.get("st", "enable", 0) && zflag == tensor_flag::periodic;
-    string fn = c.get("st", "input", "input.nc");
-    const int ststep = c.get("st", "step", 100);
-    vector<vector<T>> eigenvectors;
+    bool stabilize = c.get("st", "enable", 0) != 0;
+    const string spectral_input = c.get("st", "input", "ns_cyl_spectrum.nc");
+    const string spectral_mode = c.get(
+        "st", "mode", "unstable_eigenspace");
+    const string spectral_schedule = c.get("st", "schedule", "once");
+    const int legacy_ststep = c.get("st", "step", 100);
+    const int spectral_start = c.get("st", "start_step", legacy_ststep);
+    const int spectral_interval = c.get("st", "interval", legacy_ststep);
+    const string spectral_log = c.get("st", "log", string());
+    std::unique_ptr<NSCylSpectralFilter<T>> spectral_filter;
+    vector<T> couette_reference;
+    NSCylSpectralRemoval removal =
+        NSCylSpectralRemoval::unstable_eigenspace;
+    std::ofstream modal_log;
+    bool one_shot_done = false;
     int i;
 
-    // for stabilization
-    int nphi = ns.nphi, nz = ns.nz, nr = ns.nr;
-    tensor u{{0, nphi-1, 0, nz-1, 1, nr-1}, (T*)0xff};
-    tensor v{{0, nphi-1, 0, nz-1, 1, nr}, (T*)0xff};
-    tensor w{{0, nphi-1, 0, nz-1, 1, nr}, (T*)0xff};
-    tensor p({0, nphi-1, 0, nz-1, 1, nr}, (T*)0xff);
-    int eig_size = u.size+v.size+w.size+p.size;
-    vector<T> vec(eig_size);
-    int off = 0;
-    u.use(&vec[off]); off += u.size;
-    v.use(&vec[off]); off += v.size;
-    w.use(&vec[off]); off += w.size;
-    p.use(&vec[off]); off += p.size;
-
     if (stabilize) {
-        if (ststep <= 0) {
-            throw std::invalid_argument("st:step must be positive when stabilization is enabled");
+        if constexpr (zflag != tensor_flag::periodic) {
+            throw std::invalid_argument(
+                "spectral filtering requires ns:zperiod=1");
         }
-        eigenvectors_storage s(fn);
-        s.load(eigenvectors, c1);
-        if (eigenvectors.empty()) {
-            throw std::runtime_error("stabilization input contains no eigenvectors");
+        if (spectral_start < 0) {
+            throw std::invalid_argument("st:start_step must be nonnegative");
         }
-        mgsch<T>(eigenvectors, (int) eigenvectors.size(), (int) eigenvectors[0].size());
+        if (spectral_schedule != "once"
+            && spectral_schedule != "periodic"
+            && spectral_schedule != "measure_only") {
+            throw std::invalid_argument(
+                "st:schedule must be once, periodic, or measure_only");
+        }
+        if ((spectral_schedule == "periodic"
+             || spectral_schedule == "measure_only")
+            && spectral_interval <= 0) {
+            throw std::invalid_argument("st:interval must be positive");
+        }
+        if (spectral_mode == "whole_fourier_blocks") {
+            removal = NSCylSpectralRemoval::whole_fourier_blocks;
+        } else if (spectral_mode != "unstable_eigenspace") {
+            throw std::invalid_argument(
+                "st:mode must be unstable_eigenspace or whole_fourier_blocks");
+        }
+
+        NSCylSpectralModeSet<T> modes;
+        NSCylSpectralMetadata stored_metadata;
+        const NSCylSpectralStorage storage(spectral_input);
+        storage.load(modes, stored_metadata);
+        const auto expected = runtime_spectral_metadata<T>(c, stored_metadata);
+        storage.load(modes, stored_metadata, expected);
+        require_spectral_threshold(
+            "growth_tol",
+            c.get("st", "growth_tol", stored_metadata.growth_tolerance),
+            stored_metadata.growth_tolerance);
+        require_spectral_threshold(
+            "residual_tol",
+            c.get("st", "residual_tol", stored_metadata.residual_tolerance),
+            stored_metadata.residual_tolerance);
+        require_spectral_threshold(
+            "condition_limit",
+            c.get("st", "condition_limit", stored_metadata.condition_limit),
+            stored_metadata.condition_limit);
+
+        if (modes.empty()) {
+            printf("spectral filter: input contains no unstable modes; "
+                   "state will not be changed\n");
+            stabilize = false;
+        } else {
+            Task couette(c);
+            NSCylStateLayout<T> couette_layout(couette);
+            couette_layout.initialize_couette_state(couette);
+            couette_reference = couette_layout.pack(couette);
+            NSCylSpectralProjector<T> projector(
+                modes, stored_metadata.condition_limit);
+            spectral_filter = std::make_unique<NSCylSpectralFilter<T>>(
+                ns.nr, ns.nphi, ns.nz, std::move(projector));
+            printf("spectral filter: file=%s blocks=%zu real_dimension=%d "
+                   "mode=%s schedule=%s\n",
+                   spectral_input.c_str(),
+                   spectral_filter->projector().blocks().size(),
+                   spectral_filter->projector().real_dimension(),
+                   spectral_mode.c_str(), spectral_schedule.c_str());
+
+            if (!spectral_log.empty()) {
+                modal_log.open(spectral_log);
+                if (!modal_log) {
+                    throw std::runtime_error(
+                        "cannot open spectral diagnostics log: "+spectral_log);
+                }
+                modal_log << "step,time,m,l,block_norm,removed_norm,"
+                             "remaining_unstable_norm\n";
+            }
+        }
     }
 
     velocity_plotter<T,check,typename Task::tensor_flags> plot(
@@ -96,10 +190,39 @@ void calc(const Config& c) {
                 plot.vtk_out(format("step_%07d.vtk", ns.time_index), ns.time_index);
             }
         }
-        if (stabilize && (i+1) % ststep == 0) {
-            u = ns.u; v = ns.v; w = ns.w; p = ns.p;
-            ortoproj_along(&vec[0], eigenvectors, eigenvectors.size(), eig_size);
-            ns.u = u; ns.v = v; ns.w = w; ns.p = p;
+        bool run_spectral_filter = false;
+        if (stabilize && ns.time_index >= spectral_start) {
+            if (spectral_schedule == "once") {
+                run_spectral_filter = !one_shot_done;
+            } else {
+                run_spectral_filter =
+                    (ns.time_index-spectral_start)%spectral_interval == 0;
+            }
+        }
+        if (run_spectral_filter) {
+            const auto diagnostics = spectral_schedule == "measure_only"
+                ? spectral_filter->measure(ns, couette_reference, removal)
+                : spectral_filter->remove(ns, couette_reference, removal);
+            one_shot_done = true;
+            printf("SPECTRAL_FILTER step=%d time=%.9e "
+                   "perturbation=%.9e removed=%.9e remaining=%.9e\n",
+                   ns.time_index, static_cast<double>(ns.time_index*ns.dt),
+                   diagnostics.packed_perturbation_norm,
+                   diagnostics.removed_norm,
+                   diagnostics.remaining_unstable_norm);
+            for (const auto& block : diagnostics.blocks) {
+                printf("SPECTRAL_BLOCK m=%d l=%d norm=%.9e removed=%.9e "
+                       "remaining=%.9e\n",
+                       block.m, block.l, block.block_norm,
+                       block.removed_norm, block.remaining_unstable_norm);
+                if (modal_log) {
+                    modal_log << ns.time_index << ','
+                              << static_cast<double>(ns.time_index*ns.dt) << ','
+                              << block.m << ',' << block.l << ','
+                              << block.block_norm << ',' << block.removed_norm
+                              << ',' << block.remaining_unstable_norm << '\n';
+                }
+            }
         }
     }
 
