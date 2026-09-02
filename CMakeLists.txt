@@ -151,6 +151,7 @@ set(SRC
     src/ns_cyl.cpp
     src/velocity_plot.cpp
     src/eigenvectors_storage.cpp
+    src/ns_cyl_spectral_storage.cpp
     src/unixbench_score.cpp
     )
 add_library(fdm ${SRC})

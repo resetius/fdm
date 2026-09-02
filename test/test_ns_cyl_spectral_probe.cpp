@@ -20,6 +20,7 @@
 #include "ns_cyl_fourier_block.h"
 #include "ns_cyl_spectral_modes.h"
 #include "ns_cyl_spectral_projector.h"
+#include "ns_cyl_spectral_storage.h"
 
 using fdm::arpack_solver;
 using fdm::NSCylFourierBlockReference;
@@ -433,6 +434,13 @@ void run(const Config& config) {
                block.m(), block.l(), block.dimension(),
                block.condition_number(), block.gram_condition_number(),
                block.min_pivot());
+    }
+    const string output = config.get("spectral", "output", string());
+    if (!output.empty()) {
+        const auto metadata = fdm::make_ns_cyl_spectral_metadata<T>(config);
+        fdm::NSCylSpectralStorage(output).save(mode_set, metadata);
+        printf("saved spectrum: %s groups=%zu real_dimension=%d\n",
+               output.c_str(), mode_set.size(), mode_set.real_dimension());
     }
 
     printf("probe candidate blocks: %d / %zu\n",

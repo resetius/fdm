@@ -7,6 +7,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "blas.h"
@@ -29,6 +30,8 @@ struct NSCylSpectralMode {
     double frequency = 0;
     double right_residual = std::numeric_limits<double>::infinity();
     double left_residual = std::numeric_limits<double>::infinity();
+    double block_condition_number =
+        std::numeric_limits<double>::quiet_NaN();
     bool growing = false;
     bool residual_accepted = false;
 
@@ -95,10 +98,18 @@ struct NSCylDenseBlockSpectrum {
 template<typename T>
 class NSCylSpectralModeSet {
 public:
+    void append_filterable_mode(NSCylSpectralMode<T> mode) {
+        if (!mode.filterable_unstable()) {
+            throw std::invalid_argument(
+                "NSCylSpectralModeSet accepts only filterable unstable modes");
+        }
+        modes_.push_back(std::move(mode));
+    }
+
     void append_filterable(const NSCylDenseBlockSpectrum<T>& spectrum) {
         for (const auto& mode : spectrum.modes) {
             if (mode.filterable_unstable()) {
-                modes_.push_back(mode);
+                append_filterable_mode(mode);
             }
         }
     }
