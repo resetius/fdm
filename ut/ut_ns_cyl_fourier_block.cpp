@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "blas.h"
 #include "config.h"
 #include "ns_cyl_fourier_block.h"
+#include "ns_cyl_spectral_modes.h"
 #include "projection.h"
 
 extern "C" {
@@ -33,6 +33,30 @@ Config make_config(int nr=4, int nz=4, int nphi=4) {
         "--ns:u0=1.0",
         "--ns:Re=20.0",
         "--ns:dt=0.0001",
+        "--ns:verbose=0"
+    };
+    std::vector<char*> argv;
+    for (auto& argument : arguments) {
+        argv.push_back(argument.data());
+    }
+    config.rewrite(static_cast<int>(argv.size()), argv.data());
+    return config;
+}
+
+Config make_re44_config(int nr=8, int nz=8, int nphi=8) {
+    Config config;
+    std::vector<std::string> arguments = {
+        "ut_ns_cyl_fourier_block",
+        "--ns:r=1.5707963267948966",
+        "--ns:R=3.141592653589793",
+        "--ns:h1=0.0",
+        "--ns:h2=10.0",
+        "--ns:nr="+std::to_string(nr),
+        "--ns:nz="+std::to_string(nz),
+        "--ns:nphi="+std::to_string(nphi),
+        "--ns:u0=1.0",
+        "--ns:Re=44.0",
+        "--ns:dt=0.001",
         "--ns:verbose=0"
     };
     std::vector<char*> argv;
@@ -182,6 +206,119 @@ void test_linear_step_preserves_real_packed_block(void**) {
     assert_true(leakage_sum < 2e-12);
 }
 
+void test_dense_spectrum_groups_complex_pair_in_real_columns(void**) {
+    // The 2x2 block has eigenvalues 1.1 +/- 0.2i. Coupling from the third
+    // coordinate makes the full real matrix nonsymmetric and nonnormal.
+    const double matrix[] = {
+        1.1,  0.2, 0.0,
+       -0.2,  1.1, 0.0,
+        0.4, -0.1, 0.8
+    };
+    const double duration = 0.5;
+    auto spectrum = fdm::analyze_ns_cyl_dense_matrix(
+        matrix, 3, duration, 0.0, 1e-12);
+
+    assert_int_equal(spectrum.block_size, 3);
+    assert_int_equal(spectrum.modes.size(), 2);
+    assert_true(spectrum.max_right_residual < 1e-14);
+    assert_true(spectrum.max_left_residual < 1e-14);
+
+    const fdm::NSCylSpectralMode<double>* pair = nullptr;
+    const fdm::NSCylSpectralMode<double>* real_mode = nullptr;
+    for (const auto& mode : spectrum.modes) {
+        if (mode.column_count == 2) {
+            pair = &mode;
+        } else {
+            real_mode = &mode;
+        }
+    }
+    assert_non_null(pair);
+    assert_non_null(real_mode);
+    assert_int_equal(pair->right_columns.size(), 6);
+    assert_int_equal(pair->left_columns.size(), 6);
+    assert_true(std::abs(pair->multiplier.real()-1.1) < 1e-14);
+    assert_true(std::abs(pair->multiplier.imag()-0.2) < 1e-14);
+    assert_true(std::abs(pair->growth_rate
+        -std::log(std::hypot(1.1, 0.2))/duration) < 1e-14);
+    assert_true(std::abs(pair->frequency
+        -std::atan2(0.2, 1.1)/duration) < 1e-14);
+    assert_true(pair->filterable_unstable());
+    assert_false(real_mode->growing);
+
+    for (int i = 0; i+1 < 3; ++i) {
+        if (spectrum.eigenvalues[i].imag() > 0) {
+            assert_true(std::abs(spectrum.eigenvalues[i].real()
+                -spectrum.eigenvalues[i+1].real()) < 1e-14);
+            assert_true(std::abs(spectrum.eigenvalues[i].imag()
+                +spectrum.eigenvalues[i+1].imag()) < 1e-14);
+        }
+    }
+
+    auto later_block = spectrum;
+    auto earlier_block = spectrum;
+    auto faster_earlier_block = spectrum;
+    for (auto& mode : later_block.modes) {
+        mode.m = 2;
+        mode.l = 1;
+    }
+    for (auto& mode : earlier_block.modes) {
+        mode.m = 0;
+        mode.l = 3;
+    }
+    for (auto& mode : faster_earlier_block.modes) {
+        mode.m = 0;
+        mode.l = 3;
+        mode.growth_rate += 1.0;
+    }
+    fdm::NSCylSpectralModeSet<double> modes;
+    modes.append_filterable(later_block);
+    modes.append_filterable(earlier_block);
+    modes.append_filterable(faster_earlier_block);
+    modes.sort_by_block_and_growth();
+    assert_int_equal(modes.size(), 3);
+    assert_int_equal(modes.real_dimension(), 6);
+    assert_int_equal(modes.modes()[0].m, 0);
+    assert_int_equal(modes.modes()[0].l, 3);
+    assert_int_equal(modes.modes()[1].m, 0);
+    assert_int_equal(modes.modes()[1].l, 3);
+    assert_true(modes.modes()[0].growth_rate
+                > modes.modes()[1].growth_rate);
+    assert_int_equal(modes.modes()[2].m, 2);
+    assert_int_equal(modes.modes()[2].l, 1);
+}
+
+void test_dense_spectrum_of_real_ns_cyl_block(void**) {
+    Config config = make_re44_config();
+    fdm::NSCylFourierBlockReference<double, true> block(config, 0, 3);
+    const auto spectrum = fdm::solve_ns_cyl_dense_block(
+        block, 0.001, 1e-8, 1e-10);
+
+    assert_int_equal(spectrum.m, 0);
+    assert_int_equal(spectrum.l, 3);
+    assert_int_equal(spectrum.phase_count, 2);
+    assert_int_equal(spectrum.radial_size, 4*8-1);
+    assert_int_equal(spectrum.block_size, 2*spectrum.radial_size);
+    assert_int_equal(spectrum.operator_steps, 1);
+    assert_int_equal(spectrum.operator_calls, spectrum.block_size);
+    assert_false(spectrum.pressure_gauge_fixed);
+    assert_true(spectrum.max_fourier_leakage < 2e-12);
+    assert_true(spectrum.max_right_residual < 1e-11);
+    assert_true(spectrum.max_left_residual < 1e-11);
+
+    int real_columns = 0;
+    for (const auto& mode : spectrum.modes) {
+        assert_int_equal(mode.m, 0);
+        assert_int_equal(mode.l, 3);
+        assert_true(mode.column_count == 1 || mode.column_count == 2);
+        assert_int_equal(mode.right_columns.size(),
+                         mode.column_count*spectrum.block_size);
+        assert_int_equal(mode.left_columns.size(),
+                         mode.column_count*spectrum.block_size);
+        real_columns += mode.column_count;
+    }
+    assert_int_equal(real_columns, spectrum.block_size);
+}
+
 
 // Спектральный проектор на настоящем операторе блока, а не на модельной
 // матрице. По содержанию это chafe2d_check_projection2 / bar_check_projection2
@@ -194,61 +331,34 @@ void test_spectral_projector_on_block(void**) {
     Config config = make_config();
     fdm::NSCylFourierBlockReference<double, true> block(config, 0, 1, 100);
     const int n = block.size();
+    const auto spectrum = fdm::solve_ns_cyl_dense_block(
+        block, 0.0001, -INFINITY, 1e-10);
 
-    // матрица блока по столбцам, column major как хочет geev
-    std::vector<double> a(static_cast<std::size_t>(n)*n);
-    {
-        std::vector<double> basis(n, 0.0);
-        std::vector<double> image(n);
-        for (int column = 0; column < n; ++column) {
-            basis[column] = 1;
-            block.apply(image.data(), basis.data());
-            basis[column] = 0;
-            for (int row = 0; row < n; ++row) {
-                a[static_cast<std::size_t>(column)*n+row] = image[row];
-            }
-        }
+    std::vector<int> groups(spectrum.modes.size());
+    for (int i = 0; i < static_cast<int>(groups.size()); ++i) {
+        groups[i] = i;
     }
-
-    std::vector<double> factored(a);   // geev разрушает матрицу
-    std::vector<double> wr(n), wi(n);
-    std::vector<double> vl(static_cast<std::size_t>(n)*n);
-    std::vector<double> vr(static_cast<std::size_t>(n)*n);
-    std::vector<double> work(8*n);
-    int info = 0;
-    fdm::lapack::geev("V", "V", n, factored.data(), n, wr.data(), wi.data(),
-                      vl.data(), n, vr.data(), n, work.data(), 8*n, &info);
-    assert_int_equal(info, 0);
-
-    // вещественное значение -- один столбец, сопряженная пара -- два
-    struct Group {
-        int first;
-        int count;
-        double magnitude;
-    };
-    std::vector<Group> groups;
-    for (int i = 0; i < n; ) {
-        const int count = (wi[i] == 0.0) ? 1 : 2;
-        groups.push_back({i, count, std::hypot(wr[i], wi[i])});
-        i += count;
-    }
-    std::sort(groups.begin(), groups.end(), [](const Group& x, const Group& y) {
-        return x.magnitude > y.magnitude;
+    std::sort(groups.begin(), groups.end(), [&](int x, int y) {
+        return std::abs(spectrum.modes[x].multiplier)
+            > std::abs(spectrum.modes[y].multiplier);
     });
 
     // старшие по модулю группы играют роль неустойчивого подпространства
-    auto column_of = [&](const std::vector<double>& v, int column) {
-        return std::vector<double>(v.begin()+static_cast<std::size_t>(column)*n,
-                                   v.begin()+static_cast<std::size_t>(column+1)*n);
+    auto column_of = [&](const fdm::NSCylSpectralMode<double>& mode,
+                         bool left, int column) {
+        const auto& values = left ? mode.left_columns : mode.right_columns;
+        return std::vector<double>(
+            values.begin()+static_cast<std::size_t>(column)*n,
+            values.begin()+static_cast<std::size_t>(column+1)*n);
     };
 
     std::vector<std::vector<double>> e, et;
     std::size_t used = 0;
     while (used < groups.size() && e.size() < 4) {
-        const Group& group = groups[used++];
-        for (int k = 0; k < group.count; ++k) {
-            e.push_back(column_of(vr, group.first+k));
-            et.push_back(column_of(vl, group.first+k));
+        const auto& mode = spectrum.modes[groups[used++]];
+        for (int k = 0; k < mode.column_count; ++k) {
+            e.push_back(column_of(mode, false, k));
+            et.push_back(column_of(mode, true, k));
         }
     }
     const int m = static_cast<int>(e.size());
@@ -280,7 +390,8 @@ void test_spectral_projector_on_block(void**) {
 
     // P r = 0 для вектора из дополнительного инвариантного подпространства
     {
-        const auto outside = column_of(vr, groups[used].first);
+        const auto outside = column_of(
+            spectrum.modes[groups[used]], false, 0);
         const auto projected = project(outside);
         for (int k = 0; k < n; ++k) {
             assert_true(std::abs(projected[k]) < tol);
@@ -358,6 +469,8 @@ int main() {
         cmocka_unit_test(test_block_layout_and_round_trip),
         cmocka_unit_test(test_zero_block_uses_weighted_zero_mean_pressure),
         cmocka_unit_test(test_linear_step_preserves_real_packed_block),
+        cmocka_unit_test(test_dense_spectrum_groups_complex_pair_in_real_columns),
+        cmocka_unit_test(test_dense_spectrum_of_real_ns_cyl_block),
         cmocka_unit_test(test_spectral_projector_on_block),
         cmocka_unit_test(test_float_block_apply_is_finite_and_nonzero),
     };

@@ -119,6 +119,7 @@ private:
 template<typename T, bool check=false>
 class NSCylFourierBlockReference {
 public:
+    using value_type = T;
     using Task = NSCyl<T, check, tensor_flag::periodic>;
     using tensor = typename Task::tensor;
     using StateLayout = NSCylStateLayout<T>;
@@ -172,6 +173,10 @@ public:
 
     bool pressure_gauge_fixed() const {
         return pressure_gauge_fixed_;
+    }
+
+    int operator_steps() const {
+        return operator_steps_;
     }
 
     int m() const {

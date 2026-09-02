@@ -16,9 +16,9 @@
 #endif
 
 #include "arpack_solver.h"
-#include "blas.h"
 #include "config.h"
 #include "ns_cyl_fourier_block.h"
+#include "ns_cyl_spectral_modes.h"
 
 using fdm::arpack_solver;
 using fdm::NSCylFourierBlockReference;
@@ -50,15 +50,9 @@ struct ProbeResult {
     bool candidate = false;
     bool guard_reached = false;
     bool dense_computed = false;
-    int dense_operator_calls = 0;
-    int dense_unstable_count = 0;
     string error;
-    double dense_max_right_residual = 0;
-    double dense_max_left_residual = 0;
     vector<complex<T>> eigenvalues;
-    vector<complex<T>> dense_eigenvalues;
-    vector<double> dense_right_residual;
-    vector<double> dense_left_residual;
+    fdm::NSCylDenseBlockSpectrum<T> dense_spectrum;
 };
 
 template<typename T>
@@ -71,128 +65,12 @@ vector<int> sorted_indices(const vector<complex<T>>& eigenvalues) {
     return indices;
 }
 
-// matrix - column major, разрушается. Для комплексно сопряженной пары i, i+1
-// собственный вектор это столбец i (Re) и столбец i+1 (Im).
 template<typename T>
-int dense_geev(int n, T* matrix, T* real, T* imaginary, T* left, T* right) {
-    vector<T> work(8*n);
-    int info = 0;
-    fdm::lapack::geev("V", "V", n, matrix, n, real, imaginary,
-                      left, n, right, n, work.data(), 8*n, &info);
-    return info;
-}
-
-// y = A x, a - column major
-template<typename T>
-void matvec(int n, const T* a, const T* x, T* y) {
-    for (int row = 0; row < n; ++row) {
-        y[row] = 0;
-    }
-    for (int column = 0; column < n; ++column) {
-        const T value = x[column];
-        for (int row = 0; row < n; ++row) {
-            y[row] += a[static_cast<std::size_t>(column)*n+row]*value;
-        }
-    }
-}
-
-// y = A^t x
-template<typename T>
-void matvec_transposed(int n, const T* a, const T* x, T* y) {
-    for (int row = 0; row < n; ++row) {
-        T sum = 0;
-        for (int column = 0; column < n; ++column) {
-            sum += a[static_cast<std::size_t>(row)*n+column]*x[column];
-        }
-        y[row] = sum;
-    }
-}
-
-template<typename T>
-double norm2(int n, const T* x) {
-    double sum = 0;
-    for (int i = 0; i < n; ++i) {
-        sum += static_cast<double>(x[i])*x[i];
-    }
-    return sum;
-}
-
-// Невязки считаются независимо от lapack:
-//   right = ||A r - mu r|| / (||A|| ||r||)
-//   left  = ||A^t l - conj(mu) l|| / (||A|| ||l||)
-// Вещественное mu -- один столбец, сопряженная пара -- два соседних, и оба
-// вектора пары дают одну и ту же невязку.
-template<typename T>
-void eigen_residuals(int n, const T* a, const T* real, const T* imaginary,
-                     const T* left, const T* right, double matrix_norm,
-                     vector<double>& right_residual,
-                     vector<double>& left_residual)
-{
-    right_residual.assign(n, 0);
-    left_residual.assign(n, 0);
-
-    vector<T> ar(n);
-    vector<T> ai(n);
-
-    for (int i = 0; i < n; ) {
-        const int count = (imaginary[i] == T(0)) ? 1 : 2;
-        const T* vr = right+static_cast<std::size_t>(i)*n;
-        const T* vl = left+static_cast<std::size_t>(i)*n;
-        const T wr = real[i];
-        const T wi = imaginary[i];
-
-        double residual = 0;
-        double scale = 0;
-
-        if (count == 1) {
-            matvec(n, a, vr, ar.data());
-            for (int k = 0; k < n; ++k) {
-                ar[k] -= wr*vr[k];
-            }
-            residual = norm2(n, ar.data());
-            scale = norm2(n, vr);
-        } else {
-            const T* vr2 = vr+n;
-            matvec(n, a, vr, ar.data());
-            matvec(n, a, vr2, ai.data());
-            for (int k = 0; k < n; ++k) {
-                ar[k] -= wr*vr[k]-wi*vr2[k];
-                ai[k] -= wr*vr2[k]+wi*vr[k];
-            }
-            residual = norm2(n, ar.data())+norm2(n, ai.data());
-            scale = norm2(n, vr)+norm2(n, vr2);
-        }
-        const double value = std::sqrt(residual)/(matrix_norm*std::sqrt(scale));
-        for (int k = 0; k < count; ++k) {
-            right_residual[i+k] = value;
-        }
-
-        if (count == 1) {
-            matvec_transposed(n, a, vl, ar.data());
-            for (int k = 0; k < n; ++k) {
-                ar[k] -= wr*vl[k];
-            }
-            residual = norm2(n, ar.data());
-            scale = norm2(n, vl);
-        } else {
-            const T* vl2 = vl+n;
-            matvec_transposed(n, a, vl, ar.data());
-            matvec_transposed(n, a, vl2, ai.data());
-            for (int k = 0; k < n; ++k) {
-                ar[k] -= wr*vl[k]+wi*vl2[k];
-                ai[k] -= wr*vl2[k]-wi*vl[k];
-            }
-            residual = norm2(n, ar.data())+norm2(n, ai.data());
-            scale = norm2(n, vl)+norm2(n, vl2);
-        }
-        const double left_value =
-            std::sqrt(residual)/(matrix_norm*std::sqrt(scale));
-        for (int k = 0; k < count; ++k) {
-            left_residual[i+k] = left_value;
-        }
-
-        i += count;
-    }
+double residual_tolerance(const Config& config) {
+    const double roundoff_floor =
+        64.0*static_cast<double>(std::numeric_limits<T>::epsilon());
+    return std::max(roundoff_floor,
+        config.get("spectral", "residual_tol", 1e-10));
 }
 
 template<typename T>
@@ -235,6 +113,7 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
         config.get("spectral", "tol", default_tolerance));
     const double growth_tolerance = config.get(
         "spectral", "growth_tol", 1e-8);
+    const double residual_limit = residual_tolerance<T>(config);
     const double dt = config.get("ns", "dt", 0.001);
 
     if (nev <= 0 || max_nev <= 0) {
@@ -336,59 +215,12 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
         config.get("spectral", "dense_candidates", 1) != 0;
     const bool dense_all = config.get("spectral", "dense_all", 0) != 0;
     if (dense_all || (dense_candidates && result.candidate)) {
-        vector<T> matrix(static_cast<std::size_t>(n)*n);
-        vector<T> basis(n, T(0));
-        vector<T> image(n);
-        for (int column = 0; column < n; ++column) {
-            basis[column] = T(1);
-            block->apply(image.data(), basis.data());
-            basis[column] = T(0);
-            for (int row = 0; row < n; ++row) {
-                matrix[static_cast<std::size_t>(column)*n+row] = image[row];
-            }
-        }
-        result.dense_operator_calls = n;
-        result.max_leakage = std::max(result.max_leakage,
-                                      block->last_fourier_leakage());
-
-        vector<T> real(n);
-        vector<T> imaginary(n);
-        vector<T> left(static_cast<std::size_t>(n)*n);
-        vector<T> rightv(static_cast<std::size_t>(n)*n);
-        vector<T> factored(matrix);   // geev разрушает матрицу
-        const int info = dense_geev(n, factored.data(), real.data(),
-                                    imaginary.data(), left.data(),
-                                    rightv.data());
-        if (info != 0) {
-            throw std::runtime_error(
-                "geev failed with info="+std::to_string(info));
-        }
-
-        const double matrix_norm = std::sqrt(
-            norm2(static_cast<int>(matrix.size()), matrix.data()));
-        eigen_residuals(n, matrix.data(), real.data(), imaginary.data(),
-                        left.data(), rightv.data(), matrix_norm,
-                        result.dense_right_residual,
-                        result.dense_left_residual);
-        for (int i = 0; i < n; ++i) {
-            result.dense_max_right_residual = std::max(
-                result.dense_max_right_residual, result.dense_right_residual[i]);
-            result.dense_max_left_residual = std::max(
-                result.dense_max_left_residual, result.dense_left_residual[i]);
-        }
-
+        result.dense_spectrum = fdm::solve_ns_cyl_dense_block(
+            *block, dt, growth_tolerance, residual_limit);
+        result.max_leakage = std::max(
+            result.max_leakage,
+            result.dense_spectrum.max_fourier_leakage);
         result.dense_computed = true;
-        result.dense_eigenvalues.reserve(n);
-        const double duration = operator_steps*dt;
-        const double unstable_threshold =
-            std::exp(growth_tolerance*duration);
-        for (int i = 0; i < n; ++i) {
-            const complex<T> value(real[i], imaginary[i]);
-            result.dense_eigenvalues.push_back(value);
-            if (std::abs(value) > unstable_threshold) {
-                ++result.dense_unstable_count;
-            }
-        }
     }
 
     return result;
@@ -407,6 +239,9 @@ void run(const Config& config) {
     const bool include_zero = config.get("spectral", "include_zero", 0) != 0;
     const int operator_steps = config.get("spectral", "operator_steps", 1);
     const double dt = config.get("ns", "dt", 0.001);
+    const double growth_tolerance = config.get(
+        "spectral", "growth_tol", 1e-8);
+    const double residual_limit = residual_tolerance<T>(config);
 
     if (m_min > m_max || l_min > l_max) {
         throw std::invalid_argument("empty Fourier block range");
@@ -443,6 +278,8 @@ void run(const Config& config) {
            config.get("ns", "h2", 10.0));
     printf("blocks=%zu m=[%d,%d] l=[%d,%d] threads=%d\n",
            blocks.size(), m_min, m_max, l_min, l_max, threads);
+    printf("selection: growth_tol=%.3e residual_tol=%.3e\n",
+           growth_tolerance, residual_limit);
     printf("packing: q=cosine, N-q=sine; endpoints 0/Nyquist have one phase\n");
 
     vector<ProbeResult<T>> results(blocks.size());
@@ -462,7 +299,10 @@ void run(const Config& config) {
     int probe_candidate_count = 0;
     int dense_candidate_count = 0;
     int dense_unstable_count = 0;
+    int dense_unstable_group_count = 0;
+    int dense_rejected_count = 0;
     int dense_block_count = 0;
+    fdm::NSCylSpectralModeSet<T> mode_set;
     for (const auto& result : results) {
         if (!result.error.empty()) {
             printf("block (m=%d,l=%d): ERROR: %s\n",
@@ -499,46 +339,55 @@ void run(const Config& config) {
         }
 
         if (result.dense_computed) {
-            const auto dense_indices = sorted_indices(result.dense_eigenvalues);
-            const auto leading = result.dense_eigenvalues[dense_indices.front()];
+            const auto& spectrum = result.dense_spectrum;
+            const auto dense_indices = sorted_indices(spectrum.eigenvalues);
+            const auto leading = spectrum.eigenvalues[dense_indices.front()];
             const double leading_magnitude = std::abs(leading);
             const double leading_growth = std::log(leading_magnitude)
                 /(operator_steps*dt);
-            printf("DENSE_COUNT m=%d l=%d unstable=%d total=%d calls=%d "
+            printf("DENSE_COUNT m=%d l=%d unstable=%d groups=%d "
+                   "total=%d calls=%d "
                    "leading_abs=%.16e leading_real=%.16e "
                    "leading_imag=%+.16e leading_growth=%+.9e "
                    "max_right_res=%.3e max_left_res=%.3e\n",
                    result.block.m, result.block.l,
-                   result.dense_unstable_count,
-                   static_cast<int>(result.dense_eigenvalues.size()),
-                   result.dense_operator_calls,
+                   spectrum.filterable_unstable_dimension(),
+                   spectrum.filterable_unstable_group_count(),
+                   static_cast<int>(spectrum.eigenvalues.size()),
+                   spectrum.operator_calls,
                    leading_magnitude,
                    static_cast<double>(leading.real()),
                    static_cast<double>(leading.imag()), leading_growth,
-                   result.dense_max_right_residual,
-                   result.dense_max_left_residual);
+                   spectrum.max_right_residual,
+                   spectrum.max_left_residual);
 
+            vector<int> mode_indices(spectrum.modes.size());
+            std::iota(mode_indices.begin(), mode_indices.end(), 0);
+            std::stable_sort(mode_indices.begin(), mode_indices.end(),
+                [&](int a, int b) {
+                    return spectrum.modes[a].growth_rate
+                        > spectrum.modes[b].growth_rate;
+                });
             int unstable_position = 0;
-            for (int dense_index : dense_indices) {
-                const auto value = result.dense_eigenvalues[dense_index];
-                const double magnitude = std::abs(value);
-                const double growth = magnitude > 0
-                    ? std::log(magnitude)/(operator_steps*dt)
-                    : -INFINITY;
-                if (growth <= config.get("spectral", "growth_tol", 1e-8)) {
+            for (int mode_index : mode_indices) {
+                const auto& mode = spectrum.modes[mode_index];
+                if (!mode.growing) {
                     continue;
                 }
-                printf("DENSE_UNSTABLE m=%d l=%d index=%d abs=%.16e "
+                printf("%s m=%d l=%d index=%d columns=%d abs=%.16e "
                        "real=%.16e imag=%+.16e growth=%+.9e "
-                       "right_res=%.3e left_res=%.3e\n",
+                       "frequency=%+.9e right_res=%.3e left_res=%.3e\n",
+                       mode.residual_accepted
+                           ? "DENSE_UNSTABLE" : "DENSE_REJECTED",
                        result.block.m, result.block.l, unstable_position++,
-                       magnitude, static_cast<double>(value.real()),
-                       static_cast<double>(value.imag()), growth,
-                       result.dense_right_residual[dense_index],
-                       result.dense_left_residual[dense_index]);
+                       mode.column_count, std::abs(mode.multiplier),
+                       static_cast<double>(mode.multiplier.real()),
+                       static_cast<double>(mode.multiplier.imag()),
+                       mode.growth_rate, mode.frequency,
+                       mode.right_residual, mode.left_residual);
             }
         } else if (result.guard_reached) {
-            printf("DENSE_COUNT m=%d l=%d unstable=0 total=0 calls=0 "
+            printf("DENSE_COUNT m=%d l=%d unstable=0 groups=0 total=0 calls=0 "
                    "leading_abs=nan leading_growth=nan certified_by_probe=1\n",
                    result.block.m, result.block.l);
         }
@@ -557,22 +406,35 @@ void run(const Config& config) {
 
         probe_candidate_count += result.candidate ? 1 : 0;
         if (result.dense_computed) {
+            const auto& spectrum = result.dense_spectrum;
             ++dense_block_count;
-            dense_candidate_count += result.dense_unstable_count > 0 ? 1 : 0;
-            dense_unstable_count += result.dense_unstable_count;
+            dense_candidate_count +=
+                spectrum.filterable_unstable_dimension() > 0 ? 1 : 0;
+            dense_unstable_count += spectrum.filterable_unstable_dimension();
+            dense_unstable_group_count +=
+                spectrum.filterable_unstable_group_count();
+            dense_rejected_count += spectrum.growing_dimension()
+                -spectrum.filterable_unstable_dimension();
+            mode_set.append_filterable(spectrum);
         }
     }
+
+    mode_set.sort_by_block_and_growth();
 
     printf("probe candidate blocks: %d / %zu\n",
            probe_candidate_count, results.size());
     if (dense_block_count > 0) {
         printf("dense unstable blocks: %d / %d computed (%zu scanned)\n",
                dense_candidate_count, dense_block_count, results.size());
-        printf("dense unstable eigenvalues in real packed blocks: %d\n",
-               dense_unstable_count);
+        printf("filterable unstable modes: groups=%d real_columns=%d "
+               "rejected_columns=%d\n",
+               dense_unstable_group_count, dense_unstable_count,
+               dense_rejected_count);
+        printf("mode set: groups=%zu real_dimension=%d\n",
+               mode_set.size(), mode_set.real_dimension());
     }
-    printf("note: for complex Ritz pairs dneupd stores Re(v), Im(v) in "
-           "adjacent real columns\n");
+    printf("note: complex pairs are stored as adjacent real Re(v), Im(v) "
+           "columns\n");
 }
 
 } // namespace
