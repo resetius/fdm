@@ -206,6 +206,63 @@ public:
         }
     }
 
+    int zero_gauge_block_size() const {
+        return radial_size-1;
+    }
+
+    // The (m,l)=(0,0) pressure is defined modulo a spatial constant. Keep
+    // p[1]...p[nr-1] as coordinates and reconstruct p[nr] from sum(r_j p_j)=0.
+    template<typename Geometry>
+    void expand_zero_gauge_block(const Geometry& geometry,
+                                 const T* reduced, T* full) const {
+        std::copy(reduced, reduced+zero_gauge_block_size(), full);
+
+        long double weighted_sum = 0;
+        for (int j = 1; j < nr; ++j) {
+            const long double r = geometry.r0+(j-0.5L)*geometry.dr;
+            weighted_sum += r*static_cast<long double>(
+                full[radial_index(Component::p, j)]);
+        }
+        const long double last_r = geometry.r0+(nr-0.5L)*geometry.dr;
+        full[radial_index(Component::p, nr)] =
+            static_cast<T>(-weighted_sum/last_r);
+    }
+
+    // Choose the same zero-mean representative after applying the operator,
+    // then return its independent coordinates.
+    template<typename Geometry>
+    void reduce_zero_gauge_block(const Geometry& geometry,
+                                 const T* full, T* reduced) const {
+        long double weighted_sum = 0;
+        long double weight = 0;
+        for (int j = 1; j <= nr; ++j) {
+            const long double r = geometry.r0+(j-0.5L)*geometry.dr;
+            weighted_sum += r*static_cast<long double>(
+                full[radial_index(Component::p, j)]);
+            weight += r;
+        }
+        const T mean = static_cast<T>(weighted_sum/weight);
+
+        std::copy(full, full+zero_gauge_block_size(), reduced);
+        for (int j = 1; j < nr; ++j) {
+            reduced[radial_index(Component::p, j)] -= mean;
+        }
+    }
+
+    template<typename Geometry>
+    double zero_block_pressure_mean(const Geometry& geometry,
+                                    const T* full) const {
+        long double weighted_sum = 0;
+        long double weight = 0;
+        for (int j = 1; j <= nr; ++j) {
+            const long double r = geometry.r0+(j-0.5L)*geometry.dr;
+            weighted_sum += r*static_cast<long double>(
+                full[radial_index(Component::p, j)]);
+            weight += r;
+        }
+        return static_cast<double>(weighted_sum/weight);
+    }
+
     template<typename Task>
     void pack(Task& state, T* destination) const {
         int index = u_offset;

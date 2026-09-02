@@ -18,6 +18,7 @@
 
 // ── SYCL + simulation ─────────────────────────────────────────────────────────
 #include "ns_cyl_sycl.h"
+#include "ns_cyl_state.h"
 
 // ── Standard ──────────────────────────────────────────────────────────────────
 #include <charconv>
@@ -245,38 +246,30 @@ struct Demo {
         init_couette_base();
     }
 
-    // Start from the Couette profile w_C(r) = A*r + B/r instead of from rest.
-    // This is the same steady state the spectral probe linearises around, see
-    // initialize_couette_base() in src/ns_cyl_fourier_block.h: same formula,
-    // same cell-centred radii, same ghost values.  Starting from rest reaches
-    // the same flow eventually, but only after a spin-up transient that has
-    // nothing to do with the linear operator; from here the early growth of a
-    // Taylor mode is directly comparable with the growth_rate the probe
-    // reports for its (m,l) block.
+    // Use the same stationary discrete Couette state as the spectral probe.
+    // Sampling A*r+B/r at cell centres leaves a small viscous residual in the
+    // staggered stencil and introduces an otherwise unrelated spin-up.
     //
     // Unlike the probe we keep U0 as it is: the probe zeroes it because
     // L_step advances a perturbation with homogeneous wall conditions, while
     // here the moving wall is part of the flow being integrated.
     void init_couette_base()
     {
-        const float denominator = sim.R*sim.R - sim.r0*sim.r0;
-        const float A = -sim.U0*sim.r0/denominator;
-        const float B =  sim.U0*sim.r0*sim.R*sim.R/denominator;
+        const auto velocity = fdm::make_discrete_couette_velocity<float>(sim);
+        const auto pressure = fdm::make_discrete_couette_pressure(sim, velocity);
 
         auto w = sim.wa();
+        auto p = sim.pa();
         for (int i = 0; i < sim.nphi; i++) {
             for (int k = 0; k < sim.nz; k++) {
-                for (int j = 1; j <= sim.nr; j++) {
-                    const float r = sim.r0+(j-0.5f)*sim.dr;
-                    w(i,k,j) = A*r+B/r;
+                for (int j = 0; j <= sim.nr+1; j++) {
+                    w(i,k,j) = velocity[j];
+                    p(i,k,j) = pressure[j];
                 }
-                w(i,k,0)        = 2.f*sim.U0-w(i,k,1);   // inner rotating
-                w(i,k,sim.nr+1) = -w(i,k,sim.nr);         // outer no-slip
             }
         }
-        // u, v stay zero: that is the velocity part of the base state.  p also
-        // stays zero -- the first projection builds the pressure balancing
-        // w^2/r, so the run opens with one pressure transient and no more.
+        // u and v remain zero; p already balances the centrifugal term, so
+        // there is no artificial pressure transient on the first step.
     }
 
     bool init(SDL_MetalView sdlView)
@@ -427,7 +420,7 @@ struct Demo {
                   << "  Re=" << sim.Re << "  dt=" << sim.dt
                   << "  particles=" << kNP
                   << "  steps/frame=" << stepsPerFrame << "\n";
-        std::cout << "Initial state: Couette base w(r)=A*r+B/r "
+        std::cout << "Initial state: stationary discrete Couette base "
                      "(same base as the spectral probe)\n";
         std::cout << "Keys: arrows rotate, space pauses, C cycles colour, Esc quits\n"
                      "colour: " << color_name(colorMode) << "\n";

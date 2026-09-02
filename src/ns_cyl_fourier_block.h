@@ -134,10 +134,13 @@ public:
         , phi_indices_(packed_indices(m, ns_.nphi))
         , z_indices_(packed_indices(l, ns_.nz))
         , radial_size_(layout_.radial_size)
-        , block_size_(radial_size_*phase_count())
+        , full_block_size_(radial_size_*phase_count())
+        , pressure_gauge_fixed_(m == 0 && l == 0)
+        , block_size_(full_block_size_-(pressure_gauge_fixed_ ? 1 : 0))
         , operator_steps_(operator_steps)
         , coefficients_(fft_.size())
         , values_(fft_.size())
+        , full_block_(full_block_size_)
     {
         if (m < 0 || m > ns_.nphi/2) {
             throw std::invalid_argument("azimuthal Fourier index is outside [0,nphi/2]");
@@ -161,6 +164,14 @@ public:
 
     int size() const {
         return block_size_;
+    }
+
+    int full_size() const {
+        return full_block_size_;
+    }
+
+    bool pressure_gauge_fixed() const {
+        return pressure_gauge_fixed_;
     }
 
     int m() const {
@@ -198,21 +209,36 @@ public:
         std::fill(ns_.w.vec, ns_.w.vec+ns_.w.size, T(0));
         std::fill(ns_.p.vec, ns_.p.vec+ns_.p.size, T(0));
 
+        const T* full_x = x;
+        if (pressure_gauge_fixed_) {
+            layout_.expand_zero_gauge_block(ns_, x, full_block_.data());
+            full_x = full_block_.data();
+        }
         layout_.for_each_radial([&](Component component, int j, int index) {
-            lift_radial_slice(field(component), j, index, x);
+            lift_radial_slice(field(component), j, index, full_x);
         });
     }
 
     // Extract the selected packed block and report energy leaked to all other
     // Fourier slots. The leakage is diagnostic; it is not folded into y.
     void extract(T* y) {
-        double selected_norm2 = 0;
         double other_norm2 = 0;
+        T* full_y = pressure_gauge_fixed_ ? full_block_.data() : y;
         layout_.for_each_radial([&](Component component, int j, int index) {
-            extract_radial_slice(field(component), j, index, y,
-                                 selected_norm2, other_norm2);
+            extract_radial_slice(field(component), j, index, full_y,
+                                 other_norm2);
         });
 
+        if (pressure_gauge_fixed_) {
+            layout_.reduce_zero_gauge_block(ns_, full_y, y);
+            layout_.expand_zero_gauge_block(ns_, y, full_block_.data());
+            full_y = full_block_.data();
+        }
+        double selected_norm2 = 0;
+        for (int index = 0; index < full_block_size_; ++index) {
+            const double value = full_y[index];
+            selected_norm2 += value*value;
+        }
         const double total = selected_norm2+other_norm2;
         last_fourier_leakage_ = total > 0
             ? std::sqrt(other_norm2/total)
@@ -236,10 +262,13 @@ private:
     std::vector<int> phi_indices_;
     std::vector<int> z_indices_;
     int radial_size_;
+    int full_block_size_;
+    bool pressure_gauge_fixed_;
     int block_size_;
     int operator_steps_;
     std::vector<T> coefficients_;
     std::vector<T> values_;
+    std::vector<T> full_block_;
     double last_fourier_leakage_ = 0;
 
     static std::vector<int> packed_indices(int q, int n) {
@@ -310,7 +339,7 @@ private:
     }
 
     void extract_radial_slice(tensor& field, int j, int state_index, T* y,
-                              double& selected_norm2, double& other_norm2) {
+                              double& other_norm2) {
         for (int i = 0; i < ns_.nphi; ++i) {
             for (int k = 0; k < ns_.nz; ++k) {
                 values_[plane_index(i, k)] = field[i][k][j];
@@ -325,7 +354,6 @@ private:
                 if (selected_coefficient(i, k)) {
                     const int phase = phase_index(i, k);
                     y[phase*radial_size_+state_index] = value;
-                    selected_norm2 += square;
                 } else {
                     other_norm2 += square;
                 }

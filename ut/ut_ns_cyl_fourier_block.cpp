@@ -72,6 +72,10 @@ void check_block_round_trip(int m, int l, int expected_phases) {
     Config config = make_config();
     fdm::NSCylFourierBlockReference<double, true> block(config, m, l);
     assert_int_equal(block.phase_count(), expected_phases);
+    assert_int_equal(block.full_size(), block.radial_size()*expected_phases);
+    assert_int_equal(block.size(),
+                     block.full_size()-((m == 0 && l == 0) ? 1 : 0));
+    assert_int_equal(block.pressure_gauge_fixed(), m == 0 && l == 0);
 
     std::vector<double> x(block.size());
     std::vector<double> y(block.size());
@@ -98,6 +102,45 @@ void test_block_layout_and_round_trip(void**) {
     check_block_round_trip(1, 0, 2);
     check_block_round_trip(1, 1, 4);
     check_block_round_trip(2, 2, 1);
+}
+
+void test_zero_block_uses_weighted_zero_mean_pressure(void**) {
+    Config config = make_config();
+    fdm::NSCylFourierBlockReference<double, true> block(config, 0, 0);
+    const auto& layout = block.state_layout();
+    auto& task = block.task();
+
+    std::vector<double> full(block.full_size(), 0.0);
+    std::vector<double> reduced(block.size());
+    std::vector<double> reconstructed(block.full_size());
+
+    // A constant pressure represents only a gauge change and reduces to zero.
+    for (int j = 1; j <= task.nr; ++j) {
+        full[layout.radial_index(
+            fdm::NSCylStateLayout<double>::Component::p, j)] = 7.0;
+    }
+    layout.reduce_zero_gauge_block(task, full.data(), reduced.data());
+    for (int index = layout.p_radial_offset; index < block.size(); ++index) {
+        assert_true(reduced[index] == 0.0);
+    }
+
+    // Independent coordinates reconstruct a unique zero-mean representative.
+    for (int index = 0; index < block.size(); ++index) {
+        reduced[index] = 0.03*index-0.2;
+    }
+    layout.expand_zero_gauge_block(task, reduced.data(), reconstructed.data());
+    assert_true(std::abs(layout.zero_block_pressure_mean(
+        task, reconstructed.data())) < 1e-15);
+
+    block.lift(reduced.data());
+    long double weighted_sum = 0;
+    long double weight = 0;
+    for (int j = 1; j <= task.nr; ++j) {
+        const long double r = task.r0+(j-0.5L)*task.dr;
+        weighted_sum += r*task.p[0][0][j];
+        weight += r;
+    }
+    assert_true(std::abs(static_cast<double>(weighted_sum/weight)) < 1e-15);
 }
 
 void test_linear_step_preserves_real_packed_block(void**) {
@@ -313,6 +356,7 @@ int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_packed_fft2_round_trip),
         cmocka_unit_test(test_block_layout_and_round_trip),
+        cmocka_unit_test(test_zero_block_uses_weighted_zero_mean_pressure),
         cmocka_unit_test(test_linear_step_preserves_real_packed_block),
         cmocka_unit_test(test_spectral_projector_on_block),
         cmocka_unit_test(test_float_block_apply_is_finite_and_nonzero),
