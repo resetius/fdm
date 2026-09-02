@@ -19,6 +19,7 @@
 #include "config.h"
 #include "ns_cyl_fourier_block.h"
 #include "ns_cyl_spectral_modes.h"
+#include "ns_cyl_spectral_projector.h"
 
 using fdm::arpack_solver;
 using fdm::NSCylFourierBlockReference;
@@ -242,6 +243,8 @@ void run(const Config& config) {
     const double growth_tolerance = config.get(
         "spectral", "growth_tol", 1e-8);
     const double residual_limit = residual_tolerance<T>(config);
+    const double condition_limit = config.get(
+        "spectral", "condition_limit", 1e10);
 
     if (m_min > m_max || l_min > l_max) {
         throw std::invalid_argument("empty Fourier block range");
@@ -278,8 +281,9 @@ void run(const Config& config) {
            config.get("ns", "h2", 10.0));
     printf("blocks=%zu m=[%d,%d] l=[%d,%d] threads=%d\n",
            blocks.size(), m_min, m_max, l_min, l_max, threads);
-    printf("selection: growth_tol=%.3e residual_tol=%.3e\n",
-           growth_tolerance, residual_limit);
+    printf("selection: growth_tol=%.3e residual_tol=%.3e "
+           "condition_limit=%.3e\n",
+           growth_tolerance, residual_limit, condition_limit);
     printf("packing: q=cosine, N-q=sine; endpoints 0/Nyquist have one phase\n");
 
     vector<ProbeResult<T>> results(blocks.size());
@@ -420,6 +424,16 @@ void run(const Config& config) {
     }
 
     mode_set.sort_by_block_and_growth();
+    fflush(stdout);
+    const fdm::NSCylSpectralProjector<T> projector(
+        mode_set, condition_limit);
+    for (const auto& block : projector.blocks()) {
+        printf("GRAM m=%d l=%d dimension=%d condition=%.9e "
+               "gram_cond_inf=%.9e min_pivot=%.9e\n",
+               block.m(), block.l(), block.dimension(),
+               block.condition_number(), block.gram_condition_number(),
+               block.min_pivot());
+    }
 
     printf("probe candidate blocks: %d / %zu\n",
            probe_candidate_count, results.size());
@@ -432,6 +446,8 @@ void run(const Config& config) {
                dense_rejected_count);
         printf("mode set: groups=%zu real_dimension=%d\n",
                mode_set.size(), mode_set.real_dimension());
+        printf("projector: blocks=%zu real_dimension=%d\n",
+               projector.blocks().size(), projector.real_dimension());
     }
     printf("note: complex pairs are stored as adjacent real Re(v), Im(v) "
            "columns\n");
@@ -451,11 +467,16 @@ int main(int argc, char** argv) {
     config.open(config_name);
     config.rewrite(argc, argv);
 
-    const string datatype = config.get("solver", "datatype", "double");
-    if (datatype == "float") {
-        run<float>(config);
-    } else {
-        run<double>(config);
+    try {
+        const string datatype = config.get("solver", "datatype", "double");
+        if (datatype == "float") {
+            run<float>(config);
+        } else {
+            run<double>(config);
+        }
+    } catch (const std::exception& error) {
+        fprintf(stderr, "spectral probe failed: %s\n", error.what());
+        return 1;
     }
     return 0;
 }

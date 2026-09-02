@@ -11,6 +11,7 @@
 #include "config.h"
 #include "ns_cyl_fourier_block.h"
 #include "ns_cyl_spectral_modes.h"
+#include "ns_cyl_spectral_projector.h"
 #include "projection.h"
 
 extern "C" {
@@ -245,6 +246,37 @@ void test_dense_spectrum_groups_complex_pair_in_real_columns(void**) {
     assert_true(pair->filterable_unstable());
     assert_false(real_mode->growing);
 
+    fdm::NSCylSpectralModeSet<double> unstable_modes;
+    unstable_modes.append_filterable(spectrum);
+    unstable_modes.sort_by_block_and_growth();
+    const fdm::NSCylSpectralProjector<double> projector(
+        unstable_modes, 1e8);
+    assert_int_equal(projector.blocks().size(), 1);
+    const auto& block_projector = projector.blocks().front();
+    assert_int_equal(block_projector.dimension(), 2);
+    assert_true(block_projector.condition_number() >= 1.0);
+    assert_true(block_projector.condition_number() < 10.0);
+
+    std::vector<double> projected(3);
+    for (const auto& vector : block_projector.right_basis()) {
+        block_projector.project(projected.data(), vector.data());
+        for (int i = 0; i < 3; ++i) {
+            assert_true(std::abs(projected[i]-vector[i]) < 1e-14);
+        }
+    }
+    block_projector.project(projected.data(), real_mode->right_columns.data());
+    for (double value : projected) {
+        assert_true(std::abs(value) < 1e-14);
+    }
+
+    const std::vector<double> state = {0.3, -0.7, 1.1};
+    std::vector<double> filtered(3);
+    block_projector.remove(filtered.data(), state.data());
+    block_projector.project(projected.data(), filtered.data());
+    for (double value : projected) {
+        assert_true(std::abs(value) < 1e-14);
+    }
+
     for (int i = 0; i+1 < 3; ++i) {
         if (spectrum.eigenvalues[i].imag() > 0) {
             assert_true(std::abs(spectrum.eigenvalues[i].real()
@@ -285,6 +317,35 @@ void test_dense_spectrum_groups_complex_pair_in_real_columns(void**) {
                 > modes.modes()[1].growth_rate);
     assert_int_equal(modes.modes()[2].m, 2);
     assert_int_equal(modes.modes()[2].l, 1);
+
+    // Orthonormalization removes arbitrary vector scaling, while nearly
+    // orthogonal left and right subspaces still fail condition_limit.
+    auto ill_conditioned_mode = *pair;
+    ill_conditioned_mode.m = 4;
+    ill_conditioned_mode.l = 2;
+    ill_conditioned_mode.phase_count = 1;
+    ill_conditioned_mode.radial_size = 3;
+    ill_conditioned_mode.block_size = 3;
+    ill_conditioned_mode.right_columns = {
+        1.0, 0.0, 0.0,
+        0.0, 1.0, 0.0
+    };
+    ill_conditioned_mode.left_columns = {
+        1.0, 0.0, 0.0,
+        0.0, 1e-12, 1.0
+    };
+    fdm::NSCylDenseBlockSpectrum<double> ill_conditioned_spectrum;
+    ill_conditioned_spectrum.modes.push_back(ill_conditioned_mode);
+    fdm::NSCylSpectralModeSet<double> ill_conditioned_modes;
+    ill_conditioned_modes.append_filterable(ill_conditioned_spectrum);
+    bool rejected = false;
+    try {
+        const fdm::NSCylSpectralProjector<double> rejected_projector(
+            ill_conditioned_modes, 1e8);
+    } catch (const std::runtime_error&) {
+        rejected = true;
+    }
+    assert_true(rejected);
 }
 
 void test_dense_spectrum_of_real_ns_cyl_block(void**) {
@@ -317,6 +378,53 @@ void test_dense_spectrum_of_real_ns_cyl_block(void**) {
         real_columns += mode.column_count;
     }
     assert_int_equal(real_columns, spectrum.block_size);
+
+    auto selected_spectrum = spectrum;
+    for (auto& mode : selected_spectrum.modes) {
+        mode.growing = false;
+    }
+    std::vector<int> indices(selected_spectrum.modes.size());
+    for (int i = 0; i < static_cast<int>(indices.size()); ++i) {
+        indices[i] = i;
+    }
+    std::sort(indices.begin(), indices.end(), [&](int a, int b) {
+        return std::abs(selected_spectrum.modes[a].multiplier)
+            > std::abs(selected_spectrum.modes[b].multiplier);
+    });
+    int selected_columns = 0;
+    for (int index : indices) {
+        selected_spectrum.modes[index].growing = true;
+        selected_columns += selected_spectrum.modes[index].column_count;
+        if (selected_columns >= 2) {
+            break;
+        }
+    }
+
+    fdm::NSCylSpectralModeSet<double> selected_modes;
+    selected_modes.append_filterable(selected_spectrum);
+    selected_modes.sort_by_block_and_growth();
+    const fdm::NSCylSpectralProjector<double> projector(selected_modes, 1e8);
+    const auto* block_projector = projector.find_block(0, 3);
+    assert_non_null(block_projector);
+    assert_int_equal(block_projector->dimension(), selected_columns);
+    assert_true(block_projector->condition_number() < 1e8);
+
+    std::vector<double> state(spectrum.block_size);
+    for (int i = 0; i < spectrum.block_size; ++i) {
+        state[i] = std::sin(0.17*(i+1))+0.2*std::cos(0.31*(i+1));
+    }
+    std::vector<double> filtered(spectrum.block_size);
+    std::vector<double> remaining_projection(spectrum.block_size);
+    block_projector->remove(filtered.data(), state.data());
+    block_projector->project(
+        remaining_projection.data(), filtered.data());
+    double projection_norm = 0;
+    double state_norm = 0;
+    for (int i = 0; i < spectrum.block_size; ++i) {
+        projection_norm += remaining_projection[i]*remaining_projection[i];
+        state_norm += state[i]*state[i];
+    }
+    assert_true(std::sqrt(projection_norm/state_norm) < 1e-12);
 }
 
 

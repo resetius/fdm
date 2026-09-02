@@ -94,6 +94,42 @@ void test_mgsch_cyl_float(void** ) {
 }
 
 template<typename T>
+void test_mgsch_checked() {
+    vector<vector<T>> scaled = {
+        {T(1e6), T(0), T(0)},
+        {T(1e6), T(1e3), T(0)},
+        {T(0), T(0), T(1e-4)}
+    };
+    const T tolerance = std::is_same_v<T, float> ? T(1e-5) : T(1e-12);
+    const T min_relative_norm = mgsch_checked<T>(
+        scaled, 3, 3, tolerance);
+    assert_true(min_relative_norm > 0);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            const T value = blas::dot(
+                3, scaled[i].data(), 1, scaled[j].data(), 1);
+            const T expected = i == j ? T(1) : T(0);
+            const T error = std::is_same_v<T, float> ? T(1e-5) : T(1e-14);
+            assert_true(std::abs(value-expected) < error);
+        }
+    }
+
+    vector<vector<T>> dependent = {
+        {T(1), T(0), T(0)},
+        {T(1), T(1e-14), T(0)}
+    };
+    assert_true(mgsch_checked<T>(dependent, 2, 3, tolerance) == T(0));
+}
+
+void test_mgsch_checked_double(void**) {
+    test_mgsch_checked<double>();
+}
+
+void test_mgsch_checked_float(void**) {
+    test_mgsch_checked<float>();
+}
+
+template<typename T>
 void test_ortoproj_simple_along(void**) {
     vector<vector<T>> basis = {
         {1,0,0,0},
@@ -359,6 +395,8 @@ int main() {
         cmocka_unit_test_prestate(test_mgsch_float, nullptr),
         cmocka_unit_test_prestate(test_mgsch_cyl_double, nullptr),
         cmocka_unit_test_prestate(test_mgsch_cyl_float, nullptr),
+        cmocka_unit_test_prestate(test_mgsch_checked_double, nullptr),
+        cmocka_unit_test_prestate(test_mgsch_checked_float, nullptr),
         cmocka_unit_test_prestate(test_ortoproj_simple_along_float, nullptr),
         cmocka_unit_test_prestate(test_ortoproj_simple_along_double, nullptr),
         cmocka_unit_test_prestate(test_ortoproj_along_float, nullptr),
