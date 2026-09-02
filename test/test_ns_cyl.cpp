@@ -1,5 +1,6 @@
 #include "ns_cyl.h"
 
+#include "ns_cyl_checkpoint_storage.h"
 #include "ns_cyl_spectral_filter.h"
 #include "ns_cyl_spectral_storage.h"
 #include "ns_cyl_state.h"
@@ -58,6 +59,10 @@ void calc(const Config& c) {
     const int plot_interval = c.get("plot", "interval", 100);
     const int png = c.get("plot", "png", 1);
     const int vtk = c.get("plot", "vtk", 0);
+    const string checkpoint_input = c.get(
+        "checkpoint", "input", string());
+    const string checkpoint_output = c.get(
+        "checkpoint", "output", string());
     bool stabilize = c.get("st", "enable", 0) != 0;
     const string spectral_input = c.get("st", "input", "ns_cyl_spectrum.nc");
     const string spectral_mode = c.get(
@@ -74,6 +79,25 @@ void calc(const Config& c) {
     std::ofstream modal_log;
     bool one_shot_done = false;
     int i;
+
+    if (!checkpoint_input.empty() || !checkpoint_output.empty()) {
+        if constexpr (zflag != tensor_flag::periodic) {
+            throw std::invalid_argument(
+                "NSCyl checkpoints currently require ns:zperiod=1");
+        }
+    }
+    if (!checkpoint_input.empty()) {
+        vector<T> checkpoint_state;
+        NSCylCheckpointMetadata checkpoint_metadata;
+        const auto expected = make_ns_cyl_checkpoint_metadata<T>(c, 0);
+        NSCylCheckpointStorage(checkpoint_input).load(
+            checkpoint_state, checkpoint_metadata, expected);
+        layout.unpack(ns, checkpoint_state.data());
+        ns.time_index = checkpoint_metadata.time_index;
+        printf("checkpoint loaded: file=%s step=%d time=%.9e\n",
+               checkpoint_input.c_str(), ns.time_index,
+               checkpoint_metadata.physical_time);
+    }
 
     if (stabilize) {
         if constexpr (zflag != tensor_flag::periodic) {
@@ -146,8 +170,11 @@ void calc(const Config& c) {
                     throw std::runtime_error(
                         "cannot open spectral diagnostics log: "+spectral_log);
                 }
-                modal_log << "step,time,m,l,block_norm,removed_norm,"
-                             "remaining_unstable_norm\n";
+                modal_log << "step,time,m,l,coordinate,"
+                             "coefficient_before,coefficient_after,"
+                             "block_norm,removed_norm,"
+                             "remaining_unstable_norm,velocity_norm,"
+                             "removed_velocity_norm,filtered_velocity_norm\n";
             }
         }
     }
@@ -205,28 +232,62 @@ void calc(const Config& c) {
                 : spectral_filter->remove(ns, couette_reference, removal);
             one_shot_done = true;
             printf("SPECTRAL_FILTER step=%d time=%.9e "
-                   "perturbation=%.9e removed=%.9e remaining=%.9e\n",
+                   "perturbation=%.9e removed=%.9e remaining=%.9e "
+                   "velocity=%.9e removed_velocity=%.9e "
+                   "filtered_velocity=%.9e\n",
                    ns.time_index, static_cast<double>(ns.time_index*ns.dt),
                    diagnostics.packed_perturbation_norm,
                    diagnostics.removed_norm,
-                   diagnostics.remaining_unstable_norm);
+                   diagnostics.remaining_unstable_norm,
+                   diagnostics.velocity_perturbation_norm,
+                   diagnostics.removed_velocity_norm,
+                   diagnostics.filtered_velocity_norm);
             for (const auto& block : diagnostics.blocks) {
                 printf("SPECTRAL_BLOCK m=%d l=%d norm=%.9e removed=%.9e "
                        "remaining=%.9e\n",
                        block.m, block.l, block.block_norm,
                        block.removed_norm, block.remaining_unstable_norm);
-                if (modal_log) {
-                    modal_log << ns.time_index << ','
-                              << static_cast<double>(ns.time_index*ns.dt) << ','
-                              << block.m << ',' << block.l << ','
-                              << block.block_norm << ',' << block.removed_norm
-                              << ',' << block.remaining_unstable_norm << '\n';
+                for (std::size_t coordinate = 0;
+                     coordinate < block.coordinates_before.size();
+                     ++coordinate) {
+                    printf("SPECTRAL_COORD m=%d l=%d coordinate=%zu "
+                           "before=%+.9e after=%+.9e\n",
+                           block.m, block.l, coordinate,
+                           block.coordinates_before[coordinate],
+                           block.coordinates_after[coordinate]);
+                    if (modal_log) {
+                        modal_log << ns.time_index << ','
+                                  << static_cast<double>(
+                                         ns.time_index*ns.dt) << ','
+                                  << block.m << ',' << block.l << ','
+                                  << coordinate << ','
+                                  << block.coordinates_before[coordinate]
+                                  << ',' << block.coordinates_after[coordinate]
+                                  << ',' << block.block_norm << ','
+                                  << block.removed_norm << ','
+                                  << block.remaining_unstable_norm << ','
+                                  << diagnostics.velocity_perturbation_norm
+                                  << ',' << diagnostics.removed_velocity_norm
+                                  << ',' << diagnostics.filtered_velocity_norm
+                                  << '\n';
+                    }
                 }
             }
         }
     }
 
     auto t2 = steady_clock::now();
+    if (!checkpoint_output.empty()) {
+        auto checkpoint_state = layout.pack(ns);
+        layout.normalize_packed_pressure(ns, checkpoint_state.data());
+        const auto checkpoint_metadata =
+            make_ns_cyl_checkpoint_metadata<T>(c, ns.time_index);
+        NSCylCheckpointStorage(checkpoint_output).save(
+            checkpoint_state, checkpoint_metadata);
+        printf("checkpoint saved: file=%s step=%d time=%.9e\n",
+               checkpoint_output.c_str(), ns.time_index,
+               checkpoint_metadata.physical_time);
+    }
     auto interval = duration_cast<duration<double>>(t2 - t1);
     printf("It took me '%f' seconds\n", interval.count());
 }

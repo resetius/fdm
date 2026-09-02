@@ -24,12 +24,17 @@ struct NSCylSpectralBlockFilterDiagnostics {
     double block_norm = 0;
     double removed_norm = 0;
     double remaining_unstable_norm = 0;
+    std::vector<double> coordinates_before;
+    std::vector<double> coordinates_after;
 };
 
 struct NSCylSpectralFilterDiagnostics {
     double packed_perturbation_norm = 0;
     double removed_norm = 0;
     double remaining_unstable_norm = 0;
+    double velocity_perturbation_norm = 0;
+    double removed_velocity_norm = 0;
+    double filtered_velocity_norm = 0;
     std::vector<NSCylSpectralBlockFilterDiagnostics> blocks;
 };
 
@@ -45,6 +50,8 @@ public:
         , fft_(nphi, nz)
         , projector_(std::move(projector))
         , physical_(layout_.state_size)
+        , original_physical_(layout_.state_size)
+        , removed_physical_(layout_.state_size)
         , packed_fourier_(layout_.state_size)
         , values_(fft_.size())
         , coefficients_(fft_.size()) {
@@ -80,6 +87,8 @@ private:
     PeriodicPackedFFT2<T> fft_;
     NSCylSpectralProjector<T> projector_;
     std::vector<T> physical_;
+    std::vector<T> original_physical_;
+    std::vector<T> removed_physical_;
     std::vector<T> packed_fourier_;
     std::vector<T> values_;
     std::vector<T> coefficients_;
@@ -288,6 +297,9 @@ private:
         }
 
         layout_.pack_difference(state, reference, physical_.data());
+        result.velocity_perturbation_norm =
+            layout_.velocity_norm(state, physical_.data());
+        original_physical_ = physical_;
         analysis();
         canonicalize_pressure_gauge(state);
         result.packed_perturbation_norm = norm(packed_fourier_);
@@ -318,22 +330,37 @@ private:
             block_result.block_norm = norm(block_);
             block_result.removed_norm = norm(removed_block_);
             block_result.remaining_unstable_norm = norm(remaining_unstable_);
+            std::vector<T> coordinates_before(projector.dimension());
+            std::vector<T> coordinates_after(projector.dimension());
+            projector.coordinates(coordinates_before.data(), block_.data());
+            projector.coordinates(
+                coordinates_after.data(), filtered_block_.data());
+            block_result.coordinates_before.assign(
+                coordinates_before.begin(), coordinates_before.end());
+            block_result.coordinates_after.assign(
+                coordinates_after.begin(), coordinates_after.end());
             result.blocks.push_back(block_result);
             removed_squared += block_result.removed_norm
                 *block_result.removed_norm;
             remaining_squared += block_result.remaining_unstable_norm
                 *block_result.remaining_unstable_norm;
 
-            if (update_state) {
-                scatter_block(projector, state, filtered_block_.data());
-            }
+            scatter_block(projector, state, filtered_block_.data());
         }
         result.removed_norm = std::sqrt(static_cast<double>(removed_squared));
         result.remaining_unstable_norm =
             std::sqrt(static_cast<double>(remaining_squared));
 
+        synthesis();
+        result.filtered_velocity_norm =
+            layout_.velocity_norm(state, physical_.data());
+        for (int i = 0; i < layout_.state_size; ++i) {
+            removed_physical_[i] = original_physical_[i]-physical_[i];
+        }
+        result.removed_velocity_norm =
+            layout_.velocity_norm(state, removed_physical_.data());
+
         if (update_state) {
-            synthesis();
             layout_.unpack_sum(state, reference, physical_.data());
         }
         return result;

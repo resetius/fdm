@@ -25,6 +25,10 @@ target_link_libraries(fdm_ns_cyl_spectral fdm)
 add_executable(fdm_ns_cyl_spectral_probe test_ns_cyl_spectral_probe.cpp)
 target_link_libraries(fdm_ns_cyl_spectral_probe fdm)
 
+add_executable(fdm_ns_cyl_spectral_filter_experiment
+    test_ns_cyl_spectral_filter_experiment.cpp)
+target_link_libraries(fdm_ns_cyl_spectral_filter_experiment fdm)
+
 add_executable(fdm_ns_cube test_ns_cube.cpp)
 target_link_libraries(fdm_ns_cube fdm)
 

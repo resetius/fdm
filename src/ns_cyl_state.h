@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <stdexcept>
 #include <vector>
@@ -337,6 +338,72 @@ public:
         pack(state, destination);
         for (int i = 0; i < state_size; ++i) {
             destination[i] -= reference[i];
+        }
+    }
+
+    // Discrete counterpart of the cylindrical velocity inner product
+    // integral (a_u*b_u+a_v*b_v+a_w*b_w) r dr dphi dz. Each component uses
+    // the radius of its own staggered location; pressure is deliberately
+    // excluded.
+    template<typename Geometry>
+    double velocity_inner_product(const Geometry& geometry, const T* a,
+                                  const T* b) const {
+        const long double cell_measure = static_cast<long double>(geometry.dr)
+            *geometry.dphi*geometry.dz;
+        long double result = 0;
+        for (int i = 0; i < nphi; ++i) {
+            for (int k = 0; k < nz; ++k) {
+                for (int j = 1; j < nr; ++j) {
+                    const int index = u_offset+(i*nz+k)*(nr-1)+(j-1);
+                    const long double radius = geometry.r0+j*geometry.dr;
+                    result += radius*static_cast<long double>(a[index])
+                        *static_cast<long double>(b[index]);
+                }
+                for (int j = 1; j <= nr; ++j) {
+                    const long double radius =
+                        geometry.r0+(j-0.5L)*geometry.dr;
+                    const int plane_offset = (i*nz+k)*nr+(j-1);
+                    for (int offset : {v_offset, w_offset}) {
+                        const int index = offset+plane_offset;
+                        result += radius*static_cast<long double>(a[index])
+                            *static_cast<long double>(b[index]);
+                    }
+                }
+            }
+        }
+        return static_cast<double>(cell_measure*result);
+    }
+
+    template<typename Geometry>
+    double velocity_norm(const Geometry& geometry, const T* state) const {
+        return std::sqrt(std::max(
+            0.0, velocity_inner_product(geometry, state, state)));
+    }
+
+    template<typename Geometry>
+    double packed_pressure_mean(const Geometry& geometry,
+                                const T* state) const {
+        long double sum = 0;
+        long double weight = 0;
+        for (int i = 0; i < nphi; ++i) {
+            for (int k = 0; k < nz; ++k) {
+                for (int j = 1; j <= nr; ++j) {
+                    const long double radius =
+                        geometry.r0+(j-0.5L)*geometry.dr;
+                    const int index = p_offset+(i*nz+k)*nr+(j-1);
+                    sum += radius*static_cast<long double>(state[index]);
+                    weight += radius;
+                }
+            }
+        }
+        return static_cast<double>(sum/weight);
+    }
+
+    template<typename Geometry>
+    void normalize_packed_pressure(const Geometry& geometry, T* state) const {
+        const T mean = static_cast<T>(packed_pressure_mean(geometry, state));
+        for (int i = p_offset; i < state_size; ++i) {
+            state[i] -= mean;
         }
     }
 

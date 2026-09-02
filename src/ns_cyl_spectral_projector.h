@@ -149,20 +149,29 @@ public:
         return inverse_gram_;
     }
 
-    void project(T* result, const T* state) const {
+    // Coordinates in the orthonormalized real right basis. They are the
+    // solution of G*a=Q_L^T*q and therefore remain meaningful for an oblique
+    // projector. A complex eigenpair occupies two real coordinates.
+    void coordinates(T* result, const T* state) const {
         const int count = dimension();
         std::vector<T> rhs(count);
-        std::vector<T> coefficients(count, T(0));
+        std::fill(result, result+count, T(0));
         for (int i = 0; i < count; ++i) {
             rhs[i] = blas::dot(block_size_, left_basis_[i].data(), 1,
                                state, 1);
         }
         for (int i = 0; i < count; ++i) {
             for (int j = 0; j < count; ++j) {
-                coefficients[i] += inverse_gram_[
+                result[i] += inverse_gram_[
                     static_cast<std::size_t>(i)*count+j]*rhs[j];
             }
         }
+    }
+
+    void project(T* result, const T* state) const {
+        const int count = dimension();
+        std::vector<T> coefficients(count);
+        coordinates(coefficients.data(), state);
 
         std::fill(result, result+block_size_, T(0));
         for (int i = 0; i < count; ++i) {
