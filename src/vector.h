@@ -4,6 +4,10 @@
 #include <omp.h>
 #endif
 
+#include <vector>
+
+#include "verify.h"
+
 namespace fdm {
 
 template<typename T>
@@ -20,18 +24,25 @@ public:
     { }
 
     T& operator[](int i) {
-        return vec[thread_id()*size + i];
+        return vec[offset() + i];
     }
 
     const T operator[](int i) const {
-        return vec[thread_id()*size + i];
+        return vec[offset() + i];
     }
 
     T* data() {
-        return vec.data() + thread_id()*size;
+        return vec.data() + offset();
     }
 
 private:
+    // The slot count is fixed at construction; the slot is selected on use.
+    int offset() const {
+        const int id = thread_id();
+        verify(id < thread_count);
+        return id*size;
+    }
+
     const int thread_count;
     const int size;
     std::vector<T> vec;

@@ -44,7 +44,8 @@ Config make_config(int nr=4, int nz=4, int nphi=4) {
     return config;
 }
 
-Config make_re44_config(int nr=8, int nz=8, int nphi=8) {
+Config make_couette_config(int nr=8, int nz=8, int nphi=8,
+                           double reynolds=44.0) {
     Config config;
     std::vector<std::string> arguments = {
         "ut_ns_cyl_fourier_block",
@@ -56,7 +57,7 @@ Config make_re44_config(int nr=8, int nz=8, int nphi=8) {
         "--ns:nz="+std::to_string(nz),
         "--ns:nphi="+std::to_string(nphi),
         "--ns:u0=1.0",
-        "--ns:Re=44.0",
+        "--ns:Re="+std::to_string(reynolds),
         "--ns:dt=0.001",
         "--ns:verbose=0"
     };
@@ -207,6 +208,36 @@ void test_linear_step_preserves_real_packed_block(void**) {
     assert_true(leakage_sum < 2e-12);
 }
 
+void test_axisymmetric_block_is_independent_of_nphi(void**) {
+    Config coarse = make_couette_config(8, 16, 8, 100.0);
+    Config refined = make_couette_config(8, 16, 16, 100.0);
+    fdm::NSCylFourierBlockReference<double, true> coarse_block(
+        coarse, 0, 2, 3);
+    fdm::NSCylFourierBlockReference<double, true> refined_block(
+        refined, 0, 2, 3);
+
+    assert_int_equal(coarse_block.size(), refined_block.size());
+    std::vector<double> x(coarse_block.size());
+    std::vector<double> coarse_image(x.size());
+    std::vector<double> refined_image(x.size());
+    for (int i = 0; i < static_cast<int>(x.size()); ++i) {
+        x[i] = std::sin(0.17*(i+1))+0.2*std::cos(0.31*(i+1));
+    }
+
+    coarse_block.apply(coarse_image.data(), x.data());
+    refined_block.apply(refined_image.data(), x.data());
+
+    double max_error = 0;
+    double max_value = 0;
+    for (int i = 0; i < static_cast<int>(x.size()); ++i) {
+        max_error = std::max(
+            max_error, std::abs(coarse_image[i]-refined_image[i]));
+        max_value = std::max(max_value, std::abs(refined_image[i]));
+    }
+    assert_true(max_value > 0);
+    assert_true(max_error/max_value < 2e-12);
+}
+
 void test_dense_spectrum_groups_complex_pair_in_real_columns(void**) {
     // The 2x2 block has eigenvalues 1.1 +/- 0.2i. Coupling from the third
     // coordinate makes the full real matrix nonsymmetric and nonnormal.
@@ -349,7 +380,7 @@ void test_dense_spectrum_groups_complex_pair_in_real_columns(void**) {
 }
 
 void test_dense_spectrum_of_real_ns_cyl_block(void**) {
-    Config config = make_re44_config();
+    Config config = make_couette_config();
     fdm::NSCylFourierBlockReference<double, true> block(config, 0, 3);
     const auto spectrum = fdm::solve_ns_cyl_dense_block(
         block, 0.001, 1e-8, 1e-10);
@@ -427,6 +458,74 @@ void test_dense_spectrum_of_real_ns_cyl_block(void**) {
     assert_true(std::sqrt(projection_norm/state_norm) < 1e-12);
 }
 
+void test_complex_ns_cyl_mode_has_expected_phase_speed(void**) {
+    Config config = make_couette_config(8, 8, 8, 100.0);
+    fdm::NSCylFourierBlockReference<double, true> block(config, 1, 3);
+    const auto spectrum = fdm::solve_ns_cyl_dense_block(
+        block, 0.001, 1e-8, 1e-10);
+    const auto mode = std::max_element(
+        spectrum.modes.begin(), spectrum.modes.end(),
+        [](const auto& first, const auto& second) {
+            return first.growth_rate < second.growth_rate;
+        });
+    assert_true(mode != spectrum.modes.end());
+    assert_int_equal(mode->column_count, 2);
+    assert_true(mode->filterable_unstable());
+
+    const int n = block.size();
+    const double* real = mode->right_columns.data();
+    const double* imaginary = real+n;
+    std::vector<double> state(real, real+n);
+    std::vector<double> image(n);
+    std::vector<double> expected(n);
+    std::complex<double> multiplier_power(1.0, 0.0);
+    constexpr int steps = 32;
+    double maximum_relative_error = 0;
+    for (int step = 0; step < steps; ++step) {
+        block.apply(image.data(), state.data());
+        multiplier_power *= mode->multiplier;
+        long double error_squared = 0;
+        long double expected_squared = 0;
+        for (int row = 0; row < n; ++row) {
+            expected[row] = multiplier_power.real()*real[row]
+                -multiplier_power.imag()*imaginary[row];
+            const long double error = image[row]-expected[row];
+            error_squared += error*error;
+            expected_squared += static_cast<long double>(expected[row])
+                *expected[row];
+        }
+        maximum_relative_error = std::max(
+            maximum_relative_error,
+            std::sqrt(static_cast<double>(error_squared/expected_squared)));
+        state.swap(image);
+    }
+
+    long double rr = 0;
+    long double ri = 0;
+    long double ii = 0;
+    long double rx = 0;
+    long double ix = 0;
+    for (int row = 0; row < n; ++row) {
+        rr += real[row]*real[row];
+        ri += real[row]*imaginary[row];
+        ii += imaginary[row]*imaginary[row];
+        rx += real[row]*state[row];
+        ix += imaginary[row]*state[row];
+    }
+    const long double determinant = rr*ii-ri*ri;
+    const double real_coefficient = static_cast<double>((ii*rx-ri*ix)
+                                                         /determinant);
+    const double imaginary_coefficient = static_cast<double>((rr*ix-ri*rx)
+                                                              /determinant);
+    const double measured_frequency = std::atan2(
+        -imaginary_coefficient, real_coefficient)/(steps*0.001);
+    printf("complex mode phase: expected=%+.9e measured=%+.9e "
+           "trajectory_error=%.3e\n",
+           mode->frequency, measured_frequency, maximum_relative_error);
+    assert_true(maximum_relative_error < 2e-11);
+    assert_true(std::abs(measured_frequency-mode->frequency) < 2e-10);
+}
+
 
 // Спектральный проектор на настоящем операторе блока, а не на модельной
 // матрице. По содержанию это chafe2d_check_projection2 / bar_check_projection2
@@ -450,8 +549,7 @@ void test_spectral_projector_on_block(void**) {
         return std::abs(spectrum.modes[x].multiplier)
             > std::abs(spectrum.modes[y].multiplier);
     });
-
-    // старшие по модулю группы играют роль неустойчивого подпространства
+    // Use the leading groups as a stand-in for an unstable subspace.
     auto column_of = [&](const fdm::NSCylSpectralMode<double>& mode,
                          bool left, int column) {
         const auto& values = left ? mode.left_columns : mode.right_columns;
@@ -462,18 +560,25 @@ void test_spectral_projector_on_block(void**) {
 
     std::vector<std::vector<double>> e, et;
     std::size_t used = 0;
-    while (used < groups.size() && e.size() < 4) {
+    std::complex<double> cluster_edge;
+    while (used < groups.size()) {
+        const auto& next = spectrum.modes[groups[used]];
+        if (e.size() >= 4
+            && std::abs(next.multiplier-cluster_edge) > 1e-10) {
+            break;
+        }
         const auto& mode = spectrum.modes[groups[used++]];
         for (int k = 0; k < mode.column_count; ++k) {
             e.push_back(column_of(mode, false, k));
             et.push_back(column_of(mode, true, k));
         }
+        cluster_edge = mode.multiplier;
     }
     const int m = static_cast<int>(e.size());
     assert_true(m >= 2);
     assert_true(used < groups.size());
 
-    // базисы биортогональны, матрица Грама не вырождена
+    // The selected left and right bases have a nonsingular Gram matrix.
     std::vector<double> ete(static_cast<std::size_t>(m)*m);
     const double pivot = fdm::inverse_gramm_matrix(ete.data(), e, et, m, n);
     assert_true(pivot > 1e-8);
@@ -484,11 +589,10 @@ void test_spectral_projector_on_block(void**) {
         return result;
     };
 
-    // geev нормирует собственные вектора, так что абсолютный допуск уместен.
-    // Замеренные невязки на этой сетке порядка 1e-16, запас четыре порядка.
+    // GEEV normalizes eigenvectors, so an absolute tolerance is appropriate.
     const double tol = 1e-12;
 
-    // P r_j = r_j
+    // P r_j = r_j.
     for (int i = 0; i < m; ++i) {
         const auto projected = project(e[i]);
         for (int k = 0; k < n; ++k) {
@@ -496,7 +600,7 @@ void test_spectral_projector_on_block(void**) {
         }
     }
 
-    // P r = 0 для вектора из дополнительного инвариантного подпространства
+    // A vector from a different invariant subspace satisfies P r = 0.
     {
         const auto outside = column_of(
             spectrum.modes[groups[used]], false, 0);
@@ -513,7 +617,7 @@ void test_spectral_projector_on_block(void**) {
         h[k] = distribution(generator);
     }
 
-    // P*P = P и P+ + P- = I
+    // P*P = P and P+ + P- = I.
     const auto Ph = project(h);
     const auto PPh = project(Ph);
     for (int k = 0; k < n; ++k) {
@@ -577,8 +681,10 @@ int main() {
         cmocka_unit_test(test_block_layout_and_round_trip),
         cmocka_unit_test(test_zero_block_uses_weighted_zero_mean_pressure),
         cmocka_unit_test(test_linear_step_preserves_real_packed_block),
+        cmocka_unit_test(test_axisymmetric_block_is_independent_of_nphi),
         cmocka_unit_test(test_dense_spectrum_groups_complex_pair_in_real_columns),
         cmocka_unit_test(test_dense_spectrum_of_real_ns_cyl_block),
+        cmocka_unit_test(test_complex_ns_cyl_mode_has_expected_phase_speed),
         cmocka_unit_test(test_spectral_projector_on_block),
         cmocka_unit_test(test_float_block_apply_is_finite_and_nonzero),
     };

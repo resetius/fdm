@@ -380,6 +380,60 @@ public:
             0.0, velocity_inner_product(geometry, state, state)));
     }
 
+    // Cylindrical velocity norm of the axisymmetric, axially varying (u,v)
+    // projection. The z-mean is removed, so Couette swirl and mean throughflow
+    // do not contribute to this Taylor-vortex diagnostic.
+    template<typename Geometry>
+    double taylor_vortex_norm(const Geometry& geometry,
+                              const T* state) const {
+        std::vector<long double> radial(
+            static_cast<std::size_t>(nz)*(nr-1), 0);
+        std::vector<long double> axial(
+            static_cast<std::size_t>(nz)*nr, 0);
+        for (int k = 0; k < nz; ++k) {
+            for (int i = 0; i < nphi; ++i) {
+                for (int j = 1; j < nr; ++j) {
+                    const int index = u_offset+(i*nz+k)*(nr-1)+(j-1);
+                    radial[static_cast<std::size_t>(k)*(nr-1)+j-1]
+                        += static_cast<long double>(state[index])/nphi;
+                }
+                for (int j = 1; j <= nr; ++j) {
+                    const int index = v_offset+(i*nz+k)*nr+(j-1);
+                    axial[static_cast<std::size_t>(k)*nr+j-1]
+                        += static_cast<long double>(state[index])/nphi;
+                }
+            }
+        }
+
+        long double result = 0;
+        for (int j = 1; j < nr; ++j) {
+            long double mean = 0;
+            for (int k = 0; k < nz; ++k) {
+                mean += radial[static_cast<std::size_t>(k)*(nr-1)+j-1]/nz;
+            }
+            const long double radius = geometry.r0+j*geometry.dr;
+            for (int k = 0; k < nz; ++k) {
+                const long double value =
+                    radial[static_cast<std::size_t>(k)*(nr-1)+j-1]-mean;
+                result += radius*value*value;
+            }
+        }
+        for (int j = 1; j <= nr; ++j) {
+            long double mean = 0;
+            for (int k = 0; k < nz; ++k) {
+                mean += axial[static_cast<std::size_t>(k)*nr+j-1]/nz;
+            }
+            const long double radius = geometry.r0+(j-0.5L)*geometry.dr;
+            for (int k = 0; k < nz; ++k) {
+                const long double value =
+                    axial[static_cast<std::size_t>(k)*nr+j-1]-mean;
+                result += radius*value*value;
+            }
+        }
+        return std::sqrt(static_cast<double>(
+            result*geometry.dr*geometry.dz*2*std::acos(-1.0L)));
+    }
+
     template<typename Geometry>
     double packed_pressure_mean(const Geometry& geometry,
                                 const T* state) const {

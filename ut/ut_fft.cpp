@@ -803,6 +803,56 @@ void test_periodic_fftw3_pFFT_double(void** s) {
 void test_periodic_fftw3_pFFT_float(void** s) {
     test_periodic_fftw3_pFFT<float>(s);
 }
+
+#ifdef _OPENMP
+template<typename T>
+void test_fftw3_omp_safe_lazy_plans(void**) {
+    constexpr int N = 64;
+    const int threads = std::min(8, omp_get_max_threads());
+    const int lines = threads;
+    const T tolerance = std::is_same_v<T, float> ? T(2e-5) : T(2e-13);
+
+    std::vector<T> input(static_cast<std::size_t>(lines)*N);
+    std::vector<T> coefficients(static_cast<std::size_t>(lines)*N);
+    std::vector<T> restored(static_cast<std::size_t>(lines)*N);
+    for (int line = 0; line < lines; ++line) {
+        for (int i = 0; i < N; ++i) {
+            input[line*N+i] = std::sin(T(0.13)*(i+1)*(line+1))
+                +T(0.1)*std::cos(T(0.07)*(i+2)*(line+3));
+        }
+    }
+
+    for (int repeat = 0; repeat < 4; ++repeat) {
+        fdm::FFTOmpSafe<T, fdm::FFT_fftw3<T>> fft(N);
+#pragma omp parallel for schedule(static, 1) num_threads(threads)
+        for (int line = 0; line < lines; ++line) {
+            fft.pFFT_1(coefficients.data()+line*N,
+                       input.data()+line*N, T(1));
+            fft.pFFT(restored.data()+line*N,
+                     coefficients.data()+line*N, T(2)/N);
+        }
+        for (std::size_t i = 0; i < input.size(); ++i) {
+            assert_true(std::abs(restored[i]-input[i]) <= tolerance);
+        }
+    }
+
+    fdm::FFT_fftw3<T> source(N);
+    fdm::FFT_fftw3<T> moved(std::move(source));
+    moved.pFFT_1(coefficients.data(), input.data(), T(1));
+    moved.pFFT(restored.data(), coefficients.data(), T(2)/N);
+    for (int i = 0; i < N; ++i) {
+        assert_true(std::abs(restored[i]-input[i]) <= tolerance);
+    }
+}
+
+void test_fftw3_omp_safe_lazy_plans_double(void** state) {
+    test_fftw3_omp_safe_lazy_plans<double>(state);
+}
+
+void test_fftw3_omp_safe_lazy_plans_float(void** state) {
+    test_fftw3_omp_safe_lazy_plans<float>(state);
+}
+#endif
 #endif
 
 #ifdef HAVE_ONEMATH
@@ -1224,6 +1274,10 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_sin_fftw3_double, &c),
         cmocka_unit_test_prestate(test_cos_fftw3_float, &c),
         cmocka_unit_test_prestate(test_cos_fftw3_double, &c),
+#ifdef _OPENMP
+        cmocka_unit_test(test_fftw3_omp_safe_lazy_plans_float),
+        cmocka_unit_test(test_fftw3_omp_safe_lazy_plans_double),
+#endif
 #endif
 #ifdef HAVE_ONEMATH
         cmocka_unit_test_prestate(test_periodic_sycl_pFFT_1_float, &c),

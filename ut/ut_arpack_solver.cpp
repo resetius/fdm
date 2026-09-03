@@ -93,6 +93,40 @@ void test_laplace_float(void**) {
     check_laplace<float>(1e-5f, 2e-4f);
 }
 
+void test_zero_convergence_is_reported_without_abort(void**) {
+    constexpr int n = 100;
+    constexpr int nev = 6;
+    csr_matrix<double> matrix;
+    for (int i = 0; i < n; ++i) {
+        if (i > 0) {
+            matrix.add(i, i-1, -1.0);
+        }
+        matrix.add(i, i, 2.0);
+        if (i+1 < n) {
+            matrix.add(i, i+1, -1.0);
+        }
+    }
+    matrix.close();
+
+    arpack_solver<double> solver(
+        n, 1, arpack_solver<double>::standard,
+        arpack_solver<double>::largest_magnitude,
+        arpack_solver<double>::fixed, 1e-14);
+    solver.set_ncv(nev+2);
+    solver.set_resid(1.0);
+    vector<complex<double>> eigenvalues;
+    vector<vector<double>> eigenvectors;
+    solver.solve([&](double* y, const double* x) {
+        matrix.mul(y, x);
+    }, eigenvalues, eigenvectors, nev);
+
+    assert_int_equal(solver.last_naupd_info(), 1);
+    assert_int_equal(solver.last_neupd_info(), -14);
+    assert_int_equal(solver.last_nconv(), 0);
+    assert_true(eigenvalues.empty());
+    assert_true(eigenvectors.empty());
+}
+
 // Each reverse-communication loop remains on one thread; TLS isolates loops.
 template<typename T>
 static vector<complex<T>> solve_shifted(T shift, T tolerance) {
@@ -172,6 +206,7 @@ int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_laplace_double),
         cmocka_unit_test(test_laplace_float),
+        cmocka_unit_test(test_zero_convergence_is_reported_without_abort),
         cmocka_unit_test(test_concurrent_solvers_double),
         cmocka_unit_test(test_concurrent_solvers_float),
     };

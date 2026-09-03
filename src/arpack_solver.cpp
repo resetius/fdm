@@ -426,6 +426,11 @@ void arpack_solver<T>::solve(
     }
 
     last_neupd_info_ = info;
+    if (info == -14 && last_nconv_ == 0) {
+        eigenvalues.clear();
+        eigenvectors.clear();
+        return;
+    }
     verify(info == 0, format("*neupd: %d: ", info).c_str());
 //    int nconv = std::min(iparam[4], nev);
     int nconv = iparam[4];

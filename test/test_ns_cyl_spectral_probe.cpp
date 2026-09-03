@@ -48,6 +48,7 @@ struct ProbeResult {
     int arpack_iterations = 0;
     int arpack_nconv = 0;
     int arpack_starts = 0;
+    int arpack_lr_starts = 0;
     double max_leakage = 0;
     bool candidate = false;
     bool guard_reached = false;
@@ -109,6 +110,8 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
     const int residual_seed = config.get("spectral", "residual_seed", 0);
     const int probe_starts = std::max(
         1, config.get("spectral", "probe_starts", 3));
+    const int probe_lr_starts = std::max(
+        0, config.get("spectral", "probe_lr_starts", 1));
     const double default_tolerance = std::max(
         1e-8, 8.0*static_cast<double>(std::numeric_limits<T>::epsilon()));
     const T tolerance = static_cast<T>(
@@ -136,27 +139,28 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
 
         result.nev = nev;
         result.ncv = ncv;
-        result.arpack_starts = probe_starts;
+        result.arpack_starts = 0;
+        result.arpack_lr_starts = 0;
         double best_magnitude = -1;
+        vector<complex<T>> best_eigenvalues;
 
-        for (int start = 0; start < probe_starts; ++start) {
-            arpack_solver<T> solver(
-                n, maxit,
-                arpack_solver<T>::standard,
-                arpack_solver<T>::largest_magnitude,
-                arpack_solver<T>::fixed,
-                tolerance);
+        auto run_starts = [&](typename arpack_solver<T>::WhichEigenvalues which,
+                              int count, int start_offset) {
+          for (int local_start = 0; local_start < count; ++local_start) {
+            const int start = start_offset + local_start;
+            arpack_solver<T> solver(n, maxit, arpack_solver<T>::standard, which,
+                                    arpack_solver<T>::fixed, tolerance);
             solver.set_ncv(ncv);
 
             vector<T> residual(n);
-            const T seed = static_cast<T>(residual_seed+start);
+            const T seed = static_cast<T>(residual_seed + start);
             for (int i = 0; i < n; ++i) {
-                const T x = static_cast<T>(i+1);
-                residual[i] =
-                    std::sin((T(0.371)+T(0.017)*seed)*x
-                             +T(0.17)*index.m+T(0.131)*seed)
-                    +T(0.5)*std::cos((T(0.193)+T(0.011)*seed)*x
-                                     +T(0.11)*index.l-T(0.073)*seed);
+              const T x = static_cast<T>(i + 1);
+              residual[i] =
+                  std::sin((T(0.371) + T(0.017) * seed) * x +
+                           T(0.17) * index.m + T(0.131) * seed) +
+                  T(0.5) * std::cos((T(0.193) + T(0.011) * seed) * x +
+                                    T(0.11) * index.l - T(0.073) * seed);
             }
             solver.set_resid(residual.data());
 
@@ -164,28 +168,60 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
             vector<vector<T>> eigenvectors;
             int calls = 0;
             double max_leakage = 0;
-            solver.solve([&](T* y, const T* x) {
-                block->apply(y, x);
-                max_leakage = std::max(max_leakage,
-                                       block->last_fourier_leakage());
-                ++calls;
-            }, eigenvalues, eigenvectors, nev);
+            solver.solve(
+                [&](T *y, const T *x) {
+                  block->apply(y, x);
+                  max_leakage =
+                      std::max(max_leakage, block->last_fourier_leakage());
+                  ++calls;
+                },
+                eigenvalues, eigenvectors, nev);
 
             result.operator_calls += calls;
+            ++result.arpack_starts;
+            if (which == arpack_solver<T>::largest_real_part) {
+              ++result.arpack_lr_starts;
+            }
             result.max_leakage = std::max(result.max_leakage, max_leakage);
             double leading_magnitude = -1;
-            for (const auto& value : eigenvalues) {
-                leading_magnitude = std::max(
-                    leading_magnitude, static_cast<double>(std::abs(value)));
+            for (const auto &value : eigenvalues) {
+              leading_magnitude = std::max(
+                  leading_magnitude, static_cast<double>(std::abs(value)));
             }
             if (leading_magnitude > best_magnitude) {
-                best_magnitude = leading_magnitude;
-                result.arpack_info = solver.last_naupd_info();
-                result.arpack_iterations = solver.last_iterations();
-                result.arpack_nconv = solver.last_nconv();
-                result.eigenvalues = std::move(eigenvalues);
+              best_magnitude = leading_magnitude;
+              result.arpack_info = solver.last_naupd_info();
+              result.arpack_iterations = solver.last_iterations();
+              result.arpack_nconv = solver.last_nconv();
+              best_eigenvalues = std::move(eigenvalues);
+            } else if (best_magnitude < 0) {
+              result.arpack_info = solver.last_naupd_info();
+              result.arpack_iterations = solver.last_iterations();
+              result.arpack_nconv = solver.last_nconv();
             }
+          }
+        };
+
+        auto has_unstable = [&](const vector<complex<T>>& eigenvalues) {
+            return std::any_of(eigenvalues.begin(), eigenvalues.end(),
+                [&](const complex<T>& value) {
+                    const double magnitude = std::abs(value);
+                    const double growth = magnitude > 0
+                        ? std::log(magnitude)/(operator_steps*dt)
+                        : -INFINITY;
+                    return growth > growth_tolerance;
+                });
+        };
+
+        run_starts(arpack_solver<T>::largest_magnitude, probe_starts, 0);
+        if (!has_unstable(best_eigenvalues)) {
+            // A repeated or strongly nonnormal dominant eigenspace can be
+            // missed by an LM restart. LR is an independent screen near the
+            // unit circle; any positive hit is verified by the dense solve.
+            run_starts(arpack_solver<T>::largest_real_part,
+                       probe_lr_starts, probe_starts);
         }
+        result.eigenvalues = std::move(best_eigenvalues);
 
         int unstable = 0;
         int stable = 0;
@@ -216,7 +252,8 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
     const bool dense_candidates =
         config.get("spectral", "dense_candidates", 1) != 0;
     const bool dense_all = config.get("spectral", "dense_all", 0) != 0;
-    if (dense_all || (dense_candidates && result.candidate)) {
+    if (dense_all
+        || (dense_candidates && (result.candidate || !result.guard_reached))) {
         result.dense_spectrum = fdm::solve_ns_cyl_dense_block(
             *block, dt, growth_tolerance, residual_limit);
         result.max_leakage = std::max(
@@ -316,11 +353,13 @@ void run(const Config& config) {
         }
 
         printf("block (m=%d,l=%d): D=%d phases=%d arpack_n=%d "
-               "nev=%d ncv=%d starts=%d calls=%d info=%d iterations=%d "
+               "nev=%d ncv=%d starts=%d lr_starts=%d calls=%d info=%d "
+               "iterations=%d "
                "nconv=%d leakage=%.3e guard=%s%s\n",
                result.block.m, result.block.l,
                result.radial_size, result.phase_count, result.arpack_size,
                result.nev, result.ncv, result.arpack_starts,
+               result.arpack_lr_starts,
                result.operator_calls,
                result.arpack_info, result.arpack_iterations,
                result.arpack_nconv, result.max_leakage,
@@ -393,7 +432,7 @@ void run(const Config& config) {
             }
         } else if (result.guard_reached) {
             printf("DENSE_COUNT m=%d l=%d unstable=0 groups=0 total=0 calls=0 "
-                   "leading_abs=nan leading_growth=nan certified_by_probe=1\n",
+                   "leading_abs=nan leading_growth=nan screened_by_probe=1\n",
                    result.block.m, result.block.l);
         }
         for (int position = 0; position < static_cast<int>(indices.size());

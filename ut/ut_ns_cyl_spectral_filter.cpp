@@ -208,6 +208,22 @@ void test_velocity_norm_uses_cylindrical_measure(void**) {
     const double actual = layout.velocity_norm(state, packed.data());
     assert_true(std::abs(actual*actual-expected_squared)
                 < 2e-14*expected_squared);
+
+    std::fill(packed.begin(), packed.end(), 0.0);
+    for (int i = 0; i < state.nphi; ++i) {
+        for (int k = 0; k < state.nz; ++k) {
+            for (int j = 1; j <= state.nr; ++j) {
+                packed[layout.v_offset+(i*state.nz+k)*state.nr+j-1] =
+                    std::sin(2*M_PI*k/state.nz);
+            }
+        }
+    }
+    const double expected_taylor_squared = M_PI*(state.h2-state.h1)
+        *(state.R*state.R-state.r0*state.r0)/2;
+    const double actual_taylor =
+        layout.taylor_vortex_norm(state, packed.data());
+    assert_true(std::abs(actual_taylor*actual_taylor-expected_taylor_squared)
+                < 2e-14*expected_taylor_squared);
 }
 
 void test_linear_unstable_trajectory_is_removed(void**) {
