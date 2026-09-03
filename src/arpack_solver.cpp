@@ -130,6 +130,8 @@ void arpack_solver<T>::solve(
     last_neupd_info_ = 0;
     last_nconv_ = 0;
     last_iterations_ = 0;
+    eigenvalues.clear();
+    eigenvectors.clear();
     int ido = 0;
 /*  NEV     Integer.  (INPUT/OUTPUT) */
 /*          Number of eigenvalues of OP to be computed. 0 < NEV < N-1. */
@@ -331,6 +333,12 @@ void arpack_solver<T>::solve(
     last_naupd_info_ = info;
     last_iterations_ = iparam[2];
     last_nconv_ = iparam[4];
+    // ARPACK reports -8 when LAPACK cannot compute the Schur form of the
+    // current Hessenberg matrix. This is a numerical failure of this
+    // Arnoldi start, so callers using multiple starts can safely retry it.
+    if (info == -8) {
+        return;
+    }
     verify(info >= 0, format("*naupd: %d: ", info).c_str());
 /*             RVEC = .FALSE.     Compute Ritz values only. */
 

@@ -49,6 +49,7 @@ struct ProbeResult {
     int arpack_nconv = 0;
     int arpack_starts = 0;
     int arpack_lr_starts = 0;
+    int arpack_failed_starts = 0;
     double max_leakage = 0;
     bool candidate = false;
     bool guard_reached = false;
@@ -181,6 +182,9 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
             ++result.arpack_starts;
             if (which == arpack_solver<T>::largest_real_part) {
               ++result.arpack_lr_starts;
+            }
+            if (solver.last_naupd_info() == -8) {
+              ++result.arpack_failed_starts;
             }
             result.max_leakage = std::max(result.max_leakage, max_leakage);
             double leading_magnitude = -1;
@@ -353,13 +357,15 @@ void run(const Config& config) {
         }
 
         printf("block (m=%d,l=%d): D=%d phases=%d arpack_n=%d "
-               "nev=%d ncv=%d starts=%d lr_starts=%d calls=%d info=%d "
+               "nev=%d ncv=%d starts=%d lr_starts=%d failed_starts=%d "
+               "calls=%d info=%d "
                "iterations=%d "
                "nconv=%d leakage=%.3e guard=%s%s\n",
                result.block.m, result.block.l,
                result.radial_size, result.phase_count, result.arpack_size,
                result.nev, result.ncv, result.arpack_starts,
                result.arpack_lr_starts,
+               result.arpack_failed_starts,
                result.operator_calls,
                result.arpack_info, result.arpack_iterations,
                result.arpack_nconv, result.max_leakage,
