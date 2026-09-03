@@ -24,6 +24,9 @@ target_link_libraries(fdm_ns_cyl_spectral fdm)
 
 add_executable(fdm_ns_cyl_spectral_probe test_ns_cyl_spectral_probe.cpp)
 target_link_libraries(fdm_ns_cyl_spectral_probe fdm)
+if (SYCL_FOUND)
+target_compile_definitions(fdm_ns_cyl_spectral_probe PRIVATE FDM_HAVE_SYCL=1)
+endif()
 
 add_executable(fdm_ns_cyl_spectral_filter_experiment
     test_ns_cyl_spectral_filter_experiment.cpp)

@@ -1,11 +1,13 @@
 #pragma once
 // NSCylSycl<T> — SYCL port of NSCyl (Taylor-Couette, z-periodic).
-// Fields in sycl::malloc_shared; LaplCyl3FFT2 Poisson solve on CPU.
+// Fields use shared USM; LaplCylSycl performs the Poisson solve on the device.
 // Coordinates: phi (azimuthal, periodic), z (axial, periodic), r (radial).
 
 #include <sycl/sycl.hpp>
 #include "lapl_cyl_sycl.h"
+#include "ns_cyl_state.h"
 #include <cmath>
+#include <stdexcept>
 
 namespace fdm {
 
@@ -52,12 +54,21 @@ private:
     // x, RHS, G, H   : [phi=0..nphi-1][z=0..nz-1][r=1..nr]   (interior)
     // F              : [phi=0..nphi-1][z=0..nz-1][r=0..nr]    (nr+1 radial faces)
     T *u_mem, *v_mem, *w_mem, *p_mem;
+    T *u0_mem, *v0_mem, *w0_mem;
     T *x_mem, *F_mem, *G_mem, *H_mem, *RHS_mem;
 
     LaplCylSycl<T> lapl_solver;
 
     static T* shalloc(sycl::queue& q, int n) {
         return sycl::malloc_shared<T>(n, q);
+    }
+
+    static sycl::queue& require_in_order(sycl::queue& queue) {
+        if (!queue.has_property<sycl::property::queue::in_order>()) {
+            throw std::invalid_argument(
+                "NSCylSycl requires an in-order SYCL queue");
+        }
+        return queue;
     }
 
 public:
@@ -68,6 +79,9 @@ public:
     CylAcc<T> va() const { return {v_mem,   nphi, nz,  0, nr+1}; }
     CylAcc<T> wa() const { return {w_mem,   nphi, nz,  0, nr+1}; }
     CylAcc<T> pa() const { return {p_mem,   nphi, nz,  0, nr+1}; }
+    CylAcc<T> u0a() const { return {u0_mem, nphi, nz, -1, nr+1}; }
+    CylAcc<T> v0a() const { return {v0_mem, nphi, nz,  0, nr+1}; }
+    CylAcc<T> w0a() const { return {w0_mem, nphi, nz,  0, nr+1}; }
     CylAcc<T> xa() const { return {x_mem,   nphi, nz,  1, nr  }; }
     CylAcc<T> Fa() const { return {F_mem,   nphi, nz,  0, nr  }; }
     CylAcc<T> Ga() const { return {G_mem,   nphi, nz,  1, nr  }; }
@@ -83,11 +97,14 @@ public:
         , dr((R_-r0_)/nr_), dz(lz_/nz_), dphi(T(2*M_PI)/nphi_)
         , dr2(dr*dr), dz2(dz*dz), dphi2(dphi*dphi)
         , dt(dt_), Re(Re_), U0(U0_)
-        , q(q_)
+        , q(require_in_order(q_))
         , u_mem  (shalloc(q_, nphi_*nz_*(nr_+3)))
         , v_mem  (shalloc(q_, nphi_*nz_*(nr_+2)))
         , w_mem  (shalloc(q_, nphi_*nz_*(nr_+2)))
         , p_mem  (shalloc(q_, nphi_*nz_*(nr_+2)))
+        , u0_mem (shalloc(q_, nphi_*nz_*(nr_+3)))
+        , v0_mem (shalloc(q_, nphi_*nz_*(nr_+2)))
+        , w0_mem (shalloc(q_, nphi_*nz_*(nr_+2)))
         , x_mem  (shalloc(q_, nphi_*nz_*nr_))
         , F_mem  (shalloc(q_, nphi_*nz_*(nr_+1)))
         , G_mem  (shalloc(q_, nphi_*nz_*nr_))
@@ -99,6 +116,9 @@ public:
         q.memset(v_mem,   0, nphi_*nz_*(nr_+2)*sizeof(T));
         q.memset(w_mem,   0, nphi_*nz_*(nr_+2)*sizeof(T));
         q.memset(p_mem,   0, nphi_*nz_*(nr_+2)*sizeof(T));
+        q.memset(u0_mem,  0, nphi_*nz_*(nr_+3)*sizeof(T));
+        q.memset(v0_mem,  0, nphi_*nz_*(nr_+2)*sizeof(T));
+        q.memset(w0_mem,  0, nphi_*nz_*(nr_+2)*sizeof(T));
         q.memset(x_mem,   0, nphi_*nz_*nr_    *sizeof(T));
         q.memset(F_mem,   0, nphi_*nz_*(nr_+1)*sizeof(T));
         q.memset(G_mem,   0, nphi_*nz_*nr_    *sizeof(T));
@@ -110,18 +130,53 @@ public:
     ~NSCylSycl() {
         sycl::free(u_mem,   q);  sycl::free(v_mem, q);
         sycl::free(w_mem,   q);  sycl::free(p_mem, q);
+        sycl::free(u0_mem,  q);  sycl::free(v0_mem, q);
+        sycl::free(w0_mem,  q);
         sycl::free(x_mem,   q);  sycl::free(F_mem, q);
         sycl::free(G_mem,   q);  sycl::free(H_mem, q);
         sycl::free(RHS_mem, q);
     }
 
     void step() {
-        kernel_init_bound();
+        kernel_init_bound(U0);
         kernel_FGH();
         kernel_pressure_bound();
         kernel_poisson_rhs();
         lapl_solver.solve(x_mem, RHS_mem);
         kernel_update_uvwp();
+    }
+
+    void initialize_couette_linearization(T wall_speed) {
+        struct Geometry {
+            int nr;
+            T r0;
+            T R;
+            T dr;
+            T U0;
+        } geometry{nr, r0, R, dr, wall_speed};
+        const auto profile = make_discrete_couette_velocity<T>(geometry);
+
+        q.memset(u0_mem, 0, nphi*nz*(nr+3)*sizeof(T));
+        q.memset(v0_mem, 0, nphi*nz*(nr+2)*sizeof(T));
+        q.memset(w0_mem, 0, nphi*nz*(nr+2)*sizeof(T));
+        q.wait();
+        auto w0 = w0a();
+        for (int i = 0; i < nphi; ++i) {
+            for (int k = 0; k < nz; ++k) {
+                for (int j = 0; j <= nr+1; ++j) {
+                    w0(i, k, j) = profile[j];
+                }
+            }
+        }
+    }
+
+    void L_step() {
+        kernel_init_bound(T(0));
+        kernel_L_FGH();
+        kernel_L_pressure_bound();
+        kernel_L_poisson_rhs();
+        lapl_solver.solve(x_mem, RHS_mem);
+        kernel_L_update_uvwp();
     }
 
     // Colour source written into the render buffer's 4th component.
@@ -223,21 +278,255 @@ public:
 
 private:
     // ── Boundary conditions ───────────────────────────────────────────────────
-    void kernel_init_bound() {
+    void kernel_init_bound(T wall_speed) {
         auto ua_=ua(), va_=va(), wa_=wa();
-        const int nr_=nr, nz_=nz, nphi_=nphi;
-        const T U0_=U0;
+        const int nr_=nr;
+        const T wall_speed_=wall_speed;
 
         // w, v at inner/outer walls; u ghost cells
         q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
             [=](sycl::id<2> id) {
                 int i=(int)id[0], k=(int)id[1];
-                wa_(i,k,0)    = T(2)*U0_ - wa_(i,k,1);   // inner rotating
+                wa_(i,k,0)    = T(2)*wall_speed_ - wa_(i,k,1);
                 wa_(i,k,nr_+1) = -wa_(i,k,nr_);           // outer no-slip
                 va_(i,k,0)    = -va_(i,k,1);              // inner no-slip
                 va_(i,k,nr_+1) = -va_(i,k,nr_);           // outer no-slip
                 ua_(i,k,-1)   = ua_(i,k,1);               // ghost (div-free)
                 ua_(i,k,nr_+1) = ua_(i,k,nr_-1);
+            });
+    }
+
+    void kernel_L_FGH() {
+        auto ua_=ua(), va_=va(), wa_=wa();
+        auto u0a_=u0a(), v0a_=v0a(), w0a_=w0a();
+        auto Fa_=Fa(), Ga_=Ga(), Ha_=Ha();
+        const int nr_=nr;
+        const T Re_=Re, r0_=r0;
+        const T dr_=dr, dz_=dz, dphi_=dphi;
+        const T dr2_=dr2, dz2_=dz2, dphi2_=dphi2;
+
+        q.parallel_for(
+            sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)(nr_+1)),
+            [=](sycl::id<3> id) {
+                int i=(int)id[0], k=(int)id[1], j=(int)id[2];
+                T r  = r0_+dr_*T(j);
+                T r2 = (r+T(0.5)*dr_)/r;
+                T r1 = (r-T(0.5)*dr_)/r;
+                T rr = r*r;
+
+                Fa_(i,k,j) =
+                    (r2*ua_(i,k,j+1)-T(2)*ua_(i,k,j)
+                     +r1*ua_(i,k,j-1))/Re_/dr2_
+                    +(ua_(i,k+1,j)-T(2)*ua_(i,k,j)
+                      +ua_(i,k-1,j))/Re_/dz2_
+                    +(ua_(i+1,k,j)-T(2)*ua_(i,k,j)
+                      +ua_(i-1,k,j))/Re_/dphi2_/rr
+                    -T(0.5)*(r2*(ua_(i,k,j)+ua_(i,k,j+1))
+                                      *(u0a_(i,k,j)+u0a_(i,k,j+1))
+                              -r1*(ua_(i,k,j-1)+ua_(i,k,j))
+                                      *(u0a_(i,k,j-1)+u0a_(i,k,j)))/dr_
+                    -T(0.25)*((ua_(i,k,j)+ua_(i,k+1,j))
+                                   *(v0a_(i,k,j+1)+v0a_(i,k,j))
+                               -(ua_(i,k-1,j)+ua_(i,k,j))
+                                   *(v0a_(i,k-1,j+1)+v0a_(i,k-1,j)))/dz_
+                    -T(0.25)*((u0a_(i,k,j)+u0a_(i,k+1,j))
+                                   *(va_(i,k,j+1)+va_(i,k,j))
+                               -(u0a_(i,k-1,j)+u0a_(i,k,j))
+                                   *(va_(i,k-1,j+1)+va_(i,k-1,j)))/dz_
+                    -T(0.25)*((ua_(i,k,j)+ua_(i+1,k,j))
+                                   *(w0a_(i,k,j+1)+w0a_(i,k,j))
+                               -(ua_(i-1,k,j)+ua_(i,k,j))
+                                   *(w0a_(i-1,k,j+1)+w0a_(i-1,k,j)))
+                        /dphi_/r
+                    -T(0.25)*((u0a_(i,k,j)+u0a_(i+1,k,j))
+                                   *(wa_(i,k,j+1)+wa_(i,k,j))
+                               -(u0a_(i-1,k,j)+u0a_(i,k,j))
+                                   *(wa_(i-1,k,j+1)+wa_(i-1,k,j)))
+                        /dphi_/r
+                    +T(0.5)*(wa_(i,k,j+1)+wa_(i,k,j))
+                            *(w0a_(i,k,j+1)+w0a_(i,k,j))/r
+                    -ua_(i,k,j)/rr/Re_
+                    -T(2)*(T(0.5)*(wa_(i,k,j+1)+wa_(i,k,j))
+                          -T(0.5)*(wa_(i-1,k,j+1)+wa_(i-1,k,j)))
+                        /rr/dphi_/Re_;
+            });
+
+        q.parallel_for(
+            sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)nr_),
+            [=](sycl::id<3> id) {
+                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
+                T r  = r0_+dr_*T(j)-T(0.5)*dr_;
+                T r2 = (r+T(0.5)*dr_)/r;
+                T r1 = (r-T(0.5)*dr_)/r;
+                T rr = r*r;
+
+                Ga_(i,k,j) =
+                    (r2*va_(i,k,j+1)-T(2)*va_(i,k,j)
+                     +r1*va_(i,k,j-1))/Re_/dr2_
+                    +(va_(i,k+1,j)-T(2)*va_(i,k,j)
+                      +va_(i,k-1,j))/Re_/dz2_
+                    +(va_(i+1,k,j)-T(2)*va_(i,k,j)
+                      +va_(i-1,k,j))/Re_/dphi2_/rr
+                    -(T(0.5)*(va_(i,k,j)+va_(i,k+1,j))
+                                  *(v0a_(i,k,j)+v0a_(i,k+1,j))
+                      -T(0.5)*(va_(i,k-1,j)+va_(i,k,j))
+                                  *(v0a_(i,k-1,j)+v0a_(i,k,j)))/dz_
+                    -T(0.25)*(r2*(ua_(i,k,j)+ua_(i,k+1,j))
+                                   *(v0a_(i,k,j+1)+v0a_(i,k,j))
+                               -r1*(ua_(i,k,j-1)+ua_(i,k+1,j-1))
+                                   *(v0a_(i,k,j)+v0a_(i,k,j-1)))/dr_
+                    -T(0.25)*(r2*(u0a_(i,k,j)+u0a_(i,k+1,j))
+                                   *(va_(i,k,j+1)+va_(i,k,j))
+                               -r1*(u0a_(i,k,j-1)+u0a_(i,k+1,j-1))
+                                   *(va_(i,k,j)+va_(i,k,j-1)))/dr_
+                    -T(0.25)*((wa_(i,k,j)+wa_(i,k+1,j))
+                                   *(v0a_(i,k,j)+v0a_(i+1,k,j))
+                               -(wa_(i-1,k,j)+wa_(i-1,k+1,j))
+                                   *(v0a_(i-1,k,j)+v0a_(i,k,j)))
+                        /dphi_/r
+                    -T(0.25)*((w0a_(i,k,j)+w0a_(i,k+1,j))
+                                   *(va_(i,k,j)+va_(i+1,k,j))
+                               -(w0a_(i-1,k,j)+w0a_(i-1,k+1,j))
+                                   *(va_(i-1,k,j)+va_(i,k,j)))
+                        /dphi_/r;
+            });
+
+        q.parallel_for(
+            sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)nr_),
+            [=](sycl::id<3> id) {
+                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
+                T r  = r0_+dr_*T(j)-T(0.5)*dr_;
+                T r2 = (r+T(0.5)*dr_)/r;
+                T r1 = (r-T(0.5)*dr_)/r;
+                T rr = r*r;
+
+                Ha_(i,k,j) =
+                    (r2*wa_(i,k,j+1)-T(2)*wa_(i,k,j)
+                     +r1*wa_(i,k,j-1))/Re_/dr2_
+                    +(wa_(i,k+1,j)-T(2)*wa_(i,k,j)
+                      +wa_(i,k-1,j))/Re_/dz2_
+                    +(wa_(i+1,k,j)-T(2)*wa_(i,k,j)
+                      +wa_(i-1,k,j))/Re_/dphi2_/rr
+                    -(T(0.5)*(wa_(i+1,k,j)+wa_(i,k,j))
+                                  *(w0a_(i+1,k,j)+w0a_(i,k,j))
+                      -T(0.5)*(wa_(i-1,k,j)+wa_(i,k,j))
+                                  *(w0a_(i-1,k,j)+w0a_(i,k,j)))
+                        /dphi_/r
+                    -T(0.25)*(r2*(ua_(i+1,k,j)+ua_(i,k,j))
+                                   *(w0a_(i,k,j+1)+w0a_(i,k,j))
+                               -r1*(ua_(i+1,k,j-1)+ua_(i,k,j-1))
+                                   *(w0a_(i,k,j)+w0a_(i,k,j-1)))/dr_
+                    -T(0.25)*(r2*(u0a_(i+1,k,j)+u0a_(i,k,j))
+                                   *(wa_(i,k,j+1)+wa_(i,k,j))
+                               -r1*(u0a_(i+1,k,j-1)+u0a_(i,k,j-1))
+                                   *(wa_(i,k,j)+wa_(i,k,j-1)))/dr_
+                    -T(0.25)*((wa_(i,k,j)+wa_(i,k+1,j))
+                                   *(v0a_(i,k,j)+v0a_(i+1,k,j))
+                               -(wa_(i,k-1,j)+wa_(i,k,j))
+                                   *(v0a_(i,k-1,j)+v0a_(i+1,k-1,j)))/dz_
+                    -T(0.25)*((w0a_(i,k,j)+w0a_(i,k+1,j))
+                                   *(va_(i,k,j)+va_(i+1,k,j))
+                               -(w0a_(i,k-1,j)+w0a_(i,k,j))
+                                   *(va_(i,k-1,j)+va_(i+1,k-1,j)))/dz_
+                    -w0a_(i,k,j)*T(0.5)*(ua_(i+1,k,j)+ua_(i,k,j))/r
+                    -wa_(i,k,j)*T(0.5)*(u0a_(i+1,k,j)+u0a_(i,k,j))/r
+                    -wa_(i,k,j)/rr/Re_
+                    +T(2)*(T(0.5)*(ua_(i+1,k,j)+ua_(i,k,j))
+                          -T(0.5)*(ua_(i,k,j)+ua_(i-1,k,j)))
+                        /rr/dphi_/Re_;
+            });
+    }
+
+    // The linear path stores momentum tendencies in F/G/H and solves for
+    // q=dt*p.  Keeping u and dt*F separate avoids losing the small tendency
+    // before the projection takes a divergence.
+    void kernel_L_pressure_bound() {
+        auto ua_=ua(), pa_=pa(), Fa_=Fa();
+        const int nr_=nr;
+        const T dt_=dt, dr_=dr;
+
+        q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
+            [=](sycl::id<2> id) {
+                int i=(int)id[0], k=(int)id[1];
+                pa_(i,k,0) = dt_*pa_(i,k,1)
+                    -dr_*(ua_(i,k,0)+dt_*Fa_(i,k,0));
+                pa_(i,k,nr_+1) = dt_*pa_(i,k,nr_)
+                    +dr_*(ua_(i,k,nr_)+dt_*Fa_(i,k,nr_));
+            });
+    }
+
+    void kernel_L_poisson_rhs() {
+        auto ua_=ua(), va_=va(), wa_=wa();
+        auto Fa_=Fa(), Ga_=Ga(), Ha_=Ha(), Ra_=Ra(), pa_=pa();
+        const int nr_=nr;
+        const T dt_=dt, r0_=r0, dr_=dr, dz_=dz, dphi_=dphi;
+        const T dr2_=dr2;
+
+        q.parallel_for(sycl::range<3>(
+            (size_t)nphi, (size_t)nz, (size_t)nr_),
+            [=](sycl::id<3> id) {
+                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
+                T r = r0_+dr_*T(j)-T(0.5)*dr_;
+                const T velocity_divergence =
+                    ((r+T(0.5)*dr_)*ua_(i,k,j)
+                     -(r-T(0.5)*dr_)*ua_(i,k,j-1))/r/dr_
+                    +(va_(i,k,j)-va_(i,k-1,j))/dz_
+                    +(wa_(i,k,j)-wa_(i-1,k,j))/dphi_/r;
+                const T tendency_divergence =
+                    ((r+T(0.5)*dr_)*Fa_(i,k,j)
+                     -(r-T(0.5)*dr_)*Fa_(i,k,j-1))/r/dr_
+                    +(Ga_(i,k,j)-Ga_(i,k-1,j))/dz_
+                    +(Ha_(i,k,j)-Ha_(i-1,k,j))/dphi_/r;
+                Ra_(i,k,j) = velocity_divergence
+                    +dt_*tendency_divergence;
+
+                if (j == 1) {
+                    Ra_(i,k,j) -= (r-T(0.5)*dr_)/r
+                        *pa_(i,k,0)/dr2_;
+                }
+                if (j == nr_) {
+                    Ra_(i,k,j) -= (r+T(0.5)*dr_)/r
+                        *pa_(i,k,nr_+1)/dr2_;
+                }
+            });
+    }
+
+    void kernel_L_update_uvwp() {
+        auto ua_=ua(), va_=va(), wa_=wa(), pa_=pa();
+        auto xa_=xa(), Fa_=Fa(), Ga_=Ga(), Ha_=Ha();
+        const int nr_=nr;
+        const T dt_=dt, r0_=r0, dr_=dr, dz_=dz, dphi_=dphi;
+
+        q.parallel_for(sycl::range<3>(
+            (size_t)nphi, (size_t)nz, (size_t)(nr_-1)),
+            [=](sycl::id<3> id) {
+                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
+                ua_(i,k,j) += dt_*Fa_(i,k,j)
+                    -(xa_(i,k,j+1)-xa_(i,k,j))/dr_;
+            });
+
+        q.parallel_for(sycl::range<3>(
+            (size_t)nphi, (size_t)nz, (size_t)nr_),
+            [=](sycl::id<3> id) {
+                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
+                va_(i,k,j) += dt_*Ga_(i,k,j)
+                    -(xa_(i,k+1,j)-xa_(i,k,j))/dz_;
+            });
+
+        q.parallel_for(sycl::range<3>(
+            (size_t)nphi, (size_t)nz, (size_t)nr_),
+            [=](sycl::id<3> id) {
+                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
+                T r = r0_+dr_*T(j)-T(0.5)*dr_;
+                wa_(i,k,j) += dt_*Ha_(i,k,j)
+                    -(xa_(i+1,k,j)-xa_(i,k,j))/dphi_/r;
+            });
+
+        q.parallel_for(sycl::range<3>(
+            (size_t)nphi, (size_t)nz, (size_t)nr_),
+            [=](sycl::id<3> id) {
+                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
+                pa_(i,k,j) = xa_(i,k,j)/dt_;
             });
     }
 
@@ -256,8 +545,8 @@ private:
         q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
             [=](sycl::id<2> id) {
                 int i=(int)id[0], k=(int)id[1];
-                pa_(i,k,0)     = pa_(i,k,1)   - dr_*Fa_(i,k,0)/dt_;
-                pa_(i,k,nr_+1) = pa_(i,k,nr_) + dr_*Fa_(i,k,nr_)/dt_;
+                pa_(i,k,0) = pa_(i,k,1)-dr_*Fa_(i,k,0)/dt_;
+                pa_(i,k,nr_+1) = pa_(i,k,nr_)+dr_*Fa_(i,k,nr_)/dt_;
             });
     }
 
@@ -265,7 +554,7 @@ private:
     void kernel_FGH() {
         auto ua_=ua(), va_=va(), wa_=wa();
         auto Fa_=Fa(), Ga_=Ga(), Ha_=Ha();
-        const int nr_=nr, nz_=nz, nphi_=nphi;
+        const int nr_=nr;
         const T dt_=dt, Re_=Re, r0_=r0;
         const T dr_=dr, dz_=dz, dphi_=dphi;
         const T dr2_=dr2, dz2_=dz2, dphi2_=dphi2;
@@ -349,7 +638,7 @@ private:
     // ── Poisson RHS ───────────────────────────────────────────────────────────
     void kernel_poisson_rhs() {
         auto Fa_=Fa(), Ga_=Ga(), Ha_=Ha(), Ra_=Ra(), pa_=pa();
-        const int nr_=nr, nz_=nz, nphi_=nphi;
+        const int nr_=nr;
         const T dt_=dt, r0_=r0, dr_=dr, dz_=dz, dphi_=dphi;
         const T dr2_=dr2;
 
@@ -375,7 +664,7 @@ private:
     void kernel_update_uvwp() {
         auto ua_=ua(), va_=va(), wa_=wa(), pa_=pa();
         auto xa_=xa(), Fa_=Fa(), Ga_=Ga(), Ha_=Ha();
-        const int nr_=nr, nz_=nz, nphi_=nphi;
+        const int nr_=nr, nz_=nz;
         const T dt_=dt, r0_=r0, dr_=dr, dz_=dz, dphi_=dphi;
 
         // u: interior radial faces j=1..nr-1

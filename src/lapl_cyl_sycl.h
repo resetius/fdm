@@ -6,6 +6,7 @@
 
 #include <sycl/sycl.hpp>
 #include <cmath>
+#include <stdexcept>
 
 namespace fdm {
 
@@ -60,6 +61,14 @@ private:
 
     static T* sha(sycl::queue& q, int n) {
         return sycl::malloc_shared<T>(n, q);
+    }
+
+    static sycl::queue& require_in_order(sycl::queue& queue) {
+        if (!queue.has_property<sycl::property::queue::in_order>()) {
+            throw std::invalid_argument(
+                "LaplCylSycl requires an in-order SYCL queue");
+        }
+        return queue;
     }
 
     void init_tables() {
@@ -269,7 +278,7 @@ public:
         , r0(r0_), dr(dr_), dz(dz_), dphi(T(2*M_PI)/nphi_)
         , dr2(dr_*dr_), dz2(dz_*dz_), dphi2(dphi*dphi)
         , lz(lz_), slz(std::sqrt(T(2)/lz_))
-        , q(q_)
+        , q(require_in_order(q_))
         , lm_phi (sha(q_, nphi_))
         , lm_z   (sha(q_, nz_))
         , cos_phi(sha(q_, (nphi_/2+1)*nphi_))

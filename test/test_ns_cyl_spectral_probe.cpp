@@ -11,6 +11,10 @@
 #include <type_traits>
 #include <vector>
 
+#ifdef FDM_HAVE_SYCL
+#include "ns_cyl_fourier_block_sycl.h"
+#endif
+
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -77,30 +81,19 @@ double residual_tolerance(const Config& config) {
         config.get("spectral", "residual_tol", 1e-10));
 }
 
-template<typename T>
-ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
-    using Block = NSCylFourierBlockReference<T, false>;
+template<typename T, typename Block>
+ProbeResult<T> probe_block_impl(
+    const Config& config, BlockIndex index, Block& block)
+{
     ProbeResult<T> result;
     result.block = index;
 
     const int operator_steps = config.get("spectral", "operator_steps", 1);
-    std::unique_ptr<Block> block;
+    result.radial_size = block.radial_size();
+    result.phase_count = block.phase_count();
+    result.arpack_size = block.size();
 
-    // FFTW planning is not generally thread-safe. Each block owns its plans,
-    // but their construction is serialized when the outer probe uses OpenMP.
-#ifdef _OPENMP
-#pragma omp critical(fdm_ns_cyl_probe_fft_planning)
-#endif
-    {
-        block = std::make_unique<Block>(config, index.m, index.l,
-                                        operator_steps);
-    }
-
-    result.radial_size = block->radial_size();
-    result.phase_count = block->phase_count();
-    result.arpack_size = block->size();
-
-    const int n = block->size();
+    const int n = block.size();
     const int largest_valid_nev = n-2;
     int nev = std::min(config.get("spectral", "nev", 4), largest_valid_nev);
     const int max_nev = std::min(
@@ -171,9 +164,9 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
             double max_leakage = 0;
             solver.solve(
                 [&](T *y, const T *x) {
-                  block->apply(y, x);
+                  block.apply(y, x);
                   max_leakage =
-                      std::max(max_leakage, block->last_fourier_leakage());
+                      std::max(max_leakage, block.last_fourier_leakage());
                   ++calls;
                 },
                 eigenvalues, eigenvectors, nev);
@@ -259,7 +252,7 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
     if (dense_all
         || (dense_candidates && (result.candidate || !result.guard_reached))) {
         result.dense_spectrum = fdm::solve_ns_cyl_dense_block(
-            *block, dt, growth_tolerance, residual_limit);
+            block, dt, growth_tolerance, residual_limit);
         result.max_leakage = std::max(
             result.max_leakage,
             result.dense_spectrum.max_fourier_leakage);
@@ -268,6 +261,45 @@ ProbeResult<T> probe_block(const Config& config, BlockIndex index) {
 
     return result;
 }
+
+template<typename T>
+ProbeResult<T> probe_cpu_block(const Config& config, BlockIndex index) {
+    using Block = NSCylFourierBlockReference<T, false>;
+    const int operator_steps = config.get("spectral", "operator_steps", 1);
+    std::unique_ptr<Block> block;
+
+    // FFTW plan creation is serialized; executing distinct plans is safe.
+#ifdef _OPENMP
+#pragma omp critical(fdm_ns_cyl_probe_fft_planning)
+#endif
+    {
+        block = std::make_unique<Block>(
+            config, index.m, index.l, operator_steps);
+    }
+    return probe_block_impl<T>(config, index, *block);
+}
+
+#ifdef FDM_HAVE_SYCL
+sycl::device select_sycl_device() {
+    for (const auto& platform : sycl::platform::get_platforms()) {
+        for (const auto& device : platform.get_devices()) {
+            if (device.is_gpu()) {
+                return device;
+            }
+        }
+    }
+    return sycl::device{sycl::cpu_selector_v};
+}
+
+ProbeResult<float> probe_sycl_block(
+    sycl::queue& queue, const Config& config, BlockIndex index)
+{
+    const int operator_steps = config.get("spectral", "operator_steps", 1);
+    fdm::NSCylSyclFourierBlockReference<float> block(
+        queue, config, index.m, index.l, operator_steps);
+    return probe_block_impl<float>(config, index, block);
+}
+#endif
 
 template<typename T>
 void run(const Config& config) {
@@ -287,6 +319,18 @@ void run(const Config& config) {
     const double residual_limit = residual_tolerance<T>(config);
     const double condition_limit = config.get(
         "spectral", "condition_limit", 1e10);
+    const string backend = config.get(
+        "spectral", "backend", string("cpu"));
+
+    if (backend != "cpu" && backend != "sycl") {
+        throw std::invalid_argument(
+            "spectral backend must be either 'cpu' or 'sycl'");
+    }
+#ifndef FDM_HAVE_SYCL
+    if (backend == "sycl") {
+        throw std::runtime_error("spectral probe was built without SYCL");
+    }
+#endif
 
     if (m_min > m_max || l_min > l_max) {
         throw std::invalid_argument("empty Fourier block range");
@@ -311,6 +355,9 @@ void run(const Config& config) {
 #else
     threads = 1;
 #endif
+    if (backend == "sycl") {
+        threads = 1;
+    }
 
     printf("NSCyl real-packed Fourier ARPACK probe\n");
     printf("grid: nr=%d nz=%d nphi=%d  Re=%.9g dt=%.9g "
@@ -321,8 +368,9 @@ void run(const Config& config) {
            config.get("ns", "R", M_PI),
            config.get("ns", "h1", 0.0),
            config.get("ns", "h2", 10.0));
-    printf("blocks=%zu m=[%d,%d] l=[%d,%d] threads=%d\n",
-           blocks.size(), m_min, m_max, l_min, l_max, threads);
+    printf("blocks=%zu m=[%d,%d] l=[%d,%d] backend=%s threads=%d\n",
+           blocks.size(), m_min, m_max, l_min, l_max,
+           backend.c_str(), threads);
     printf("selection: growth_tol=%.3e residual_tol=%.3e "
            "condition_limit=%.3e\n",
            growth_tolerance, residual_limit, condition_limit);
@@ -330,16 +378,36 @@ void run(const Config& config) {
 
     vector<ProbeResult<T>> results(blocks.size());
 
+    if (backend == "cpu") {
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(threads)
 #endif
-    for (int i = 0; i < static_cast<int>(blocks.size()); ++i) {
-        try {
-            results[i] = probe_block<T>(config, blocks[i]);
-        } catch (const std::exception& error) {
-            results[i].block = blocks[i];
-            results[i].error = error.what();
+        for (int i = 0; i < static_cast<int>(blocks.size()); ++i) {
+            try {
+                results[i] = probe_cpu_block<T>(config, blocks[i]);
+            } catch (const std::exception& error) {
+                results[i].block = blocks[i];
+                results[i].error = error.what();
+            }
         }
+#ifdef FDM_HAVE_SYCL
+    } else if constexpr (std::is_same_v<T, float>) {
+        sycl::queue queue{
+            select_sycl_device(), sycl::property::queue::in_order{}};
+        printf("SYCL device: %s\n", queue.get_device()
+            .get_info<sycl::info::device::name>().c_str());
+        for (int i = 0; i < static_cast<int>(blocks.size()); ++i) {
+            try {
+                results[i] = probe_sycl_block(queue, config, blocks[i]);
+            } catch (const std::exception& error) {
+                results[i].block = blocks[i];
+                results[i].error = error.what();
+            }
+        }
+    } else {
+        throw std::invalid_argument(
+            "SYCL spectral probe currently supports datatype=float only");
+#endif
     }
 
     int probe_candidate_count = 0;
@@ -436,7 +504,7 @@ void run(const Config& config) {
                        mode.growth_rate, mode.frequency,
                        mode.right_residual, mode.left_residual);
             }
-        } else if (result.guard_reached) {
+        } else if (result.guard_reached && !result.candidate) {
             printf("DENSE_COUNT m=%d l=%d unstable=0 groups=0 total=0 calls=0 "
                    "leading_abs=nan leading_growth=nan screened_by_probe=1\n",
                    result.block.m, result.block.l);
