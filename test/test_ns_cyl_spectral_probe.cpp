@@ -1,12 +1,16 @@
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numeric>
+#include <set>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -300,6 +304,600 @@ ProbeResult<float> probe_sycl_block(
     return probe_block_impl<float>(config, index, block);
 }
 #endif
+
+template<typename T>
+class GlobalGaugeLayout {
+public:
+    GlobalGaugeLayout(int nr, int nz, int nphi, double r0, double dr)
+        : layout_(nr, nz, nphi)
+        , householder_(layout_.p_size)
+    {
+        // The gauge condition is w^T p=0 with cell-radius weights w.  This
+        // reflector maps the last pressure coordinate to normalized w, so
+        // its other columns give a well-conditioned orthonormal gauge basis.
+        long double weight_norm2 = 0;
+        for (int index = 0; index < layout_.p_size; ++index) {
+            const int j = index%layout_.nr+1;
+            const long double weight = r0+(j-0.5L)*dr;
+            householder_[index] = -weight;
+            weight_norm2 += weight*weight;
+        }
+        const long double weight_norm = std::sqrt(weight_norm2);
+        for (long double& value : householder_) {
+            value /= weight_norm;
+        }
+        householder_.back() += 1;
+        long double reflector_norm2 = 0;
+        for (long double value : householder_) {
+            reflector_norm2 += value*value;
+        }
+        const long double reflector_norm = std::sqrt(reflector_norm2);
+        for (long double& value : householder_) {
+            value /= reflector_norm;
+        }
+    }
+
+    int size() const { return layout_.state_size-1; }
+    int full_size() const { return layout_.state_size; }
+
+    const fdm::NSCylStateLayout<T>& state_layout() const { return layout_; }
+
+    template<typename Geometry>
+    void expand(const Geometry& geometry, const T* reduced, T* full) const {
+        (void)geometry;
+        std::copy(reduced, reduced+size(), full);
+        full[size()] = T(0);
+        reflect_pressure(full);
+    }
+
+    template<typename Geometry>
+    void reduce(const Geometry& geometry, T* full, T* reduced) const {
+        layout_.normalize_packed_pressure(geometry, full);
+        reflect_pressure(full);
+        std::copy(full, full+size(), reduced);
+    }
+
+private:
+    fdm::NSCylStateLayout<T> layout_;
+    vector<long double> householder_;
+
+    void reflect_pressure(T* state) const {
+        long double dot = 0;
+        for (int index = 0; index < layout_.p_size; ++index) {
+            dot += householder_[index]*static_cast<long double>(
+                state[layout_.p_offset+index]);
+        }
+        for (int index = 0; index < layout_.p_size; ++index) {
+            state[layout_.p_offset+index] -= static_cast<T>(
+                2*householder_[index]*dot);
+        }
+    }
+};
+
+template<typename T>
+class GlobalCpuOperator {
+public:
+    using Task = fdm::NSCyl<T, false, fdm::tensor_flag::periodic>;
+
+    explicit GlobalCpuOperator(const Config& config)
+        : ns_(config)
+        , gauge_(ns_.nr, ns_.nz, ns_.nphi, ns_.r0, ns_.dr)
+        , operator_steps_(config.get("spectral", "operator_steps", 1))
+        , full_(gauge_.full_size())
+    {
+        if (operator_steps_ <= 0) {
+            throw std::invalid_argument("operator_steps must be positive");
+        }
+        gauge_.state_layout().initialize_couette_linearization(ns_);
+        ns_.U0 = 0;
+    }
+
+    int size() const { return gauge_.size(); }
+    const Task& geometry() const { return ns_; }
+
+    void apply(T* y, const T* x) {
+        gauge_.expand(ns_, x, full_.data());
+        gauge_.state_layout().unpack(ns_, full_.data());
+        for (int step = 0; step < operator_steps_; ++step) {
+            ns_.L_step();
+        }
+        gauge_.state_layout().pack(ns_, full_.data());
+        gauge_.reduce(ns_, full_.data(), y);
+    }
+
+private:
+    Task ns_;
+    GlobalGaugeLayout<T> gauge_;
+    int operator_steps_;
+    vector<T> full_;
+};
+
+#ifdef FDM_HAVE_SYCL
+class GlobalSyclOperator {
+public:
+    GlobalSyclOperator(sycl::queue& queue, const Config& config)
+        : queue_(queue)
+        , ns_(queue,
+              config.get("ns", "nr", 32),
+              config.get("ns", "nz", 32),
+              config.get("ns", "nphi", 32),
+              config.get("ns", "r", static_cast<float>(M_PI/2)),
+              config.get("ns", "R", static_cast<float>(M_PI)),
+              config.get("ns", "h2", 10.0f)
+                  -config.get("ns", "h1", 0.0f),
+              0.0f,
+              config.get("ns", "Re", 1.0f),
+              config.get("ns", "dt", 0.001f))
+        , gauge_(ns_.nr, ns_.nz, ns_.nphi, ns_.r0, ns_.dr)
+        , operator_steps_(config.get("spectral", "operator_steps", 1))
+        , full_(gauge_.full_size())
+    {
+        if (operator_steps_ <= 0) {
+            throw std::invalid_argument("operator_steps must be positive");
+        }
+        ns_.initialize_couette_linearization(
+            config.get("ns", "u0", 1.0f));
+    }
+
+    int size() const { return gauge_.size(); }
+    const fdm::NSCylSycl<float>& geometry() const { return ns_; }
+
+    void apply(float* y, const float* x) {
+        queue_.wait();
+        gauge_.expand(ns_, x, full_.data());
+        unpack();
+        for (int step = 0; step < operator_steps_; ++step) {
+            ns_.L_step();
+        }
+        queue_.wait();
+        pack();
+        gauge_.reduce(ns_, full_.data(), y);
+    }
+
+private:
+    sycl::queue& queue_;
+    fdm::NSCylSycl<float> ns_;
+    GlobalGaugeLayout<float> gauge_;
+    int operator_steps_;
+    vector<float> full_;
+
+    void unpack() {
+        auto u = ns_.ua();
+        auto v = ns_.va();
+        auto w = ns_.wa();
+        auto p = ns_.pa();
+        const auto& layout = gauge_.state_layout();
+        int index = 0;
+        for (int i = 0; i < ns_.nphi; ++i) {
+            for (int k = 0; k < ns_.nz; ++k) {
+                for (int j = 1; j < ns_.nr; ++j) {
+                    u(i, k, j) = full_[index++];
+                }
+            }
+        }
+        if (index != layout.v_offset) {
+            throw std::logic_error("invalid global SYCL u layout");
+        }
+        for (auto field : {v, w, p}) {
+            for (int i = 0; i < ns_.nphi; ++i) {
+                for (int k = 0; k < ns_.nz; ++k) {
+                    for (int j = 1; j <= ns_.nr; ++j) {
+                        field(i, k, j) = full_[index++];
+                    }
+                }
+            }
+        }
+        if (index != layout.state_size) {
+            throw std::logic_error("invalid global SYCL state layout");
+        }
+    }
+
+    void pack() {
+        auto u = ns_.ua();
+        auto v = ns_.va();
+        auto w = ns_.wa();
+        auto p = ns_.pa();
+        const auto& layout = gauge_.state_layout();
+        int index = 0;
+        for (int i = 0; i < ns_.nphi; ++i) {
+            for (int k = 0; k < ns_.nz; ++k) {
+                for (int j = 1; j < ns_.nr; ++j) {
+                    full_[index++] = u(i, k, j);
+                }
+            }
+        }
+        if (index != layout.v_offset) {
+            throw std::logic_error("invalid global SYCL u layout");
+        }
+        for (auto field : {v, w, p}) {
+            for (int i = 0; i < ns_.nphi; ++i) {
+                for (int k = 0; k < ns_.nz; ++k) {
+                    for (int j = 1; j <= ns_.nr; ++j) {
+                        full_[index++] = field(i, k, j);
+                    }
+                }
+            }
+        }
+        if (index != layout.state_size) {
+            throw std::logic_error("invalid global SYCL state layout");
+        }
+    }
+};
+#endif
+
+template<typename T>
+class GlobalFourierClassifier {
+public:
+    GlobalFourierClassifier(int nr, int nz, int nphi,
+                            double r0, double dr)
+        : gauge_(nr, nz, nphi, r0, dr)
+        , fft_(nphi, nz)
+        , values_(static_cast<std::size_t>(nphi)*nz)
+        , coefficients_(values_.size())
+        , full_(gauge_.full_size())
+        , block_energy_(static_cast<std::size_t>(nphi/2+1)*(nz/2+1))
+    { }
+
+    template<typename Geometry>
+    vector<double> energy(const Geometry& geometry, const T* reduced) {
+        gauge_.expand(geometry, reduced, full_.data());
+        std::fill(block_energy_.begin(), block_energy_.end(), 0.0);
+        const auto& layout = gauge_.state_layout();
+        add_component(layout.u_offset, layout.nr-1);
+        add_component(layout.v_offset, layout.nr);
+        add_component(layout.w_offset, layout.nr);
+        return block_energy_;
+    }
+
+private:
+    GlobalGaugeLayout<T> gauge_;
+    fdm::PeriodicPackedFFT2<T> fft_;
+    vector<T> values_;
+    vector<T> coefficients_;
+    vector<T> full_;
+    vector<double> block_energy_;
+
+    void add_component(int offset, int radial_count) {
+        const auto& layout = gauge_.state_layout();
+        for (int j = 0; j < radial_count; ++j) {
+            for (int i = 0; i < layout.nphi; ++i) {
+                for (int k = 0; k < layout.nz; ++k) {
+                    values_[static_cast<std::size_t>(i)*layout.nz+k] =
+                        full_[offset+(i*layout.nz+k)*radial_count+j];
+                }
+            }
+            fft_.analysis(values_.data(), coefficients_.data());
+            for (int i = 0; i < layout.nphi; ++i) {
+                const int m = std::min(i, layout.nphi-i);
+                for (int k = 0; k < layout.nz; ++k) {
+                    const int l = std::min(k, layout.nz-k);
+                    const double value = coefficients_[
+                        static_cast<std::size_t>(i)*layout.nz+k];
+                    block_energy_[static_cast<std::size_t>(m)*(layout.nz/2+1)+l]
+                        += value*value;
+                }
+            }
+        }
+    }
+};
+
+template<typename T, typename Operator>
+void run_global_impl(const Config& config, Operator& op) {
+    const int n = op.size();
+    const int nphi = config.get("ns", "nphi", 32);
+    const int nz = config.get("ns", "nz", 32);
+    const int operator_steps = config.get("spectral", "operator_steps", 1);
+    const double dt = config.get("ns", "dt", 0.001);
+    const double growth_tolerance =
+        config.get("spectral", "growth_tol", 1e-8);
+    const int stable_guard = std::max(1, config.get(
+        "spectral", "global_stable_guard",
+        config.get("spectral", "stable_guard", 4)));
+    const int maxit = config.get("spectral", "maxit", 10000);
+    const int residual_seed = config.get("spectral", "residual_seed", 0);
+    const int starts = std::max(
+        1, config.get("spectral", "global_starts", 1));
+    const int minimum_passes = std::max(
+        2, config.get("spectral", "global_min_passes", 2));
+    const int confirmation_passes = std::max(
+        1, config.get("spectral", "global_confirmation_passes", 1));
+    const int requested_ncv = config.get("spectral", "global_ncv", 0);
+    const int largest_valid_nev = n-2;
+    int nev = std::min(
+        config.get("spectral", "global_nev", 16), largest_valid_nev);
+    const int max_nev = std::min(
+        config.get("spectral", "global_max_nev", 96), largest_valid_nev);
+    const int minimum_confirm_nev = std::min(std::max(
+        1, config.get("spectral", "global_min_confirm_nev", 64)), max_nev);
+    const double default_tolerance = std::max(
+        1e-8, 8.0*static_cast<double>(std::numeric_limits<T>::epsilon()));
+    const T tolerance = static_cast<T>(config.get(
+        "spectral", "global_tol",
+        config.get("spectral", "tol", default_tolerance)));
+    const double default_energy_tolerance =
+        std::is_same_v<T, float> ? 1e-2 : 1e-8;
+    const double energy_tolerance = config.get(
+        "spectral", "global_block_energy_tol", default_energy_tolerance);
+    const int top_blocks = std::max(
+        1, config.get("spectral", "global_top_blocks", 8));
+    const bool require_reference_coverage = config.get(
+        "spectral", "global_require_reference_coverage", 0) != 0;
+
+    if (nev <= 0 || max_nev <= 0) {
+        throw std::invalid_argument("global Arnoldi problem is too small");
+    }
+    if (!(dt > 0)) {
+        throw std::invalid_argument("ns:dt must be positive");
+    }
+    if (!(energy_tolerance > 0 && energy_tolerance <= 1)) {
+        throw std::invalid_argument(
+            "global_block_energy_tol must be in (0,1]");
+    }
+    nev = std::min(nev, max_nev);
+    const int nr = config.get("ns", "nr", 32);
+    const double r0 = config.get("ns", "r", M_PI/2);
+    const double radius = config.get("ns", "R", M_PI);
+    GlobalFourierClassifier<T> classifier(
+        nr, nz, nphi, r0, (radius-r0)/nr);
+    std::map<std::pair<int, int>, double> candidates;
+    std::set<std::pair<int, int>> reference_blocks;
+    const string reference = config.get(
+        "spectral", "global_reference", string());
+    if (!reference.empty()) {
+        fdm::NSCylSpectralModeSet<T> modes;
+        fdm::NSCylSpectralMetadata metadata;
+        const auto expected = fdm::make_ns_cyl_spectral_metadata<T>(config);
+        fdm::NSCylSpectralStorage(reference).load(modes, metadata, expected);
+        for (const auto& mode : modes.modes()) {
+            reference_blocks.emplace(mode.m, mode.l);
+        }
+        printf("global reference: %s blocks=%zu real_dimension=%d\n",
+               reference.c_str(), reference_blocks.size(),
+               modes.real_dimension());
+    }
+
+    printf("NSCyl global physical-space ARPACK probe\n");
+    printf("global_n=%d grid: nr=%d nz=%d nphi=%d Re=%.9g dt=%.9g "
+           "operator_steps=%d\n",
+           n, nr, nz, nphi,
+           config.get("ns", "Re", 1.0), dt, operator_steps);
+    printf("classification: velocity-only real-packed FFT "
+           "block_energy_tol=%.3e\n", energy_tolerance);
+    printf("adaptive Arnoldi: nev=%d max_nev=%d min_confirm_nev=%d "
+           "stable_guard=%d starts=%d\n",
+           nev, max_nev, minimum_confirm_nev, stable_guard, starts);
+
+    int pass = 0;
+    int unchanged_passes = 0;
+    bool confirmed = false;
+    for (;;) {
+        ++pass;
+        const std::size_t candidate_count_before = candidates.size();
+        int ncv = requested_ncv > 0
+            ? std::max(requested_ncv, nev+2)
+            : std::max(2*nev+2, nev+8);
+        ncv = std::min(ncv, n);
+        if (ncv-nev < 2) {
+            nev = ncv-2;
+        }
+
+        int best_stable_columns = 0;
+        int best_nconv = 0;
+        bool pass_converged = false;
+        for (int start = 0; start < starts; ++start) {
+            arpack_solver<T> solver(
+                n, maxit, arpack_solver<T>::standard,
+                arpack_solver<T>::largest_magnitude,
+                arpack_solver<T>::fixed, tolerance);
+            solver.set_ncv(ncv);
+            vector<T> residual(n);
+            const T seed = static_cast<T>(residual_seed+start);
+            for (int i = 0; i < n; ++i) {
+                const T x = static_cast<T>(i+1);
+                residual[i] =
+                    std::sin((T(0.371)+T(0.017)*seed)*x+T(0.131)*seed)
+                    +T(0.5)*std::cos(
+                        (T(0.193)+T(0.011)*seed)*x-T(0.073)*seed);
+            }
+            solver.set_resid(residual.data());
+
+            vector<complex<T>> eigenvalues;
+            vector<vector<T>> eigenvectors;
+            int calls = 0;
+            const auto before = std::chrono::steady_clock::now();
+            solver.solve(
+                [&](T* y, const T* x) {
+                    op.apply(y, x);
+                    ++calls;
+                },
+                eigenvalues, eigenvectors, nev);
+            const double seconds = std::chrono::duration<double>(
+                std::chrono::steady_clock::now()-before).count();
+            best_nconv = std::max(best_nconv, solver.last_nconv());
+            pass_converged = pass_converged
+                || (solver.last_naupd_info() == 0
+                    && solver.last_nconv() >= nev);
+
+            printf("GLOBAL_START nev=%d ncv=%d start=%d calls=%d info=%d "
+                   "iterations=%d nconv=%d seconds=%.3f\n",
+                   nev, ncv, start, calls, solver.last_naupd_info(),
+                   solver.last_iterations(), solver.last_nconv(), seconds);
+
+            int stable_columns = 0;
+            for (int i = 0; i < static_cast<int>(eigenvalues.size());) {
+                const complex<T> value = eigenvalues[i];
+                int columns = 1;
+                if (value.imag() > tolerance
+                    && i+1 < static_cast<int>(eigenvalues.size())
+                    && eigenvalues[i+1].imag() < -tolerance) {
+                    columns = 2;
+                }
+                const double magnitude = std::abs(value);
+                const double growth = magnitude > 0
+                    ? std::log(magnitude)/(operator_steps*dt)
+                    : -INFINITY;
+                printf("GLOBAL_RITZ start=%d index=%d columns=%d "
+                       "abs=%.16e real=%.16e imag=%+.16e growth=%+.9e\n",
+                       start, i, columns, magnitude,
+                       static_cast<double>(value.real()),
+                       static_cast<double>(value.imag()), growth);
+
+                if (growth <= growth_tolerance) {
+                    stable_columns += columns;
+                    i += columns;
+                    continue;
+                }
+
+                vector<double> energy = classifier.energy(
+                    op.geometry(), eigenvectors[i].data());
+                if (columns == 2) {
+                    const vector<double> imaginary_energy = classifier.energy(
+                        op.geometry(), eigenvectors[i+1].data());
+                    for (std::size_t j = 0; j < energy.size(); ++j) {
+                        energy[j] += imaginary_energy[j];
+                    }
+                }
+                const double total = std::accumulate(
+                    energy.begin(), energy.end(), 0.0);
+                vector<int> order(energy.size());
+                std::iota(order.begin(), order.end(), 0);
+                std::sort(order.begin(), order.end(), [&](int a, int b) {
+                    return energy[a] > energy[b];
+                });
+                const int printed = std::min(
+                    top_blocks, static_cast<int>(order.size()));
+                for (int rank = 0; rank < printed; ++rank) {
+                    const int flat = order[rank];
+                    const double share = total > 0 ? energy[flat]/total : 0;
+                    const int m = flat/(nz/2+1);
+                    const int l = flat%(nz/2+1);
+                    printf("GLOBAL_BLOCK_SHARE start=%d ritz=%d rank=%d "
+                           "m=%d l=%d share=%.9e\n",
+                           start, i, rank, m, l, share);
+                }
+                for (int flat = 0; flat < static_cast<int>(energy.size());
+                     ++flat) {
+                    const double share = total > 0 ? energy[flat]/total : 0;
+                    if (share >= energy_tolerance) {
+                        const int m = flat/(nz/2+1);
+                        const int l = flat%(nz/2+1);
+                        auto& maximum = candidates[{m, l}];
+                        maximum = std::max(maximum, share);
+                    }
+                }
+                i += columns;
+            }
+            best_stable_columns = std::max(
+                best_stable_columns, stable_columns);
+        }
+
+        const bool unchanged = candidates.size() == candidate_count_before;
+        const bool guarded = best_stable_columns >= stable_guard;
+        if (pass >= minimum_passes && nev >= minimum_confirm_nev
+            && unchanged && guarded
+            && pass_converged) {
+            ++unchanged_passes;
+        } else {
+            unchanged_passes = 0;
+        }
+        std::size_t missing_reference = 0;
+        for (const auto& block : reference_blocks) {
+            missing_reference += candidates.count(block) == 0 ? 1 : 0;
+        }
+        const bool reference_complete = !reference_blocks.empty()
+            && missing_reference == 0;
+        confirmed = reference_complete
+            || unchanged_passes >= confirmation_passes;
+
+        printf("GLOBAL_PASS pass=%d nev=%d ncv=%d best_nconv=%d "
+               "stable_columns=%d guard=%s converged=%s candidates=%zu "
+               "new=%zu unchanged_passes=%d",
+               pass, nev, ncv, best_nconv, best_stable_columns,
+               best_stable_columns >= stable_guard ? "yes" : "no",
+               pass_converged ? "yes" : "no", candidates.size(),
+               candidates.size()-candidate_count_before, unchanged_passes);
+        if (!reference_blocks.empty()) {
+            printf(" reference_missing=%zu", missing_reference);
+        }
+        printf(" confirmed=%s\n", confirmed ? "yes" : "no");
+        if (confirmed || nev >= max_nev) {
+            break;
+        }
+        const int next_nev = std::min(max_nev, std::max(nev+2, 2*nev));
+        if (next_nev == nev) {
+            break;
+        }
+        nev = next_nev;
+    }
+
+    for (const auto& candidate : candidates) {
+        printf("GLOBAL_CANDIDATE m=%d l=%d max_share=%.9e\n",
+               candidate.first.first, candidate.first.second,
+               candidate.second);
+    }
+    printf("global candidate blocks: %zu\n", candidates.size());
+    if (!reference_blocks.empty()) {
+        std::size_t missing = 0;
+        for (const auto& block : reference_blocks) {
+            if (candidates.count(block) == 0) {
+                ++missing;
+                printf("GLOBAL_REFERENCE_MISSING m=%d l=%d\n",
+                       block.first, block.second);
+            }
+        }
+        for (const auto& candidate : candidates) {
+            if (reference_blocks.count(candidate.first) == 0) {
+                printf("GLOBAL_REFERENCE_EXTRA m=%d l=%d\n",
+                       candidate.first.first, candidate.first.second);
+            }
+        }
+        if (require_reference_coverage && missing != 0) {
+            throw std::runtime_error(
+                "global Arnoldi missed blocks from the reference spectrum");
+        }
+    }
+    if (!confirmed) {
+        printf("warning: global candidate set reached global_max_nev "
+               "without confirmation\n");
+    }
+    const string output = config.get("spectral", "output", string());
+    if (!output.empty()) {
+        printf("global probe does not write spectral output; ignored: %s\n",
+               output.c_str());
+    }
+    printf("next step: verify GLOBAL_CANDIDATE blocks with the existing "
+           "strategy=blocks dense path\n");
+}
+
+template<typename T>
+void run_global(const Config& config) {
+    const string backend = config.get(
+        "spectral", "backend", string("cpu"));
+    if (backend == "cpu") {
+        GlobalCpuOperator<T> op(config);
+        run_global_impl<T>(config, op);
+        return;
+    }
+    if (backend != "sycl") {
+        throw std::invalid_argument(
+            "spectral backend must be either 'cpu' or 'sycl'");
+    }
+#ifdef FDM_HAVE_SYCL
+    if constexpr (std::is_same_v<T, float>) {
+        const sycl::device device = select_sycl_device();
+        printf("SYCL device: %s\n",
+               device.get_info<sycl::info::device::name>().c_str());
+        sycl::queue queue{device, sycl::property::queue::in_order{}};
+        GlobalSyclOperator op(queue, config);
+        run_global_impl<float>(config, op);
+    } else {
+        throw std::invalid_argument(
+            "SYCL spectral probe currently supports datatype=float only");
+    }
+#else
+    throw std::runtime_error("spectral probe was built without SYCL");
+#endif
+}
 
 template<typename T>
 void run(const Config& config) {
@@ -607,10 +1205,24 @@ int main(int argc, char** argv) {
 
     try {
         const string datatype = config.get("solver", "datatype", "double");
+        const string strategy = config.get(
+            "spectral", "strategy", string("blocks"));
+        if (strategy != "blocks" && strategy != "global") {
+            throw std::invalid_argument(
+                "spectral strategy must be either 'blocks' or 'global'");
+        }
         if (datatype == "float") {
-            run<float>(config);
+            if (strategy == "global") {
+                run_global<float>(config);
+            } else {
+                run<float>(config);
+            }
         } else {
-            run<double>(config);
+            if (strategy == "global") {
+                run_global<double>(config);
+            } else {
+                run<double>(config);
+            }
         }
     } catch (const std::exception& error) {
         fprintf(stderr, "spectral probe failed: %s\n", error.what());
