@@ -355,9 +355,8 @@ void run(const Config& config) {
 #else
     threads = 1;
 #endif
-    if (backend == "sycl") {
-        threads = 1;
-    }
+    threads = std::max(1, std::min(
+        threads, static_cast<int>(blocks.size())));
 
     printf("NSCyl real-packed Fourier ARPACK probe\n");
     printf("grid: nr=%d nz=%d nphi=%d  Re=%.9g dt=%.9g "
@@ -392,10 +391,27 @@ void run(const Config& config) {
         }
 #ifdef FDM_HAVE_SYCL
     } else if constexpr (std::is_same_v<T, float>) {
-        sycl::queue queue{
-            select_sycl_device(), sycl::property::queue::in_order{}};
-        printf("SYCL device: %s\n", queue.get_device()
+        const sycl::device device = select_sycl_device();
+        printf("SYCL device: %s\n", device
             .get_info<sycl::info::device::name>().c_str());
+#ifdef _OPENMP
+#pragma omp parallel num_threads(threads)
+        {
+            sycl::queue queue{
+                device, sycl::property::queue::in_order{}};
+#pragma omp for schedule(dynamic, 1)
+            for (int i = 0; i < static_cast<int>(blocks.size()); ++i) {
+                try {
+                    results[i] = probe_sycl_block(queue, config, blocks[i]);
+                } catch (const std::exception& error) {
+                    results[i].block = blocks[i];
+                    results[i].error = error.what();
+                }
+            }
+        }
+#else
+        sycl::queue queue{
+            device, sycl::property::queue::in_order{}};
         for (int i = 0; i < static_cast<int>(blocks.size()); ++i) {
             try {
                 results[i] = probe_sycl_block(queue, config, blocks[i]);
@@ -404,6 +420,7 @@ void run(const Config& config) {
                 results[i].error = error.what();
             }
         }
+#endif
     } else {
         throw std::invalid_argument(
             "SYCL spectral probe currently supports datatype=float only");

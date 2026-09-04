@@ -179,6 +179,15 @@ public:
         kernel_L_update_uvwp();
     }
 
+    void L_step_fourier_block(int m, int l) {
+        kernel_init_bound(T(0));
+        kernel_L_FGH();
+        kernel_L_pressure_bound();
+        kernel_L_poisson_rhs();
+        lapl_solver.solve_fourier_block(x_mem, RHS_mem, m, l);
+        kernel_L_update_uvwp();
+    }
+
     // Colour source written into the render buffer's 4th component.
     enum ParticleColor {
         color_tag    = 0,   // fixed per-particle value from col[]: a Lagrangian

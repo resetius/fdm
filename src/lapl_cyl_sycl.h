@@ -327,6 +327,128 @@ public:
         idft_z  (tmp, b_cr);
         idft_phi(ans, tmp);
     }
+
+    void solve_fourier_block(T* ans, const T* rhs, int m, int l) {
+        if (m < 0 || m > nphi/2 || l < 0 || l > nz/2) {
+            throw std::invalid_argument(
+                "Fourier block index is outside the packed range");
+        }
+
+        const int nphi_=nphi, nz_=nz, nr_=nr;
+        const int phi_count = (m == 0 || 2*m == nphi_) ? 1 : 2;
+        const int z_count = (l == 0 || 2*l == nz_) ? 1 : 2;
+        const int phase_count = phi_count*z_count;
+        const T* cp=cos_phi, *sp=sin_phi;
+        const T* cz=cos_z, *sz=sin_z;
+        T* temporary=tmp;
+        T* coefficients=b_cr;
+        const T phi_forward_scale=sc_phi_f;
+        const T z_forward_scale=sc_z_f;
+
+        q.parallel_for(sycl::range<3>(
+            (size_t)phi_count, (size_t)nz_, (size_t)nr_),
+            [=](sycl::id<3> id) {
+                const int p=(int)id[0], k=(int)id[1], j=(int)id[2];
+                const int pi = p == 0 ? m : nphi_-m;
+                T sum = T(0);
+                for (int i = 0; i < nphi_; ++i) {
+                    const T basis = p == 0
+                        ? cp[m*nphi_+i] : sp[m*nphi_+i];
+                    sum += basis*rhs[(i*nz_+k)*nr_+j];
+                }
+                temporary[(pi*nz_+k)*nr_+j] =
+                    phi_forward_scale*sum;
+            });
+
+        q.parallel_for(sycl::range<2>(
+            (size_t)phase_count, (size_t)nr_),
+            [=](sycl::id<2> id) {
+                const int phase=(int)id[0], j=(int)id[1];
+                const int p=phase/z_count, zphase=phase%z_count;
+                const int pi=p == 0 ? m : nphi_-m;
+                const int zi=zphase == 0 ? l : nz_-l;
+                T sum = T(0);
+                for (int k = 0; k < nz_; ++k) {
+                    const T basis = zphase == 0
+                        ? cz[l*nz_+k] : sz[l*nz_+k];
+                    sum += basis*temporary[(pi*nz_+k)*nr_+j];
+                }
+                coefficients[(pi*nz_+zi)*nr_+j] =
+                    z_forward_scale*sum;
+            });
+
+        const T r0_=r0, dr_=dr, dr2_=dr2;
+        const T* lambda_phi=lm_phi, *lambda_z=lm_z;
+        const T* lower=L_base, *upper=U_base;
+        T* diagonal=D_cr;
+        q.parallel_for(sycl::range<1>((size_t)phase_count),
+            [=](sycl::id<1> id) {
+                const int phase=(int)id[0];
+                const int p=phase/z_count, zphase=phase%z_count;
+                const int pi=p == 0 ? m : nphi_-m;
+                const int zi=zphase == 0 ? l : nz_-l;
+                const int base=(pi*nz_+zi)*nr_;
+
+                T r=r0_+dr_;
+                diagonal[base] = -T(2)/dr2_
+                    -lambda_phi[pi]/(r*r)-lambda_z[zi];
+                for (int j = 1; j < nr_; ++j) {
+                    const T factor=lower[j]/diagonal[base+j-1];
+                    r=r0_+T(j+1)*dr_;
+                    diagonal[base+j] = -T(2)/dr2_
+                        -lambda_phi[pi]/(r*r)-lambda_z[zi]
+                        -factor*upper[j-1];
+                    coefficients[base+j] -=
+                        factor*coefficients[base+j-1];
+                }
+                coefficients[base+nr_-1] /= diagonal[base+nr_-1];
+                for (int j = nr_-2; j >= 0; --j) {
+                    coefficients[base+j] =
+                        (coefficients[base+j]
+                         -upper[j]*coefficients[base+j+1])
+                        /diagonal[base+j];
+                }
+            });
+
+        const T z_inverse_scale=sc_z_i;
+        q.parallel_for(sycl::range<3>(
+            (size_t)phi_count, (size_t)nz_, (size_t)nr_),
+            [=](sycl::id<3> id) {
+                const int p=(int)id[0], k=(int)id[1], j=(int)id[2];
+                const int pi=p == 0 ? m : nphi_-m;
+                T value;
+                if (z_count == 1) {
+                    const T sign = l == 0 || k%2 == 0 ? T(1) : T(-1);
+                    value = T(0.5)*sign
+                        *coefficients[(pi*nz_+l)*nr_+j];
+                } else {
+                    value = coefficients[(pi*nz_+l)*nr_+j]
+                                *cz[l*nz_+k]
+                        +coefficients[(pi*nz_+(nz_-l))*nr_+j]
+                                *sz[l*nz_+k];
+                }
+                temporary[(pi*nz_+k)*nr_+j] = z_inverse_scale*value;
+            });
+
+        const T phi_inverse_scale=sc_phi_i;
+        q.parallel_for(sycl::range<3>(
+            (size_t)nphi_, (size_t)nz_, (size_t)nr_),
+            [=](sycl::id<3> id) {
+                const int i=(int)id[0], k=(int)id[1], j=(int)id[2];
+                T value;
+                if (phi_count == 1) {
+                    const T sign = m == 0 || i%2 == 0 ? T(1) : T(-1);
+                    value = T(0.5)*sign
+                        *temporary[(m*nz_+k)*nr_+j];
+                } else {
+                    value = temporary[(m*nz_+k)*nr_+j]
+                                *cp[m*nphi_+i]
+                        +temporary[((nphi_-m)*nz_+k)*nr_+j]
+                                *sp[m*nphi_+i];
+                }
+                ans[(i*nz_+k)*nr_+j] = phi_inverse_scale*value;
+            });
+    }
 };
 
 } // namespace fdm

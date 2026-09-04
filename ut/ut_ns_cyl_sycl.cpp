@@ -206,6 +206,60 @@ void test_sycl_poisson_matches_cpu_float_reference(void**) {
     check_sycl_poisson_matches_cpu(32, 32, 32, kR0, kR, 10.0f);
 }
 
+void check_sycl_fourier_block_poisson_matches_full(int n, int m, int l) {
+    const float r0 = 1.0f;
+    const float outer_r = 2.0f;
+    const float lz = 10.0f;
+    const float dr = (outer_r-r0)/n;
+    const int size = n*n*n;
+    fdm::LaplCylSycl<float> solver(
+        queue(), n, n, n, r0-dr/2, dr, lz/n, lz);
+    float* rhs = sycl::malloc_shared<float>(size, queue());
+    float* full = sycl::malloc_shared<float>(size, queue());
+    float* block = sycl::malloc_shared<float>(size, queue());
+
+    for (int i = 0; i < n; ++i) {
+        const double phi = 2*M_PI*m*i/n;
+        for (int k = 0; k < n; ++k) {
+            const double z = 2*M_PI*l*k/n;
+            const double phase =
+                0.7*std::cos(phi)*std::cos(z)
+                +0.3*std::cos(phi)*std::sin(z)
+                -0.2*std::sin(phi)*std::cos(z)
+                +0.4*std::sin(phi)*std::sin(z);
+            for (int j = 0; j < n; ++j) {
+                const double radial = std::sin(0.27*(j+1))
+                    +0.2*std::cos(0.11*(j+1));
+                rhs[(i*n+k)*n+j] = static_cast<float>(phase*radial);
+            }
+        }
+    }
+
+    solver.solve(full, rhs);
+    queue().wait();
+    solver.solve_fourier_block(block, rhs, m, l);
+    queue().wait();
+
+    Difference difference;
+    for (int index = 0; index < size; ++index) {
+        difference.add(block[index], full[index]);
+    }
+    printf("SYCL block/full Poisson n=%d (%d,%d) relative error: %e\n",
+           n, m, l, difference.relative());
+    sycl::free(block, queue());
+    sycl::free(full, queue());
+    sycl::free(rhs, queue());
+    assert_true(difference.relative() < 2e-5);
+}
+
+void test_sycl_fourier_block_poisson_matches_full(void**) {
+    check_sycl_fourier_block_poisson_matches_full(8, 0, 0);
+    check_sycl_fourier_block_poisson_matches_full(8, 0, 3);
+    check_sycl_fourier_block_poisson_matches_full(8, 2, 3);
+    check_sycl_fourier_block_poisson_matches_full(8, 4, 4);
+    check_sycl_fourier_block_poisson_matches_full(32, 2, 3);
+}
+
 void test_sycl_step_matches_cpu_float_reference(void**) {
     using CpuNS = fdm::NSCyl<float, false, fdm::tensor_flag::periodic>;
     CpuNS cpu(make_cpu_config());
@@ -798,6 +852,7 @@ void test_sycl_radial_wall_divergence_matches_pressure_lag(void**) {
 int main() {
     const CMUnitTest tests[] = {
         cmocka_unit_test(test_sycl_poisson_matches_cpu_float_reference),
+        cmocka_unit_test(test_sycl_fourier_block_poisson_matches_full),
         cmocka_unit_test(test_sycl_step_matches_cpu_float_reference),
         cmocka_unit_test(test_sycl_linear_fourier_blocks_match_cpu),
         cmocka_unit_test(

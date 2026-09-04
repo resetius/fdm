@@ -116,7 +116,7 @@ public:
     void apply(T* y, const T* x) {
         lift(x);
         for (int step = 0; step < operator_steps_; ++step) {
-            ns_.L_step();
+            ns_.L_step_fourier_block(m_, l_);
         }
         queue_.wait();
         extract(y);
