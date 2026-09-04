@@ -19,7 +19,11 @@
 
 namespace {
 
+#ifdef FDM_NS_CYL_SPECTRAL_FILTER_FLOAT
+using T = float;
+#else
 using T = double;
+#endif
 using Task = fdm::NSCyl<T, true, fdm::tensor_flag::periodic>;
 using Layout = fdm::NSCylStateLayout<T>;
 using Projector = fdm::NSCylSpectralProjector<T>;
@@ -75,8 +79,10 @@ double maximum_radial_boundary_residual(Task& state) {
     double result = 0;
     for (int i = 0; i < state.nphi; ++i) {
         for (int k = 0; k < state.nz; ++k) {
-            result = std::max(result, std::abs(state.u[i][k][0]));
-            result = std::max(result, std::abs(state.u[i][k][state.nr]));
+            result = std::max(
+                result, std::abs(static_cast<double>(state.u[i][k][0])));
+            result = std::max(result, std::abs(static_cast<double>(
+                state.u[i][k][state.nr])));
             result = std::max(result, std::abs(
                 0.5*(state.v[i][k][0]+state.v[i][k][1])));
             result = std::max(result, std::abs(

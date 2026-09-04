@@ -36,6 +36,12 @@ add_executable(fdm_ns_cyl_spectral_filter_developed
     test_ns_cyl_spectral_filter_developed.cpp)
 target_link_libraries(fdm_ns_cyl_spectral_filter_developed fdm)
 
+add_executable(fdm_ns_cyl_spectral_filter_developed_float
+    test_ns_cyl_spectral_filter_developed.cpp)
+target_compile_definitions(fdm_ns_cyl_spectral_filter_developed_float
+    PRIVATE FDM_NS_CYL_SPECTRAL_FILTER_FLOAT=1)
+target_link_libraries(fdm_ns_cyl_spectral_filter_developed_float fdm)
+
 add_executable(fdm_ns_cube test_ns_cube.cpp)
 target_link_libraries(fdm_ns_cube fdm)
 
