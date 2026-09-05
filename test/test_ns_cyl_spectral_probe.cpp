@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <complex>
@@ -316,21 +317,21 @@ class BatchedArpackCoordinator {
 public:
     using Request = fdm::NSCylFourierBatchRequest<T>;
 
-    BatchedArpackCoordinator(BatchOperator& op,
-                             const vector<BlockIndex>& blocks)
-        : op_(op), blocks_(blocks), states_(blocks.size()),
-          active_(static_cast<int>(blocks.size()))
+    BatchedArpackCoordinator(BatchOperator& op, int slots)
+        : op_(op), states_(slots), active_(slots)
     { }
 
-    void apply(std::size_t block, T* output, const T* input, int size) {
+    void apply(std::size_t slot, BlockIndex block,
+               T* output, const T* input, int size) {
         std::unique_lock<std::mutex> lock(mutex_);
         if (failure_) {
             std::rethrow_exception(failure_);
         }
-        State& state = states_.at(block);
+        State& state = states_.at(slot);
         if (state.waiting) {
             throw std::logic_error("duplicate outstanding batched matvec");
         }
+        state.block = block;
         state.input = input;
         state.output = output;
         state.size = size;
@@ -349,7 +350,7 @@ public:
         changed_.notify_all();
     }
 
-    int drive() {
+    int drive(int progress_interval) {
         int batches = 0;
         for (;;) {
             vector<Request> requests;
@@ -369,7 +370,7 @@ public:
                     const State& state = states_[i];
                     if (state.waiting) {
                         requests.push_back({
-                            blocks_[i].m, blocks_[i].l,
+                            state.block.m, state.block.l,
                             state.input, state.output, state.size});
                     }
                 }
@@ -378,6 +379,12 @@ public:
             try {
                 op_.apply(requests);
                 ++batches;
+                if (progress_interval > 0
+                    && batches % progress_interval == 0) {
+                    printf("BATCHED_ARPACK_PROGRESS physical_batches=%d\n",
+                           batches);
+                    fflush(stdout);
+                }
             } catch (...) {
                 std::lock_guard<std::mutex> lock(mutex_);
                 failure_ = std::current_exception();
@@ -397,6 +404,7 @@ public:
 
 private:
     struct State {
+        BlockIndex block{};
         const T* input = nullptr;
         T* output = nullptr;
         int size = 0;
@@ -404,7 +412,6 @@ private:
     };
 
     BatchOperator& op_;
-    const vector<BlockIndex>& blocks_;
     vector<State> states_;
     std::mutex mutex_;
     std::condition_variable changed_;
@@ -443,7 +450,8 @@ public:
     double last_fourier_leakage() const { return 0; }
 
     void apply(T* output, const T* input) {
-        coordinator_.apply(coordinator_index_, output, input, size_);
+        coordinator_.apply(
+            coordinator_index_, block_, output, input, size_);
     }
 
 private:
@@ -503,7 +511,7 @@ void probe_batched_blocks_impl(const Config& config,
     if (arpack_batch <= 0) {
         arpack_batch = std::is_same_v<T, float>
             ? std::min(16, static_cast<int>(blocks.size()))
-            : static_cast<int>(blocks.size());
+            : std::min(64, static_cast<int>(blocks.size()));
     }
     if (dense_batch <= 0) {
         dense_batch = std::is_same_v<T, float>
@@ -517,68 +525,52 @@ void probe_batched_blocks_impl(const Config& config,
     printf("BATCHED_LAYOUT arnoldi_blocks=%d dense_blocks=%d\n",
            arpack_batch, dense_batch);
 
-    int arpack_batches = 0;
+    const int worker_count = std::min(
+        arpack_batch, static_cast<int>(blocks.size()));
+    const int progress_interval = config.get(
+        "spectral", "batch_progress_batches", 500);
+    const auto arpack_before = std::chrono::steady_clock::now();
+    BatchedArpackCoordinator<T, BatchOperator> coordinator(op, worker_count);
+    std::atomic<int> next_block{0};
+    vector<std::thread> workers;
+    workers.reserve(worker_count);
+    for (int slot = 0; slot < worker_count; ++slot) {
+        workers.emplace_back([&, slot] {
+            for (;;) {
+                const int result_index = next_block.fetch_add(
+                    1, std::memory_order_relaxed);
+                if (result_index >= static_cast<int>(blocks.size())) {
+                    break;
+                }
+                try {
+                    BatchedBlockProxy<T, decltype(coordinator)> block(
+                        coordinator, slot, blocks[result_index],
+                        nr, nz, nphi,
+                        operator_steps);
+                    results[result_index] = probe_block_impl<T>(
+                        config, blocks[result_index], block, false);
+                } catch (const std::exception& error) {
+                    results[result_index].block = blocks[result_index];
+                    results[result_index].error = error.what();
+                }
+            }
+            coordinator.finish();
+        });
+    }
+    const int arpack_batches = coordinator.drive(progress_interval);
+    for (std::thread& worker : workers) {
+        worker.join();
+    }
+
     long long arpack_logical_calls = 0;
     int slowest_calls = -1;
     BlockIndex slowest_block{};
-    const auto arpack_before = std::chrono::steady_clock::now();
-    for (int begin = 0; begin < static_cast<int>(blocks.size());
-         begin += arpack_batch) {
-        const auto chunk_before = std::chrono::steady_clock::now();
-        const int end = std::min(
-            static_cast<int>(blocks.size()), begin+arpack_batch);
-        vector<BlockIndex> chunk(blocks.begin()+begin, blocks.begin()+end);
-        BatchedArpackCoordinator<T, BatchOperator> coordinator(op, chunk);
-        vector<std::thread> workers;
-        workers.reserve(chunk.size());
-        for (std::size_t local = 0; local < chunk.size(); ++local) {
-            const int result_index = begin+static_cast<int>(local);
-            workers.emplace_back([&, local, result_index] {
-                try {
-                    BatchedBlockProxy<T, decltype(coordinator)> block(
-                        coordinator, local, chunk[local], nr, nz, nphi,
-                        operator_steps);
-                    results[result_index] = probe_block_impl<T>(
-                        config, chunk[local], block, false);
-                } catch (const std::exception& error) {
-                    results[result_index].block = chunk[local];
-                    results[result_index].error = error.what();
-                }
-                coordinator.finish();
-            });
+    for (const auto& result : results) {
+        arpack_logical_calls += result.operator_calls;
+        if (result.operator_calls > slowest_calls) {
+            slowest_calls = result.operator_calls;
+            slowest_block = result.block;
         }
-        const int chunk_batches = coordinator.drive();
-        arpack_batches += chunk_batches;
-        for (std::thread& worker : workers) {
-            worker.join();
-        }
-        long long chunk_logical_calls = 0;
-        int chunk_slowest_calls = -1;
-        BlockIndex chunk_slowest_block{};
-        for (int i = begin; i < end; ++i) {
-            const int calls = results[i].operator_calls;
-            chunk_logical_calls += calls;
-            if (calls > chunk_slowest_calls) {
-                chunk_slowest_calls = calls;
-                chunk_slowest_block = results[i].block;
-            }
-            if (calls > slowest_calls) {
-                slowest_calls = calls;
-                slowest_block = results[i].block;
-            }
-        }
-        arpack_logical_calls += chunk_logical_calls;
-        const double chunk_seconds = std::chrono::duration<double>(
-            std::chrono::steady_clock::now()-chunk_before).count();
-        const double chunk_fill = chunk_batches > 0
-            ? static_cast<double>(chunk_logical_calls)/chunk_batches : 0;
-        printf("BATCHED_ARPACK_CHUNK blocks=[%d,%d) physical_batches=%d "
-               "logical_calls=%lld mean_fill=%.2f slowest=(%d,%d):%d "
-               "seconds=%.3f\n",
-               begin, end, chunk_batches, chunk_logical_calls, chunk_fill,
-               chunk_slowest_block.m, chunk_slowest_block.l,
-               chunk_slowest_calls, chunk_seconds);
-        fflush(stdout);
     }
     const double arpack_seconds = std::chrono::duration<double>(
         std::chrono::steady_clock::now()-arpack_before).count();
