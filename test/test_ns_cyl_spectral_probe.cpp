@@ -32,6 +32,7 @@
 #include "config.h"
 #include "ns_cyl_fourier_batch.h"
 #include "ns_cyl_fourier_block.h"
+#include "ns_cyl_fourier_native.h"
 #include "ns_cyl_spectral_modes.h"
 #include "ns_cyl_spectral_projector.h"
 #include "ns_cyl_spectral_storage.h"
@@ -125,15 +126,24 @@ ProbeResult<T> probe_block_impl(
         "spectral", "growth_tol", 1e-8);
     const double residual_limit = residual_tolerance<T>(config);
     const double dt = config.get("ns", "dt", 0.001);
+    const bool dense_candidates =
+        config.get("spectral", "dense_candidates", 1) != 0;
+    const bool dense_all = config.get("spectral", "dense_all", 0) != 0;
+    const bool arpack_screen =
+        config.get("spectral", "arpack_screen", 1) != 0;
 
-    if (nev <= 0 || max_nev <= 0) {
+    if (!arpack_screen && !dense_all) {
+        throw std::invalid_argument(
+            "arpack_screen=0 requires dense_all=1");
+    }
+    if (arpack_screen && (nev <= 0 || max_nev <= 0)) {
         throw std::invalid_argument("Fourier block is too small for ARPACK");
     }
     if (nev > max_nev) {
         nev = max_nev;
     }
 
-    for (;;) {
+    while (arpack_screen) {
         int ncv = requested_ncv > 0
             ? std::max(requested_ncv, nev+2)
             : std::max(2*nev+2, nev+8);
@@ -257,9 +267,6 @@ ProbeResult<T> probe_block_impl(
         nev = next_nev;
     }
 
-    const bool dense_candidates =
-        config.get("spectral", "dense_candidates", 1) != 0;
-    const bool dense_all = config.get("spectral", "dense_all", 0) != 0;
     if (compute_dense && (dense_all
         || (dense_candidates && (result.candidate || !result.guard_reached)))) {
         result.dense_spectrum = fdm::solve_ns_cyl_dense_block(
@@ -288,6 +295,14 @@ ProbeResult<T> probe_cpu_block(const Config& config, BlockIndex index) {
             config, index.m, index.l, operator_steps);
     }
     return probe_block_impl<T>(config, index, *block);
+}
+
+template<typename T>
+ProbeResult<T> probe_native_block(const Config& config, BlockIndex index) {
+    const int operator_steps = config.get("spectral", "operator_steps", 1);
+    fdm::NSCylFourierBlockNative<T> block(
+        config, index.m, index.l, operator_steps);
+    return probe_block_impl<T>(config, index, block);
 }
 
 #ifdef FDM_HAVE_SYCL
@@ -1330,9 +1345,9 @@ void run(const Config& config) {
     const string backend = config.get(
         "spectral", "backend", string("cpu"));
 
-    if (backend != "cpu" && backend != "sycl") {
+    if (backend != "cpu" && backend != "native" && backend != "sycl") {
         throw std::invalid_argument(
-            "spectral backend must be either 'cpu' or 'sycl'");
+            "spectral backend must be 'cpu', 'native', or 'sycl'");
     }
 #ifndef FDM_HAVE_SYCL
     if (backend == "sycl") {
@@ -1380,14 +1395,31 @@ void run(const Config& config) {
            blocks.size(), m_min, m_max, l_min, l_max,
            backend.c_str(), strategy.c_str(), threads);
     printf("selection: growth_tol=%.3e residual_tol=%.3e "
-           "condition_limit=%.3e\n",
-           growth_tolerance, residual_limit, condition_limit);
+           "condition_limit=%.3e arpack_screen=%d\n",
+           growth_tolerance, residual_limit, condition_limit,
+           config.get("spectral", "arpack_screen", 1) != 0 ? 1 : 0);
     printf("packing: q=cosine, N-q=sine; endpoints 0/Nyquist have one phase\n");
 
     vector<ProbeResult<T>> results(blocks.size());
 
     if (strategy == "batched_blocks") {
+        if (backend == "native") {
+            throw std::invalid_argument(
+                "batched_blocks does not use the native per-block backend");
+        }
         probe_batched_blocks(config, blocks, results, backend);
+    } else if (backend == "native") {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(threads)
+#endif
+        for (int i = 0; i < static_cast<int>(blocks.size()); ++i) {
+            try {
+                results[i] = probe_native_block<T>(config, blocks[i]);
+            } catch (const std::exception& error) {
+                results[i].block = blocks[i];
+                results[i].error = error.what();
+            }
+        }
     } else if (backend == "cpu") {
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(threads)

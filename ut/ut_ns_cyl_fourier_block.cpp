@@ -6,11 +6,13 @@
 #include <cmath>
 #include <random>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "config.h"
 #include "ns_cyl_fourier_batch.h"
 #include "ns_cyl_fourier_block.h"
+#include "ns_cyl_fourier_native.h"
 #include "ns_cyl_spectral_modes.h"
 #include "ns_cyl_spectral_projector.h"
 #include "projection.h"
@@ -258,6 +260,60 @@ void test_batched_blocks_match_individual_applications(void**) {
         assert_true(max_value > 0);
         assert_true(max_error/max_value < 3e-11);
     }
+}
+
+template<typename T>
+void check_native_radial_blocks(int operator_steps, double tolerance) {
+    Config config = make_config(8, 8, 8);
+    const std::vector<std::pair<int, int>> indices = {
+        {0, 0}, {0, 1}, {1, 0}, {1, 1},
+        {4, 1}, {1, 4}, {4, 4}
+    };
+    std::mt19937 generator(991+operator_steps);
+    std::uniform_real_distribution<double> distribution(-1.0, 1.0);
+
+    for (const auto [m, l] : indices) {
+        fdm::NSCylFourierBlockReference<T, true> reference(
+            config, m, l, operator_steps);
+        fdm::NSCylFourierBlockNative<T> native(
+            config, m, l, operator_steps);
+        assert_int_equal(native.size(), reference.size());
+        assert_int_equal(native.phase_count(), reference.phase_count());
+
+        std::vector<T> input(reference.size());
+        std::vector<T> expected(reference.size());
+        std::vector<T> actual(reference.size());
+        for (T& value : input) {
+            value = static_cast<T>(distribution(generator));
+        }
+        reference.apply(expected.data(), input.data());
+        native.apply(actual.data(), input.data());
+
+        long double error2 = 0;
+        long double expected2 = 0;
+        double maximum_error = 0;
+        for (std::size_t i = 0; i < actual.size(); ++i) {
+            const long double error =
+                static_cast<long double>(actual[i])-expected[i];
+            error2 += error*error;
+            expected2 += static_cast<long double>(expected[i])*expected[i];
+            maximum_error = std::max(
+                maximum_error, static_cast<double>(std::abs(error)));
+        }
+        const double relative = static_cast<double>(
+            std::sqrt(error2/expected2));
+        printf("native/reference %s block (%d,%d), steps=%d: "
+               "relative=%e max=%e\n",
+               std::is_same_v<T, float> ? "float" : "double",
+               m, l, operator_steps, relative, maximum_error);
+        assert_true(relative < tolerance);
+    }
+}
+
+void test_native_radial_blocks_match_full_reference(void**) {
+    check_native_radial_blocks<double>(1, 2e-11);
+    check_native_radial_blocks<double>(3, 5e-11);
+    check_native_radial_blocks<float>(3, 3e-5);
 }
 
 void test_axisymmetric_block_is_independent_of_nphi(void**) {
@@ -734,6 +790,7 @@ int main() {
         cmocka_unit_test(test_zero_block_uses_weighted_zero_mean_pressure),
         cmocka_unit_test(test_linear_step_preserves_real_packed_block),
         cmocka_unit_test(test_batched_blocks_match_individual_applications),
+        cmocka_unit_test(test_native_radial_blocks_match_full_reference),
         cmocka_unit_test(test_axisymmetric_block_is_independent_of_nphi),
         cmocka_unit_test(test_dense_spectrum_groups_complex_pair_in_real_columns),
         cmocka_unit_test(test_dense_spectrum_of_real_ns_cyl_block),
