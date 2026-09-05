@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "config.h"
+#include "ns_cyl_fourier_batch.h"
 #include "ns_cyl_fourier_block.h"
 #include "ns_cyl_spectral_modes.h"
 #include "ns_cyl_spectral_projector.h"
@@ -206,6 +207,57 @@ void test_linear_step_preserves_real_packed_block(void**) {
     assert_true(leakage1 < 2e-12);
     assert_true(leakage2 < 2e-12);
     assert_true(leakage_sum < 2e-12);
+}
+
+void test_batched_blocks_match_individual_applications(void**) {
+    Config config = make_config();
+    constexpr int operator_steps = 3;
+    const std::vector<std::pair<int, int>> indices = {
+        {0, 0}, {0, 1}, {1, 0}, {1, 1}, {2, 2}
+    };
+    const double scales[] = {1e-6, 1e-2, 1.0, 1e2, 1e6};
+
+    fdm::NSCylFourierBlockBatchReference<double, true> batch(
+        config, operator_steps);
+    std::vector<std::vector<double>> input(indices.size());
+    std::vector<std::vector<double>> batched(indices.size());
+    std::vector<std::vector<double>> individual(indices.size());
+    std::vector<fdm::NSCylFourierBatchRequest<double>> requests;
+    std::mt19937 generator(117);
+    std::uniform_real_distribution<double> distribution(-1.0, 1.0);
+
+    for (std::size_t block_index = 0;
+         block_index < indices.size(); ++block_index) {
+        const auto [m, l] = indices[block_index];
+        fdm::NSCylFourierBlockReference<double, true> block(
+            config, m, l, operator_steps);
+        input[block_index].resize(block.size());
+        batched[block_index].resize(block.size());
+        individual[block_index].resize(block.size());
+        for (double& value : input[block_index]) {
+            value = scales[block_index]*distribution(generator);
+        }
+        block.apply(individual[block_index].data(), input[block_index].data());
+        requests.push_back({
+            m, l, input[block_index].data(), batched[block_index].data(),
+            block.size()});
+    }
+
+    batch.apply(requests);
+
+    for (std::size_t block_index = 0;
+         block_index < indices.size(); ++block_index) {
+        double max_error = 0;
+        double max_value = 0;
+        for (std::size_t i = 0; i < batched[block_index].size(); ++i) {
+            max_error = std::max(max_error, std::abs(
+                batched[block_index][i]-individual[block_index][i]));
+            max_value = std::max(
+                max_value, std::abs(individual[block_index][i]));
+        }
+        assert_true(max_value > 0);
+        assert_true(max_error/max_value < 3e-11);
+    }
 }
 
 void test_axisymmetric_block_is_independent_of_nphi(void**) {
@@ -681,6 +733,7 @@ int main() {
         cmocka_unit_test(test_block_layout_and_round_trip),
         cmocka_unit_test(test_zero_block_uses_weighted_zero_mean_pressure),
         cmocka_unit_test(test_linear_step_preserves_real_packed_block),
+        cmocka_unit_test(test_batched_blocks_match_individual_applications),
         cmocka_unit_test(test_axisymmetric_block_is_independent_of_nphi),
         cmocka_unit_test(test_dense_spectrum_groups_complex_pair_in_real_columns),
         cmocka_unit_test(test_dense_spectrum_of_real_ns_cyl_block),

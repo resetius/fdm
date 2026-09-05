@@ -14,6 +14,7 @@
 
 #include "config.h"
 #include "ns_cyl.h"
+#include "ns_cyl_fourier_batch_sycl.h"
 #include "ns_cyl_fourier_block_sycl.h"
 #include "ns_cyl_spectral_modes.h"
 #include "ns_cyl_sycl.h"
@@ -502,6 +503,53 @@ void test_sycl_linear_fourier_blocks_match_cpu(void**) {
     check_sycl_linear_block_matches_cpu(4, 4);
 }
 
+void test_sycl_batched_blocks_match_individual_applications(void**) {
+    Config config = make_cpu_config();
+    constexpr int operator_steps = 3;
+    const std::vector<std::pair<int, int>> indices = {
+        {0, 0}, {0, 3}, {1, 3}, {4, 4}
+    };
+    const float scales[] = {1e-3f, 1.0f, 1e2f, 1e3f};
+    fdm::NSCylSyclFourierBlockBatchReference<float> batch(
+        queue(), config, operator_steps);
+    std::vector<std::vector<float>> inputs(indices.size());
+    std::vector<std::vector<float>> batched(indices.size());
+    std::vector<std::vector<float>> individual(indices.size());
+    std::vector<fdm::NSCylFourierBatchRequest<float>> requests;
+
+    for (std::size_t block_index = 0;
+         block_index < indices.size(); ++block_index) {
+        const auto [m, l] = indices[block_index];
+        fdm::NSCylSyclFourierBlockReference<float> block(
+            queue(), config, m, l, operator_steps);
+        inputs[block_index] = make_block_input(block.size());
+        for (float& value : inputs[block_index]) {
+            value *= scales[block_index];
+        }
+        batched[block_index].resize(block.size());
+        individual[block_index].resize(block.size());
+        block.apply(
+            individual[block_index].data(), inputs[block_index].data());
+        requests.push_back({
+            m, l, inputs[block_index].data(), batched[block_index].data(),
+            block.size()});
+    }
+
+    batch.apply(requests);
+    for (std::size_t block_index = 0;
+         block_index < indices.size(); ++block_index) {
+        Difference difference;
+        for (std::size_t i = 0; i < batched[block_index].size(); ++i) {
+            difference.add(
+                batched[block_index][i], individual[block_index][i]);
+        }
+        printf("SYCL batched/individual block (%d,%d): %e/%e\n",
+               indices[block_index].first, indices[block_index].second,
+               difference.error, difference.relative());
+        assert_true(difference.relative() < 2e-4);
+    }
+}
+
 void initialize_nonlinear_couette(NSCylSycl<float>& ns) {
     const auto velocity = fdm::make_discrete_couette_velocity<float>(ns);
     const auto pressure = fdm::make_discrete_couette_pressure(ns, velocity);
@@ -855,6 +903,8 @@ int main() {
         cmocka_unit_test(test_sycl_fourier_block_poisson_matches_full),
         cmocka_unit_test(test_sycl_step_matches_cpu_float_reference),
         cmocka_unit_test(test_sycl_linear_fourier_blocks_match_cpu),
+        cmocka_unit_test(
+            test_sycl_batched_blocks_match_individual_applications),
         cmocka_unit_test(
             test_sycl_linear_step_matches_centered_nonlinear_difference),
         cmocka_unit_test(test_sycl_linear_block_dense_spectrum_matches_cpu),

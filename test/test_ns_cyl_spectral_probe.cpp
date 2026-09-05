@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cmath>
 #include <complex>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <exception>
@@ -12,10 +13,13 @@
 #include <numeric>
 #include <set>
 #include <string>
+#include <mutex>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
 #ifdef FDM_HAVE_SYCL
+#include "ns_cyl_fourier_batch_sycl.h"
 #include "ns_cyl_fourier_block_sycl.h"
 #endif
 
@@ -25,6 +29,7 @@
 
 #include "arpack_solver.h"
 #include "config.h"
+#include "ns_cyl_fourier_batch.h"
 #include "ns_cyl_fourier_block.h"
 #include "ns_cyl_spectral_modes.h"
 #include "ns_cyl_spectral_projector.h"
@@ -87,7 +92,8 @@ double residual_tolerance(const Config& config) {
 
 template<typename T, typename Block>
 ProbeResult<T> probe_block_impl(
-    const Config& config, BlockIndex index, Block& block)
+    const Config& config, BlockIndex index, Block& block,
+    bool compute_dense=true)
 {
     ProbeResult<T> result;
     result.block = index;
@@ -253,8 +259,8 @@ ProbeResult<T> probe_block_impl(
     const bool dense_candidates =
         config.get("spectral", "dense_candidates", 1) != 0;
     const bool dense_all = config.get("spectral", "dense_all", 0) != 0;
-    if (dense_all
-        || (dense_candidates && (result.candidate || !result.guard_reached))) {
+    if (compute_dense && (dense_all
+        || (dense_candidates && (result.candidate || !result.guard_reached)))) {
         result.dense_spectrum = fdm::solve_ns_cyl_dense_block(
             block, dt, growth_tolerance, residual_limit);
         result.max_leakage = std::max(
@@ -304,6 +310,416 @@ ProbeResult<float> probe_sycl_block(
     return probe_block_impl<float>(config, index, block);
 }
 #endif
+
+template<typename T, typename BatchOperator>
+class BatchedArpackCoordinator {
+public:
+    using Request = fdm::NSCylFourierBatchRequest<T>;
+
+    BatchedArpackCoordinator(BatchOperator& op,
+                             const vector<BlockIndex>& blocks)
+        : op_(op), blocks_(blocks), states_(blocks.size()),
+          active_(static_cast<int>(blocks.size()))
+    { }
+
+    void apply(std::size_t block, T* output, const T* input, int size) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (failure_) {
+            std::rethrow_exception(failure_);
+        }
+        State& state = states_.at(block);
+        if (state.waiting) {
+            throw std::logic_error("duplicate outstanding batched matvec");
+        }
+        state.input = input;
+        state.output = output;
+        state.size = size;
+        state.waiting = true;
+        ++pending_;
+        changed_.notify_all();
+        changed_.wait(lock, [&] { return !state.waiting || failure_; });
+        if (failure_) {
+            std::rethrow_exception(failure_);
+        }
+    }
+
+    void finish() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        --active_;
+        changed_.notify_all();
+    }
+
+    int drive() {
+        int batches = 0;
+        for (;;) {
+            vector<Request> requests;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                changed_.wait(lock, [&] {
+                    return failure_ || active_ == 0 || pending_ == active_;
+                });
+                if (failure_) {
+                    break;
+                }
+                if (active_ == 0) {
+                    break;
+                }
+                requests.reserve(pending_);
+                for (std::size_t i = 0; i < states_.size(); ++i) {
+                    const State& state = states_[i];
+                    if (state.waiting) {
+                        requests.push_back({
+                            blocks_[i].m, blocks_[i].l,
+                            state.input, state.output, state.size});
+                    }
+                }
+            }
+
+            try {
+                op_.apply(requests);
+                ++batches;
+            } catch (...) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                failure_ = std::current_exception();
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                for (State& state : states_) {
+                    state.waiting = false;
+                }
+                pending_ = 0;
+                changed_.notify_all();
+            }
+        }
+        return batches;
+    }
+
+private:
+    struct State {
+        const T* input = nullptr;
+        T* output = nullptr;
+        int size = 0;
+        bool waiting = false;
+    };
+
+    BatchOperator& op_;
+    const vector<BlockIndex>& blocks_;
+    vector<State> states_;
+    std::mutex mutex_;
+    std::condition_variable changed_;
+    int active_ = 0;
+    int pending_ = 0;
+    std::exception_ptr failure_;
+};
+
+template<typename T, typename Coordinator>
+class BatchedBlockProxy {
+public:
+    using value_type = T;
+
+    BatchedBlockProxy(Coordinator& coordinator, std::size_t coordinator_index,
+                      BlockIndex block, int nr, int nz, int nphi,
+                      int operator_steps)
+        : coordinator_(coordinator)
+        , coordinator_index_(coordinator_index)
+        , block_(block)
+        , radial_size_(4*nr-1)
+        , phase_count_(phase_count(block.m, nphi)*phase_count(block.l, nz))
+        , size_(radial_size_*phase_count_
+                -(block.m == 0 && block.l == 0 ? 1 : 0))
+        , operator_steps_(operator_steps)
+    { }
+
+    int radial_size() const { return radial_size_; }
+    int phase_count() const { return phase_count_; }
+    int size() const { return size_; }
+    int operator_steps() const { return operator_steps_; }
+    int m() const { return block_.m; }
+    int l() const { return block_.l; }
+    bool pressure_gauge_fixed() const {
+        return block_.m == 0 && block_.l == 0;
+    }
+    double last_fourier_leakage() const { return 0; }
+
+    void apply(T* output, const T* input) {
+        coordinator_.apply(coordinator_index_, output, input, size_);
+    }
+
+private:
+    Coordinator& coordinator_;
+    std::size_t coordinator_index_;
+    BlockIndex block_;
+    int radial_size_;
+    int phase_count_;
+    int size_;
+    int operator_steps_;
+
+    static int phase_count(int q, int n) {
+        return q == 0 || 2*q == n ? 1 : 2;
+    }
+};
+
+template<typename T>
+void set_dense_metadata(ProbeResult<T>& probe, vector<T>& matrix,
+                        int operator_steps, double dt,
+                        double growth_tolerance, double residual_limit) {
+    auto spectrum = fdm::analyze_ns_cyl_dense_matrix(
+        matrix.data(), probe.arpack_size, operator_steps*dt,
+        growth_tolerance, residual_limit);
+    spectrum.m = probe.block.m;
+    spectrum.l = probe.block.l;
+    spectrum.phase_count = probe.phase_count;
+    spectrum.radial_size = probe.radial_size;
+    spectrum.operator_steps = operator_steps;
+    spectrum.operator_calls = probe.arpack_size;
+    spectrum.pressure_gauge_fixed =
+        probe.block.m == 0 && probe.block.l == 0;
+    for (auto& mode : spectrum.modes) {
+        mode.m = spectrum.m;
+        mode.l = spectrum.l;
+        mode.phase_count = spectrum.phase_count;
+        mode.radial_size = spectrum.radial_size;
+        mode.pressure_gauge_fixed = spectrum.pressure_gauge_fixed;
+    }
+    probe.dense_spectrum = std::move(spectrum);
+    probe.dense_computed = true;
+}
+
+template<typename T, typename BatchOperator>
+void probe_batched_blocks_impl(const Config& config,
+                               const vector<BlockIndex>& blocks,
+                               vector<ProbeResult<T>>& results,
+                               BatchOperator& op) {
+    const int operator_steps = config.get("spectral", "operator_steps", 1);
+    const int nr = config.get("ns", "nr", 32);
+    const int nz = config.get("ns", "nz", 32);
+    const int nphi = config.get("ns", "nphi", 32);
+    const int common_batch = config.get("spectral", "batch_blocks", 0);
+    int arpack_batch = config.get(
+        "spectral", "batch_arnoldi_blocks", common_batch);
+    int dense_batch = config.get(
+        "spectral", "batch_dense_blocks", common_batch);
+    if (arpack_batch <= 0) {
+        arpack_batch = std::is_same_v<T, float>
+            ? std::min(16, static_cast<int>(blocks.size()))
+            : static_cast<int>(blocks.size());
+    }
+    if (dense_batch <= 0) {
+        dense_batch = std::is_same_v<T, float>
+            ? std::min(2, static_cast<int>(blocks.size()))
+            : static_cast<int>(blocks.size());
+    }
+    arpack_batch = std::max(1, std::min(
+        arpack_batch, static_cast<int>(blocks.size())));
+    dense_batch = std::max(1, std::min(
+        dense_batch, static_cast<int>(blocks.size())));
+    printf("BATCHED_LAYOUT arnoldi_blocks=%d dense_blocks=%d\n",
+           arpack_batch, dense_batch);
+
+    int arpack_batches = 0;
+    long long arpack_logical_calls = 0;
+    int slowest_calls = -1;
+    BlockIndex slowest_block{};
+    const auto arpack_before = std::chrono::steady_clock::now();
+    for (int begin = 0; begin < static_cast<int>(blocks.size());
+         begin += arpack_batch) {
+        const auto chunk_before = std::chrono::steady_clock::now();
+        const int end = std::min(
+            static_cast<int>(blocks.size()), begin+arpack_batch);
+        vector<BlockIndex> chunk(blocks.begin()+begin, blocks.begin()+end);
+        BatchedArpackCoordinator<T, BatchOperator> coordinator(op, chunk);
+        vector<std::thread> workers;
+        workers.reserve(chunk.size());
+        for (std::size_t local = 0; local < chunk.size(); ++local) {
+            const int result_index = begin+static_cast<int>(local);
+            workers.emplace_back([&, local, result_index] {
+                try {
+                    BatchedBlockProxy<T, decltype(coordinator)> block(
+                        coordinator, local, chunk[local], nr, nz, nphi,
+                        operator_steps);
+                    results[result_index] = probe_block_impl<T>(
+                        config, chunk[local], block, false);
+                } catch (const std::exception& error) {
+                    results[result_index].block = chunk[local];
+                    results[result_index].error = error.what();
+                }
+                coordinator.finish();
+            });
+        }
+        const int chunk_batches = coordinator.drive();
+        arpack_batches += chunk_batches;
+        for (std::thread& worker : workers) {
+            worker.join();
+        }
+        long long chunk_logical_calls = 0;
+        int chunk_slowest_calls = -1;
+        BlockIndex chunk_slowest_block{};
+        for (int i = begin; i < end; ++i) {
+            const int calls = results[i].operator_calls;
+            chunk_logical_calls += calls;
+            if (calls > chunk_slowest_calls) {
+                chunk_slowest_calls = calls;
+                chunk_slowest_block = results[i].block;
+            }
+            if (calls > slowest_calls) {
+                slowest_calls = calls;
+                slowest_block = results[i].block;
+            }
+        }
+        arpack_logical_calls += chunk_logical_calls;
+        const double chunk_seconds = std::chrono::duration<double>(
+            std::chrono::steady_clock::now()-chunk_before).count();
+        const double chunk_fill = chunk_batches > 0
+            ? static_cast<double>(chunk_logical_calls)/chunk_batches : 0;
+        printf("BATCHED_ARPACK_CHUNK blocks=[%d,%d) physical_batches=%d "
+               "logical_calls=%lld mean_fill=%.2f slowest=(%d,%d):%d "
+               "seconds=%.3f\n",
+               begin, end, chunk_batches, chunk_logical_calls, chunk_fill,
+               chunk_slowest_block.m, chunk_slowest_block.l,
+               chunk_slowest_calls, chunk_seconds);
+        fflush(stdout);
+    }
+    const double arpack_seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-arpack_before).count();
+    const double arpack_fill = arpack_batches > 0
+        ? static_cast<double>(arpack_logical_calls)/arpack_batches : 0;
+    printf("BATCHED_ARPACK physical_batches=%d logical_calls=%lld "
+           "mean_fill=%.2f slowest=(%d,%d):%d seconds=%.3f\n",
+           arpack_batches, arpack_logical_calls, arpack_fill,
+           slowest_block.m, slowest_block.l, slowest_calls, arpack_seconds);
+
+    const bool dense_candidates =
+        config.get("spectral", "dense_candidates", 1) != 0;
+    const bool dense_all = config.get("spectral", "dense_all", 0) != 0;
+    vector<int> dense_indices;
+    for (int i = 0; i < static_cast<int>(results.size()); ++i) {
+        const auto& result = results[i];
+        if (result.error.empty()
+            && (dense_all || (dense_candidates
+                && (result.candidate || !result.guard_reached)))) {
+            dense_indices.push_back(i);
+        }
+    }
+
+    struct DenseWork {
+        vector<T> matrix;
+        vector<T> basis;
+        vector<T> image;
+    };
+    vector<DenseWork> work(dense_indices.size());
+    int maximum_size = 0;
+    for (std::size_t i = 0; i < dense_indices.size(); ++i) {
+        const int n = results[dense_indices[i]].arpack_size;
+        maximum_size = std::max(maximum_size, n);
+        work[i].matrix.resize(static_cast<std::size_t>(n)*n);
+        work[i].basis.assign(n, T(0));
+        work[i].image.resize(n);
+    }
+
+    int dense_batches = 0;
+    const auto dense_before = std::chrono::steady_clock::now();
+    for (int column = 0; column < maximum_size; ++column) {
+        for (int begin = 0; begin < static_cast<int>(dense_indices.size());
+             begin += dense_batch) {
+            const int end = std::min(
+                static_cast<int>(dense_indices.size()), begin+dense_batch);
+            vector<fdm::NSCylFourierBatchRequest<T>> requests;
+            vector<int> request_work_indices;
+            for (int i = begin; i < end; ++i) {
+                const int result_index = dense_indices[i];
+                const int n = results[result_index].arpack_size;
+                if (column >= n) {
+                    continue;
+                }
+                work[i].basis[column] = T(1);
+                requests.push_back({
+                    results[result_index].block.m,
+                    results[result_index].block.l,
+                    work[i].basis.data(), work[i].image.data(), n});
+                request_work_indices.push_back(i);
+            }
+            if (!requests.empty()) {
+                op.apply(requests);
+                ++dense_batches;
+            }
+            for (int i : request_work_indices) {
+                const int n = results[dense_indices[i]].arpack_size;
+                work[i].basis[column] = T(0);
+                std::copy(work[i].image.begin(), work[i].image.end(),
+                          work[i].matrix.begin()+static_cast<std::size_t>(column)*n);
+            }
+        }
+    }
+    const double materialize_seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-dense_before).count();
+    printf("BATCHED_DENSE physical_batches=%d blocks=%zu columns=%d "
+           "seconds=%.3f\n", dense_batches, dense_indices.size(),
+           maximum_size, materialize_seconds);
+
+    const double dt = config.get("ns", "dt", 0.001);
+    const double growth_tolerance = config.get(
+        "spectral", "growth_tol", 1e-8);
+    const double residual_limit = residual_tolerance<T>(config);
+    int threads = config.get("spectral", "threads", 1);
+#ifdef _OPENMP
+    if (threads <= 0) {
+        threads = omp_get_max_threads();
+    }
+#else
+    threads = 1;
+#endif
+    threads = std::max(1, std::min(
+        threads, static_cast<int>(dense_indices.size())));
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(threads)
+#endif
+    for (int i = 0; i < static_cast<int>(dense_indices.size()); ++i) {
+        try {
+            set_dense_metadata(
+                results[dense_indices[i]], work[i].matrix, operator_steps, dt,
+                growth_tolerance, residual_limit);
+        } catch (const std::exception& error) {
+            results[dense_indices[i]].error = error.what();
+        }
+    }
+    const double dense_seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-dense_before).count();
+    printf("BATCHED_GEEV threads=%d seconds=%.3f\n",
+           threads, dense_seconds-materialize_seconds);
+}
+
+template<typename T>
+void probe_batched_blocks(const Config& config,
+                          const vector<BlockIndex>& blocks,
+                          vector<ProbeResult<T>>& results,
+                          const string& backend) {
+    const int operator_steps = config.get("spectral", "operator_steps", 1);
+    if (backend == "cpu") {
+        fdm::NSCylFourierBlockBatchReference<T> op(config, operator_steps);
+        probe_batched_blocks_impl(config, blocks, results, op);
+        return;
+    }
+#ifdef FDM_HAVE_SYCL
+    if constexpr (std::is_same_v<T, float>) {
+        const sycl::device device = select_sycl_device();
+        printf("SYCL device: %s\n",
+               device.get_info<sycl::info::device::name>().c_str());
+        sycl::queue queue{device, sycl::property::queue::in_order{}};
+        fdm::NSCylSyclFourierBlockBatchReference<T> op(
+            queue, config, operator_steps);
+        probe_batched_blocks_impl(config, blocks, results, op);
+    } else {
+        throw std::invalid_argument(
+            "SYCL batched probe currently supports datatype=float only");
+    }
+#else
+    (void)config;
+    (void)blocks;
+    (void)results;
+    throw std::runtime_error("spectral probe was built without SYCL");
+#endif
+}
 
 template<typename T>
 class GlobalGaugeLayout {
@@ -901,6 +1317,8 @@ void run_global(const Config& config) {
 
 template<typename T>
 void run(const Config& config) {
+    const string strategy = config.get(
+        "spectral", "strategy", string("blocks"));
     const int nphi = config.get("ns", "nphi", 32);
     const int nz = config.get("ns", "nz", 32);
     const int m_min = std::max(0, config.get("spectral", "m_min", 0));
@@ -965,9 +1383,10 @@ void run(const Config& config) {
            config.get("ns", "R", M_PI),
            config.get("ns", "h1", 0.0),
            config.get("ns", "h2", 10.0));
-    printf("blocks=%zu m=[%d,%d] l=[%d,%d] backend=%s threads=%d\n",
+    printf("blocks=%zu m=[%d,%d] l=[%d,%d] backend=%s strategy=%s "
+           "threads=%d\n",
            blocks.size(), m_min, m_max, l_min, l_max,
-           backend.c_str(), threads);
+           backend.c_str(), strategy.c_str(), threads);
     printf("selection: growth_tol=%.3e residual_tol=%.3e "
            "condition_limit=%.3e\n",
            growth_tolerance, residual_limit, condition_limit);
@@ -975,7 +1394,9 @@ void run(const Config& config) {
 
     vector<ProbeResult<T>> results(blocks.size());
 
-    if (backend == "cpu") {
+    if (strategy == "batched_blocks") {
+        probe_batched_blocks(config, blocks, results, backend);
+    } else if (backend == "cpu") {
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(threads)
 #endif
@@ -1207,9 +1628,11 @@ int main(int argc, char** argv) {
         const string datatype = config.get("solver", "datatype", "double");
         const string strategy = config.get(
             "spectral", "strategy", string("blocks"));
-        if (strategy != "blocks" && strategy != "global") {
+        if (strategy != "blocks" && strategy != "global"
+            && strategy != "batched_blocks") {
             throw std::invalid_argument(
-                "spectral strategy must be either 'blocks' or 'global'");
+                "spectral strategy must be 'blocks', 'batched_blocks', "
+                "or 'global'");
         }
         if (datatype == "float") {
             if (strategy == "global") {
