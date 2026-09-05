@@ -37,8 +37,11 @@ public:
         if (operator_steps_ <= 0) {
             throw std::invalid_argument("operator_steps must be positive");
         }
-        ns_.initialize_couette_linearization(static_cast<T>(
-            config.get("ns", "u0", 1.0)));
+        ns_.initialize_couette_linearization(
+            static_cast<T>(config.get("ns", "u0", 1.0)),
+            static_cast<T>(config.get(
+                "spectral", "base_outer_radius",
+                config.get("ns", "R", M_PI))));
     }
 
     int operator_steps() const { return operator_steps_; }

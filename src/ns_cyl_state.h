@@ -3,19 +3,38 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
 namespace fdm {
 
-// The sampled continuum profile A*r+B/r is not an exact null vector of the
-// staggered viscous stencil. Solve that stencil with the same ghost conditions
-// as NSCyl so the base state is stationary for the discrete time step.
+// Solve the staggered viscous stencil on [r0,outer_radius]. When that interval
+// is smaller than the computational cylinder, cell-centred samples beyond its
+// outer face are zero. This is the discrete base extension used by the
+// auxiliary-domain spectral problem; outer_radius=R retains the stationary
+// full-domain Couette profile.
 template<typename T, typename Geometry>
-std::vector<T> make_discrete_couette_velocity(const Geometry& geometry) {
-    const int nr = geometry.nr;
-    if (nr < 2) {
+std::vector<T> make_discrete_couette_velocity(
+    const Geometry& geometry, double outer_radius) {
+    const int full_nr = geometry.nr;
+    if (full_nr < 2) {
         throw std::invalid_argument("discrete Couette profile needs nr >= 2");
+    }
+    if (!(outer_radius > geometry.r0) || outer_radius > geometry.R) {
+        throw std::invalid_argument(
+            "Couette outer radius must be in (r,R]");
+    }
+
+    const double radial_cells = (outer_radius-geometry.r0)/geometry.dr;
+    const int nr = static_cast<int>(std::llround(radial_cells));
+    const double alignment_tolerance = 128
+        *std::numeric_limits<double>::epsilon()
+        *std::max({1.0, std::abs(radial_cells), std::abs(outer_radius)});
+    if (nr < 2 || nr > full_nr
+        || std::abs(radial_cells-nr) > alignment_tolerance) {
+        throw std::invalid_argument(
+            "Couette outer radius must lie on a radial grid face");
     }
 
     std::vector<long double> lower(nr, 0);
@@ -61,13 +80,20 @@ std::vector<T> make_discrete_couette_velocity(const Geometry& geometry) {
                          -upper[row]*solution[row+1])/diagonal[row];
     }
 
-    std::vector<T> profile(nr+2);
+    std::vector<T> profile(full_nr+2, T(0));
     for (int j = 1; j <= nr; ++j) {
         profile[j] = static_cast<T>(solution[j-1]);
     }
     profile[0] = T(2)*static_cast<T>(geometry.U0)-profile[1];
-    profile[nr+1] = -profile[nr];
+    if (nr == full_nr) {
+        profile[nr+1] = -profile[nr];
+    }
     return profile;
+}
+
+template<typename T, typename Geometry>
+std::vector<T> make_discrete_couette_velocity(const Geometry& geometry) {
+    return make_discrete_couette_velocity<T>(geometry, geometry.R);
 }
 
 template<typename T, typename Geometry>
@@ -473,9 +499,11 @@ public:
     }
 
     template<typename Task>
-    void initialize_couette_state(Task& state) const {
+    void initialize_couette_state(
+        Task& state, double outer_radius) const {
         clear_state(state);
-        const auto velocity = make_discrete_couette_velocity<T>(state);
+        const auto velocity = make_discrete_couette_velocity<T>(
+            state, outer_radius);
         const auto pressure = make_discrete_couette_pressure(state, velocity);
 
         for (int i = 0; i < nphi; ++i) {
@@ -490,11 +518,18 @@ public:
     }
 
     template<typename Task>
-    void initialize_couette_linearization(Task& state) const {
+    void initialize_couette_state(Task& state) const {
+        initialize_couette_state(state, state.R);
+    }
+
+    template<typename Task>
+    void initialize_couette_linearization(
+        Task& state, double outer_radius) const {
         std::fill(state.u0.vec, state.u0.vec+state.u0.size, T(0));
         std::fill(state.v0.vec, state.v0.vec+state.v0.size, T(0));
         std::fill(state.w0.vec, state.w0.vec+state.w0.size, T(0));
-        const auto profile = make_discrete_couette_velocity<T>(state);
+        const auto profile = make_discrete_couette_velocity<T>(
+            state, outer_radius);
 
         for (int i = 0; i < nphi; ++i) {
             for (int k = 0; k < nz; ++k) {
@@ -503,6 +538,11 @@ public:
                 }
             }
         }
+    }
+
+    template<typename Task>
+    void initialize_couette_linearization(Task& state) const {
+        initialize_couette_linearization(state, state.R);
     }
 
     template<typename Task>

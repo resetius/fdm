@@ -144,6 +144,7 @@ void assert_metadata_equal(const fdm::NSCylSpectralMetadata& actual,
     assert_true(actual.reynolds == expected.reynolds);
     assert_true(actual.dt == expected.dt);
     assert_true(actual.wall_speed == expected.wall_speed);
+    assert_true(actual.base_outer_radius == expected.base_outer_radius);
     assert_true(actual.growth_tolerance == expected.growth_tolerance);
     assert_true(actual.residual_tolerance == expected.residual_tolerance);
     assert_true(actual.condition_limit == expected.condition_limit);
@@ -238,6 +239,9 @@ void test_rejects_incompatible_metadata(void**) {
     rejects(expected);
     expected = metadata;
     expected.dt *= 2;
+    rejects(expected);
+    expected = metadata;
+    expected.base_outer_radius = 1.5;
     rejects(expected);
     expected = metadata;
     expected.state_layout += "_incompatible";

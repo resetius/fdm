@@ -46,6 +46,10 @@ add_executable(fdm_ns_cyl_spectral_compare
     test_ns_cyl_spectral_compare.cpp)
 target_link_libraries(fdm_ns_cyl_spectral_compare fdm)
 
+add_executable(fdm_ns_cyl_extended_filter
+    test_ns_cyl_extended_filter.cpp)
+target_link_libraries(fdm_ns_cyl_extended_filter fdm)
+
 add_executable(fdm_ns_cube test_ns_cube.cpp)
 target_link_libraries(fdm_ns_cube fdm)
 

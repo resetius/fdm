@@ -26,6 +26,7 @@ public:
     const double h1;
     const double h2;
     const double U0;
+    const double base_outer_radius;
     const double Re;
     const double dt;
     const int nr;
@@ -45,6 +46,9 @@ public:
         , h1(config.get("ns", "h1", 0.0))
         , h2(config.get("ns", "h2", 10.0))
         , U0(config.get("ns", "u0", 1.0))
+        , base_outer_radius(config.get(
+              "spectral", "base_outer_radius",
+              config.get("ns", "R", M_PI)))
         , Re(config.get("ns", "Re", 1.0))
         , dt(config.get("ns", "dt", 0.001))
         , nr(config.get("ns", "nr", 32))
@@ -77,7 +81,8 @@ public:
         , H_(field_storage_size())
         , rhs_(field_storage_size())
         , x_(field_storage_size())
-        , w0_(make_discrete_couette_velocity<T>(*this))
+        , w0_(make_discrete_couette_velocity<T>(
+              *this, base_outer_radius))
         , phi_plus_(make_shift(true, +1))
         , phi_minus_(make_shift(true, -1))
         , z_plus_(make_shift(false, +1))

@@ -146,7 +146,8 @@ public:
         kernel_update_uvwp();
     }
 
-    void initialize_couette_linearization(T wall_speed) {
+    void initialize_couette_linearization(
+        T wall_speed, T outer_radius) {
         struct Geometry {
             int nr;
             T r0;
@@ -154,7 +155,8 @@ public:
             T dr;
             T U0;
         } geometry{nr, r0, R, dr, wall_speed};
-        const auto profile = make_discrete_couette_velocity<T>(geometry);
+        const auto profile = make_discrete_couette_velocity<T>(
+            geometry, outer_radius);
 
         q.memset(u0_mem, 0, nphi*nz*(nr+3)*sizeof(T));
         q.memset(v0_mem, 0, nphi*nz*(nr+2)*sizeof(T));
@@ -168,6 +170,10 @@ public:
                 }
             }
         }
+    }
+
+    void initialize_couette_linearization(T wall_speed) {
+        initialize_couette_linearization(wall_speed, R);
     }
 
     void L_step() {

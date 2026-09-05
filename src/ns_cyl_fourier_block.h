@@ -129,6 +129,8 @@ public:
                                int operator_steps=1)
         : ns_(config)
         , layout_(ns_)
+        , base_outer_radius_(config.get(
+              "spectral", "base_outer_radius", ns_.R))
         , fft_(ns_.nphi, ns_.nz)
         , m_(m)
         , l_(l)
@@ -261,6 +263,7 @@ public:
 private:
     Task ns_;
     StateLayout layout_;
+    double base_outer_radius_;
     PeriodicPackedFFT2<T> fft_;
     int m_;
     int l_;
@@ -287,7 +290,8 @@ private:
     }
 
     void initialize_couette_base() {
-        layout_.initialize_couette_linearization(ns_);
+        layout_.initialize_couette_linearization(
+            ns_, base_outer_radius_);
 
         // L_step advances a perturbation with homogeneous wall conditions;
         // the moving-wall velocity is already contained in w0.

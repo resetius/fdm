@@ -107,7 +107,9 @@ inline void validate_problem_compatibility(
         || !nearly_equal(coarse.h1, fine.h1)
         || !nearly_equal(coarse.h2, fine.h2)
         || !nearly_equal(coarse.reynolds, fine.reynolds)
-        || !nearly_equal(coarse.wall_speed, fine.wall_speed)) {
+        || !nearly_equal(coarse.wall_speed, fine.wall_speed)
+        || !nearly_equal(coarse.base_outer_radius,
+                         fine.base_outer_radius)) {
         throw std::invalid_argument(
             "spectral files describe different physical problems");
     }

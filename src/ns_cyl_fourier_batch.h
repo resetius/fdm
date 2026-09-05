@@ -275,7 +275,8 @@ public:
         if (operator_steps_ <= 0) {
             throw std::invalid_argument("operator_steps must be positive");
         }
-        transform_.layout().initialize_couette_linearization(ns_);
+        transform_.layout().initialize_couette_linearization(
+            ns_, config.get("spectral", "base_outer_radius", ns_.R));
         ns_.U0 = 0;
     }
 

@@ -72,6 +72,20 @@ Config make_couette_config(int nr=8, int nz=8, int nphi=8,
     return config;
 }
 
+Config make_extended_couette_config() {
+    Config config = make_config(8, 8, 8);
+    std::vector<std::string> arguments = {
+        "ut_ns_cyl_fourier_block",
+        "--spectral:base_outer_radius=1.5"
+    };
+    std::vector<char*> argv;
+    for (auto& argument : arguments) {
+        argv.push_back(argument.data());
+    }
+    config.rewrite(static_cast<int>(argv.size()), argv.data());
+    return config;
+}
+
 void test_packed_fft2_round_trip(void**) {
     constexpr int nphi = 8;
     constexpr int nz = 4;
@@ -314,6 +328,104 @@ void test_native_radial_blocks_match_full_reference(void**) {
     check_native_radial_blocks<double>(1, 2e-11);
     check_native_radial_blocks<double>(3, 5e-11);
     check_native_radial_blocks<float>(3, 3e-5);
+}
+
+void test_zero_extended_couette_base_matches_native_operator(void**) {
+    Config config = make_extended_couette_config();
+    constexpr int operator_steps = 3;
+    fdm::NSCylFourierBlockReference<double, true> reference(
+        config, 1, 1, operator_steps);
+    fdm::NSCylFourierBlockNative<double> native(
+        config, 1, 1, operator_steps);
+
+    auto& state = reference.task();
+    assert_true(std::abs(state.w0[0][0][4]) > 1e-3);
+    for (int j = 5; j <= state.nr+1; ++j) {
+        assert_true(state.w0[0][0][j] == 0);
+    }
+
+    std::vector<double> input(reference.size());
+    std::vector<double> expected(reference.size());
+    std::vector<double> actual(reference.size());
+    for (int i = 0; i < reference.size(); ++i) {
+        input[i] = std::sin(0.071*(i+1))+0.2*std::cos(0.113*(i+1));
+    }
+    reference.apply(expected.data(), input.data());
+    native.apply(actual.data(), input.data());
+
+    long double error2 = 0;
+    long double expected2 = 0;
+    for (int i = 0; i < reference.size(); ++i) {
+        const long double error = actual[i]-expected[i];
+        error2 += error*error;
+        expected2 += static_cast<long double>(expected[i])*expected[i];
+    }
+    assert_true(std::sqrt(error2/expected2) < 5e-11);
+
+    Config misaligned = make_config(8, 8, 8);
+    std::vector<std::string> arguments = {
+        "ut_ns_cyl_fourier_block",
+        "--spectral:base_outer_radius=1.51"
+    };
+    std::vector<char*> argv;
+    for (auto& argument : arguments) {
+        argv.push_back(argument.data());
+    }
+    misaligned.rewrite(static_cast<int>(argv.size()), argv.data());
+    bool rejected = false;
+    try {
+        fdm::NSCylFourierBlockNative<double> invalid(misaligned, 0, 1);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert_true(rejected);
+}
+
+void test_zero_extended_base_matches_nonlinear_central_difference(void**) {
+    using Task = fdm::NSCyl<double, true, fdm::tensor_flag::periodic>;
+    constexpr double epsilon = 1e-5;
+    Config config = make_extended_couette_config();
+    Task plus(config);
+    Task minus(config);
+    Task linear(config);
+    const fdm::NSCylStateLayout<double> layout(linear);
+
+    layout.initialize_couette_state(plus, 1.5);
+    const auto reference = layout.pack(plus);
+    std::vector<double> perturbation(layout.state_size);
+    std::vector<double> positive(layout.state_size);
+    std::vector<double> negative(layout.state_size);
+    for (int index = 0; index < layout.state_size; ++index) {
+        perturbation[index] =
+            0.03*std::sin(0.071*(index+1))
+            +0.01*std::cos(0.113*(index+1));
+        positive[index] = reference[index]+epsilon*perturbation[index];
+        negative[index] = reference[index]-epsilon*perturbation[index];
+    }
+    layout.unpack(plus, positive.data());
+    layout.unpack(minus, negative.data());
+    layout.unpack(linear, perturbation.data());
+    layout.initialize_couette_linearization(linear, 1.5);
+    linear.U0 = 0;
+
+    plus.step();
+    minus.step();
+    linear.L_step();
+    const auto positive_image = layout.pack(plus);
+    const auto negative_image = layout.pack(minus);
+    const auto linear_image = layout.pack(linear);
+    double maximum_error = 0;
+    double maximum_reference = 0;
+    for (int index = 0; index < layout.state_size; ++index) {
+        const double derivative =
+            (positive_image[index]-negative_image[index])/(2*epsilon);
+        maximum_error = std::max(
+            maximum_error, std::abs(linear_image[index]-derivative));
+        maximum_reference = std::max(
+            maximum_reference, std::abs(derivative));
+    }
+    assert_true(maximum_reference > 0);
+    assert_true(maximum_error/maximum_reference < 2e-8);
 }
 
 void test_axisymmetric_block_is_independent_of_nphi(void**) {
@@ -791,6 +903,8 @@ int main() {
         cmocka_unit_test(test_linear_step_preserves_real_packed_block),
         cmocka_unit_test(test_batched_blocks_match_individual_applications),
         cmocka_unit_test(test_native_radial_blocks_match_full_reference),
+        cmocka_unit_test(test_zero_extended_couette_base_matches_native_operator),
+        cmocka_unit_test(test_zero_extended_base_matches_nonlinear_central_difference),
         cmocka_unit_test(test_axisymmetric_block_is_independent_of_nphi),
         cmocka_unit_test(test_dense_spectrum_groups_complex_pair_in_real_columns),
         cmocka_unit_test(test_dense_spectrum_of_real_ns_cyl_block),

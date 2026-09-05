@@ -2,6 +2,7 @@
 
 #include <netcdf.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -94,6 +95,17 @@ double get_double_attribute(int ncid, const char* name) {
     return value;
 }
 
+double get_optional_double_attribute(int ncid, const char* name,
+                                     double fallback) {
+    double value = 0;
+    const int status = nc_get_att_double(ncid, NC_GLOBAL, name, &value);
+    if (status == NC_ENOTATT) {
+        return fallback;
+    }
+    nc_check(status, std::string("reading attribute ")+name);
+    return value;
+}
+
 void write_metadata(int ncid, const NSCylSpectralMetadata& metadata,
                     int mode_count, int value_count) {
     put_int_attribute(ncid, "schema_version", metadata.schema_version);
@@ -124,6 +136,8 @@ void write_metadata(int ncid, const NSCylSpectralMetadata& metadata,
     put_double_attribute(ncid, "Re", metadata.reynolds);
     put_double_attribute(ncid, "dt", metadata.dt);
     put_double_attribute(ncid, "wall_speed", metadata.wall_speed);
+    put_double_attribute(ncid, "base_outer_radius",
+                         metadata.base_outer_radius);
     put_double_attribute(ncid, "growth_tolerance",
                          metadata.growth_tolerance);
     put_double_attribute(ncid, "residual_tolerance",
@@ -168,6 +182,8 @@ NSCylSpectralMetadata read_metadata(int ncid) {
     result.reynolds = get_double_attribute(ncid, "Re");
     result.dt = get_double_attribute(ncid, "dt");
     result.wall_speed = get_double_attribute(ncid, "wall_speed");
+    result.base_outer_radius = get_optional_double_attribute(
+        ncid, "base_outer_radius", result.R);
     result.growth_tolerance = get_double_attribute(
         ncid, "growth_tolerance");
     result.residual_tolerance = get_double_attribute(
@@ -229,6 +245,7 @@ void validate_metadata(const NSCylSpectralMetadata& metadata,
     const double finite_values[] = {
         metadata.r, metadata.R, metadata.h1, metadata.h2,
         metadata.reynolds, metadata.dt, metadata.wall_speed,
+        metadata.base_outer_radius,
         metadata.growth_tolerance, metadata.residual_tolerance,
         metadata.condition_limit
     };
@@ -237,8 +254,20 @@ void validate_metadata(const NSCylSpectralMetadata& metadata,
             throw std::runtime_error("non-finite NSCyl spectral metadata");
         }
     }
-    if (!(metadata.R > metadata.r) || !(metadata.h2 > metadata.h1)) {
+    if (!(metadata.R > metadata.r) || !(metadata.h2 > metadata.h1)
+        || !(metadata.base_outer_radius > metadata.r)
+        || metadata.base_outer_radius > metadata.R) {
         throw std::runtime_error("invalid NSCyl spectral geometry metadata");
+    }
+    const double radial_cells = metadata.nr
+        *(metadata.base_outer_radius-metadata.r)/(metadata.R-metadata.r);
+    const double nearest_cells = std::round(radial_cells);
+    const double tolerance = 128*std::numeric_limits<double>::epsilon()
+        *std::max({1.0, std::abs(radial_cells),
+                   std::abs(metadata.base_outer_radius)});
+    if (nearest_cells < 2 || std::abs(radial_cells-nearest_cells) > tolerance) {
+        throw std::runtime_error(
+            "NSCyl spectral base_outer_radius is not grid aligned");
     }
 }
 
@@ -283,6 +312,8 @@ void validate_compatibility(const NSCylSpectralMetadata& actual,
     require_equal("Re", actual.reynolds, expected.reynolds);
     require_equal("dt", actual.dt, expected.dt);
     require_equal("wall_speed", actual.wall_speed, expected.wall_speed);
+    require_equal("base_outer_radius", actual.base_outer_radius,
+                  expected.base_outer_radius);
     require_equal("growth_tolerance", actual.growth_tolerance,
                   expected.growth_tolerance);
     require_equal("residual_tolerance", actual.residual_tolerance,

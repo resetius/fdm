@@ -811,7 +811,8 @@ public:
         if (operator_steps_ <= 0) {
             throw std::invalid_argument("operator_steps must be positive");
         }
-        gauge_.state_layout().initialize_couette_linearization(ns_);
+        gauge_.state_layout().initialize_couette_linearization(
+            ns_, config.get("spectral", "base_outer_radius", ns_.R));
         ns_.U0 = 0;
     }
 
@@ -859,7 +860,8 @@ public:
             throw std::invalid_argument("operator_steps must be positive");
         }
         ns_.initialize_couette_linearization(
-            config.get("ns", "u0", 1.0f));
+            config.get("ns", "u0", 1.0f),
+            config.get("spectral", "base_outer_radius", ns_.R));
     }
 
     int size() const { return gauge_.size(); }

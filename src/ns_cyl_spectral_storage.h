@@ -40,6 +40,7 @@ struct NSCylSpectralMetadata {
     double reynolds = 0;
     double dt = 0;
     double wall_speed = 0;
+    double base_outer_radius = 0;
     double growth_tolerance = 0;
     double residual_tolerance = 0;
     double condition_limit = 0;
@@ -69,6 +70,8 @@ NSCylSpectralMetadata make_ns_cyl_spectral_metadata(const Config& config) {
     result.reynolds = config.get("ns", "Re", 1.0);
     result.dt = config.get("ns", "dt", 0.001);
     result.wall_speed = config.get("ns", "u0", 1.0);
+    result.base_outer_radius = config.get(
+        "spectral", "base_outer_radius", result.R);
     result.growth_tolerance = config.get(
         "spectral", "growth_tol", 1e-8);
     result.residual_tolerance = std::max(

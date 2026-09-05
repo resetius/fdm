@@ -28,6 +28,7 @@ ut(ns_cyl_checkpoint_storage ut_ns_cyl_checkpoint_storage.cpp)
 ut(ns_cyl_fourier_block ut_ns_cyl_fourier_block.cpp)
 ut(ns_cyl_spectral_compare ut_ns_cyl_spectral_compare.cpp)
 ut(ns_cyl_spectral_filter ut_ns_cyl_spectral_filter.cpp)
+ut(ns_cyl_extended_filter ut_ns_cyl_extended_filter.cpp)
 ut(ns_cyl_spectral_storage ut_ns_cyl_spectral_storage.cpp)
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/ns_lapl_experiments)
 target_compile_definitions(ut_ns_cyl_spectral_storage PRIVATE
