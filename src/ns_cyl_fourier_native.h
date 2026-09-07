@@ -3,11 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "config.h"
+#include "cyclic_reduction.h"
 #include "lapl_cyl.h"
 #include "ns_cyl_state.h"
+#include "tensor.h"
 
 namespace fdm {
 
@@ -72,26 +75,26 @@ public:
         , operator_steps_(operator_steps)
         , radial_stride_(nr+3)
         , state_(full_size_)
-        , u_(field_storage_size())
-        , v_(field_storage_size())
-        , w_(field_storage_size())
-        , p_(field_storage_size())
-        , F_(field_storage_size())
-        , G_(field_storage_size())
-        , H_(field_storage_size())
-        , rhs_(field_storage_size())
-        , x_(field_storage_size())
-        , w0_(make_discrete_couette_velocity<T>(
-              *this, base_outer_radius))
+
+        , u_({0, phases_-1, -1, nr+1})
+        , v_({0, phases_-1, -1, nr+1})
+        , w_({0, phases_-1, -1, nr+1})
+        , p_({0, phases_-1, -1, nr+1})
+        , F_({0, phases_-1, -1, nr+1})
+        , G_({0, phases_-1, -1, nr+1})
+        , H_({0, phases_-1, -1, nr+1})
+
+        , rhs_({0, phases_-1, -1, nr+1})
+        , x_({0, phases_-1, -1, nr+1})
+
+        , w0_(make_discrete_couette_velocity<T>(*this, base_outer_radius))
         , phi_plus_(make_shift(true, +1))
         , phi_minus_(make_shift(true, -1))
         , z_plus_(make_shift(false, +1))
         , z_minus_(make_shift(false, -1))
         , identity_(make_identity())
-        , lap_phi_(combine(phi_plus_, T(1), phi_minus_, T(1),
-                            identity_, T(-2)))
-        , lap_z_(combine(z_plus_, T(1), z_minus_, T(1),
-                        identity_, T(-2)))
+        , lap_phi_(-4*std::pow(std::sin(M_PI*m/nphi), 2)) // = P+ + P- - 2I = (2cos(theta) - 2)
+        , lap_z_(-4*std::pow(std::sin(M_PI*l/nz), 2)) // = Z+ + Z- - 2I = (2cos(theta) - 2)
         , centered_phi_(combine(phi_plus_, T(1), phi_minus_, T(-1)))
         , backward_phi_(combine(identity_, T(1), phi_minus_, T(-1)))
         , forward_phi_(combine(phi_plus_, T(1), identity_, T(-1)))
@@ -105,6 +108,11 @@ public:
         , poisson_upper2_(nr)
         , poisson_pivots_(nr)
         , poisson_work_(nr)
+        , cyclic_reduction_(config.get("spectral", "tridiagonal", std::string("lapack")) == "cr")
+        , cr_diagonal_(nr)
+        , cr_lower_(nr)
+        , cr_upper_(nr)
+        , cr_(nr)
     {
         if (nr < 2 || nz <= 0 || nphi <= 0) {
             throw std::invalid_argument("invalid native NSCyl dimensions");
@@ -171,15 +179,18 @@ private:
     int radial_stride_;
 
     std::vector<T> state_;
-    std::vector<T> u_;
-    std::vector<T> v_;
-    std::vector<T> w_;
-    std::vector<T> p_;
-    std::vector<T> F_;
-    std::vector<T> G_;
-    std::vector<T> H_;
-    std::vector<T> rhs_;
-    std::vector<T> x_;
+
+    tensor<T, 2, false> u_;
+    tensor<T, 2, false> v_;
+    tensor<T, 2, false> w_;
+    tensor<T, 2, false> p_;
+    tensor<T, 2, false> F_;
+    tensor<T, 2, false> G_;
+    tensor<T, 2, false> H_;
+
+    tensor<T, 2, false> rhs_;
+    tensor<T, 2, false> x_;
+
     std::vector<T> w0_;
 
     Matrix phi_plus_;
@@ -187,8 +198,8 @@ private:
     Matrix z_plus_;
     Matrix z_minus_;
     Matrix identity_;
-    Matrix lap_phi_;
-    Matrix lap_z_;
+    double lap_phi_;
+    double lap_z_;
     Matrix centered_phi_;
     Matrix backward_phi_;
     Matrix forward_phi_;
@@ -204,6 +215,12 @@ private:
     std::vector<int> poisson_pivots_;
     std::vector<T> poisson_work_;
 
+    bool cyclic_reduction_;
+    std::vector<T> cr_diagonal_;
+    std::vector<T> cr_lower_;
+    std::vector<T> cr_upper_;
+    CyclicReduction<T> cr_;
+
     static bool endpoint(int q, int n) {
         return q == 0 || 2*q == n;
     }
@@ -212,19 +229,10 @@ private:
         return static_cast<std::size_t>(phases_)*radial_stride_;
     }
 
-    T& at(std::vector<T>& field, int phase, int j) {
-        return field[static_cast<std::size_t>(phase)*radial_stride_+j+1];
-    }
-
-    const T& at(const std::vector<T>& field, int phase, int j) const {
-        return field[static_cast<std::size_t>(phase)*radial_stride_+j+1];
-    }
-
-    T transformed(const Matrix& matrix, const std::vector<T>& field,
-                  int phase, int j) const {
+    T transformed(const Matrix& matrix, tensor<T, 2, false>& field, int phase, int j) const {
         T value = 0;
         for (int column = 0; column < phases_; ++column) {
-            value += matrix[phase*phases_+column]*at(field, column, j);
+            value += matrix[phase*phases_+column]*field[column][j];
         }
         return value;
     }
@@ -259,17 +267,13 @@ private:
         for (int phi_row = 0; phi_row < phi_phases_; ++phi_row) {
             for (int z_row = 0; z_row < z_phases_; ++z_row) {
                 const int row = phi_row*z_phases_+z_row;
-                for (int phi_column = 0;
-                     phi_column < phi_phases_; ++phi_column) {
-                    for (int z_column = 0;
-                         z_column < z_phases_; ++z_column) {
+                for (int phi_column = 0; phi_column < phi_phases_; ++phi_column) {
+                    for (int z_column = 0; z_column < z_phases_; ++z_column) {
                         const int column = phi_column*z_phases_+z_column;
                         if (azimuthal && z_row == z_column) {
-                            result[row*phases_+column] =
-                                one[phi_row*phi_phases_+phi_column];
+                            result[row*phases_+column] = one[phi_row*phi_phases_+phi_column];
                         } else if (!azimuthal && phi_row == phi_column) {
-                            result[row*phases_+column] =
-                                one[z_row*z_phases_+z_column];
+                            result[row*phases_+column] = one[z_row*z_phases_+z_column];
                         }
                     }
                 }
@@ -278,21 +282,10 @@ private:
         return result;
     }
 
-    Matrix combine(const Matrix& a, T a_scale,
-                   const Matrix& b, T b_scale) const {
+    Matrix combine(const Matrix& a, T a_scale, const Matrix& b, T b_scale) const {
         Matrix result(a.size());
         for (std::size_t i = 0; i < result.size(); ++i) {
             result[i] = a_scale*a[i]+b_scale*b[i];
-        }
-        return result;
-    }
-
-    Matrix combine(const Matrix& a, T a_scale,
-                   const Matrix& b, T b_scale,
-                   const Matrix& c, T c_scale) const {
-        Matrix result(a.size());
-        for (std::size_t i = 0; i < result.size(); ++i) {
-            result[i] = a_scale*a[i]+b_scale*b[i]+c_scale*c[i];
         }
         return result;
     }
@@ -320,17 +313,24 @@ private:
         int upper = 0;
         for (int j = 1; j <= nr; ++j) {
             const double radius = r0+(j-0.5)*dr;
-            poisson_diagonal_[diagonal++] = static_cast<T>(
-                -2/dr2-lambda_phi/(radius*radius)-lambda_z);
+            poisson_diagonal_[diagonal++] = static_cast<T>(-2/dr2-lambda_phi/(radius*radius)-lambda_z);
             if (j > 1) {
-                poisson_lower_[lower++] = static_cast<T>(
-                    (radius-0.5*dr)/(dr2*radius));
+                poisson_lower_[lower++] = static_cast<T>((radius-0.5*dr)/(dr2*radius));
             }
             if (j < nr) {
-                poisson_upper_[upper++] = static_cast<T>(
-                    (radius+0.5*dr)/(dr2*radius));
+                poisson_upper_[upper++] = static_cast<T>((radius+0.5*dr)/(dr2*radius));
             }
         }
+        if (cyclic_reduction_) {
+            for (int i = 0; i < nr; ++i) {
+                cr_diagonal_[i] = poisson_diagonal_[i];
+                cr_lower_[i] = (i > 0) ? poisson_lower_[i-1] : T(0);
+                cr_upper_[i] = (i < nr-1) ? poisson_upper_[i] : T(0);
+            }
+            cr_.prepare(cr_diagonal_.data(), cr_lower_.data(), cr_upper_.data());
+            return;
+        }
+
         int info = 0;
         lapack::gttrf(
             nr, poisson_lower_.data(), poisson_diagonal_.data(),
@@ -342,23 +342,19 @@ private:
     }
 
     void unpack() {
-        std::fill(u_.begin(), u_.end(), T(0));
-        std::fill(v_.begin(), v_.end(), T(0));
-        std::fill(w_.begin(), w_.end(), T(0));
-        std::fill(p_.begin(), p_.end(), T(0));
+        u_.fill(T(0));
+        v_.fill(T(0));
+        w_.fill(T(0));
+        p_.fill(T(0));
         for (int phase = 0; phase < phases_; ++phase) {
             const T* source = state_.data()+phase*layout_.radial_size;
             for (int j = 1; j < nr; ++j) {
-                at(u_, phase, j) = source[
-                    layout_.radial_index(Component::u, j)];
+                u_[phase][j] = source[layout_.radial_index(Component::u, j)];
             }
             for (int j = 1; j <= nr; ++j) {
-                at(v_, phase, j) = source[
-                    layout_.radial_index(Component::v, j)];
-                at(w_, phase, j) = source[
-                    layout_.radial_index(Component::w, j)];
-                at(p_, phase, j) = source[
-                    layout_.radial_index(Component::p, j)];
+                v_[phase][j] = source[layout_.radial_index(Component::v, j)];
+                w_[phase][j] = source[layout_.radial_index(Component::w, j)];
+                p_[phase][j] = source[layout_.radial_index(Component::p, j)];
             }
         }
     }
@@ -367,30 +363,26 @@ private:
         for (int phase = 0; phase < phases_; ++phase) {
             T* destination = state_.data()+phase*layout_.radial_size;
             for (int j = 1; j < nr; ++j) {
-                destination[layout_.radial_index(Component::u, j)] =
-                    at(u_, phase, j);
+                destination[layout_.radial_index(Component::u, j)] = u_[phase][j];
             }
             for (int j = 1; j <= nr; ++j) {
-                destination[layout_.radial_index(Component::v, j)] =
-                    at(v_, phase, j);
-                destination[layout_.radial_index(Component::w, j)] =
-                    at(w_, phase, j);
-                destination[layout_.radial_index(Component::p, j)] =
-                    at(p_, phase, j);
+                destination[layout_.radial_index(Component::v, j)] = v_[phase][j];
+                destination[layout_.radial_index(Component::w, j)] = w_[phase][j];
+                destination[layout_.radial_index(Component::p, j)] = p_[phase][j];
             }
         }
     }
 
     void apply_boundary_conditions() {
         for (int phase = 0; phase < phases_; ++phase) {
-            at(u_, phase, 0) = T(0);
-            at(u_, phase, nr) = T(0);
-            at(u_, phase, -1) = at(u_, phase, 1);
-            at(u_, phase, nr+1) = at(u_, phase, nr-1);
-            at(v_, phase, 0) = -at(v_, phase, 1);
-            at(v_, phase, nr+1) = -at(v_, phase, nr);
-            at(w_, phase, 0) = -at(w_, phase, 1);
-            at(w_, phase, nr+1) = -at(w_, phase, nr);
+            u_[phase][0] = T(0);
+            u_[phase][nr] = T(0);
+            u_[phase][-1] = u_[phase][1];
+            u_[phase][nr+1] = u_[phase][nr-1];
+            v_[phase][0] = -v_[phase][1];
+            v_[phase][nr+1] = -v_[phase][nr];
+            w_[phase][0] = -w_[phase][1];
+            w_[phase][nr+1] = -w_[phase][nr];
         }
     }
 
@@ -403,22 +395,16 @@ private:
                 const double radius2 = radius*radius;
                 const double base_sum = w0_[j+1]+w0_[j];
                 double increment =
-                    (outer*at(u_, phase, j+1)-2*at(u_, phase, j)
-                     +inner*at(u_, phase, j-1))/(Re*dr2)
-                    +transformed(lap_z_, u_, phase, j)/(Re*dz2)
-                    +transformed(lap_phi_, u_, phase, j)
-                        /(Re*dphi2*radius2)
-                    -0.25*base_sum*transformed(
-                        centered_phi_, u_, phase, j)/(dphi*radius)
-                    +0.5*base_sum*(at(w_, phase, j+1)+at(w_, phase, j))
-                        /radius
-                    -at(u_, phase, j)/(Re*radius2)
-                    -transformed(backward_phi_, w_, phase, j+1)
-                        /(Re*dphi*radius2)
-                    -transformed(backward_phi_, w_, phase, j)
-                        /(Re*dphi*radius2);
-                at(F_, phase, j) = static_cast<T>(
-                    at(u_, phase, j)+dt*increment);
+                    (outer*u_[phase][j+1]-2*u_[phase][j]
+                     +inner*u_[phase][j-1])/(Re*dr2)
+                    +lap_z_*u_[phase][j]/(Re*dz2) // = lap_z_ * u =
+                    +lap_phi_*u_[phase][j]/(Re*dphi2*radius2) // = lap_phi_ * u =
+                    -0.25*base_sum*transformed(centered_phi_, u_, phase, j)/(dphi*radius)
+                    +0.5*base_sum*(w_[phase][j+1]+w_[phase][j])/radius
+                    -u_[phase][j]/(Re*radius2)
+                    -transformed(backward_phi_, w_, phase, j+1)/(Re*dphi*radius2)
+                    -transformed(backward_phi_, w_, phase, j)/(Re*dphi*radius2);
+                F_[phase][j] = static_cast<T>(u_[phase][j]+dt*increment);
             }
 
             for (int j = 1; j <= nr; ++j) {
@@ -427,87 +413,79 @@ private:
                 const double inner = (radius-0.5*dr)/radius;
                 const double radius2 = radius*radius;
                 double increment =
-                    (outer*at(v_, phase, j+1)-2*at(v_, phase, j)
-                     +inner*at(v_, phase, j-1))/(Re*dr2)
-                    +transformed(lap_z_, v_, phase, j)/(Re*dz2)
-                    +transformed(lap_phi_, v_, phase, j)
-                        /(Re*dphi2*radius2)
-                    -0.5*w0_[j]*transformed(
-                        centered_phi_, v_, phase, j)/(dphi*radius);
-                at(G_, phase, j) = static_cast<T>(
-                    at(v_, phase, j)+dt*increment);
+                    (outer*v_[phase][j+1]-2*v_[phase][j]
+                    +inner*v_[phase][j-1])/(Re*dr2)
+                    +lap_z_*v_[phase][j]/(Re*dz2) // = lap_z_ * v =
+                    +lap_phi_*v_[phase][j]/(Re*dphi2*radius2) // = lap_phi_ * v =
+                    -0.5*w0_[j]*transformed(centered_phi_, v_, phase, j)/(dphi*radius);
+                G_[phase][j] = static_cast<T>(
+                    v_[phase][j]+dt*increment);
 
                 const double base_outer = w0_[j+1]+w0_[j];
                 const double base_inner = w0_[j]+w0_[j-1];
                 increment =
-                    (outer*at(w_, phase, j+1)-2*at(w_, phase, j)
-                     +inner*at(w_, phase, j-1))/(Re*dr2)
-                    +transformed(lap_z_, w_, phase, j)/(Re*dz2)
-                    +transformed(lap_phi_, w_, phase, j)
-                        /(Re*dphi2*radius2)
-                    -w0_[j]*transformed(
-                        centered_phi_, w_, phase, j)/(dphi*radius)
-                    -0.25*(outer*base_outer*transformed(
-                                phi_plus_sum_, u_, phase, j)
-                            -inner*base_inner*transformed(
-                                phi_plus_sum_, u_, phase, j-1))/dr
-                    -0.5*w0_[j]*transformed(
-                        phi_plus_backward_z_, v_, phase, j)/dz
-                    -0.5*w0_[j]*transformed(
-                        phi_plus_sum_, u_, phase, j)/radius
-                    -at(w_, phase, j)/(Re*radius2)
-                    +transformed(centered_phi_, u_, phase, j)
-                        /(Re*dphi*radius2);
-                at(H_, phase, j) = static_cast<T>(
-                    at(w_, phase, j)+dt*increment);
+                    (outer*w_[phase][j+1]-2*w_[phase][j]
+                     +inner*w_[phase][j-1])/(Re*dr2)
+                    +lap_z_*w_[phase][j]/(Re*dz2) // = lap_z_ * w =
+                    +lap_phi_*w_[phase][j]/(Re*dphi2*radius2) // = lap_phi_ * w =
+                    -w0_[j]*transformed(centered_phi_, w_, phase, j)/(dphi*radius)
+                    -0.25*(outer*base_outer*transformed(phi_plus_sum_, u_, phase, j)
+                          -inner*base_inner*transformed(phi_plus_sum_, u_, phase, j-1))/dr
+                    -0.5*w0_[j]*transformed(phi_plus_backward_z_, v_, phase, j)/dz
+                    -0.5*w0_[j]*transformed(phi_plus_sum_, u_, phase, j)/radius
+                    -w_[phase][j]/(Re*radius2)
+                    +transformed(centered_phi_, u_, phase, j)/(Re*dphi*radius2);
+                H_[phase][j] = static_cast<T>(w_[phase][j]+dt*increment);
             }
         }
     }
 
     void project() {
         for (int phase = 0; phase < phases_; ++phase) {
-            at(p_, phase, 0) = at(p_, phase, 1)
-                -static_cast<T>(dr/dt)*at(F_, phase, 0);
-            at(p_, phase, nr+1) = at(p_, phase, nr)
-                +static_cast<T>(dr/dt)*at(F_, phase, nr);
+            p_[phase][0] = p_[phase][1] - static_cast<T>(dr/dt) * F_[phase][0];
+            p_[phase][nr+1] = p_[phase][nr] + static_cast<T>(dr/dt) * F_[phase][nr];
         }
 
         for (int phase = 0; phase < phases_; ++phase) {
             for (int j = 1; j <= nr; ++j) {
                 const double radius = r0+(j-0.5)*dr;
                 double value = (
-                    ((radius+0.5*dr)*at(F_, phase, j)
-                     -(radius-0.5*dr)*at(F_, phase, j-1))/(radius*dr)
+                    ((radius+0.5*dr)*F_[phase][j]
+                     -(radius-0.5*dr)*F_[phase][j-1])/(radius*dr)
                     +transformed(backward_z_, G_, phase, j)/dz
-                    +transformed(backward_phi_, H_, phase, j)
-                        /(dphi*radius))/dt;
+                    +transformed(backward_phi_, H_, phase, j)/(dphi*radius))/dt;
                 if (j == 1) {
                     value -= (radius-0.5*dr)/radius
-                        *at(p_, phase, 0)/dr2;
+                        *p_[phase][0]/dr2;
                 }
                 if (j == nr) {
                     value -= (radius+0.5*dr)/radius
-                        *at(p_, phase, nr+1)/dr2;
+                        *p_[phase][nr+1]/dr2;
                 }
-                at(rhs_, phase, j) = static_cast<T>(value);
+                rhs_[phase][j] = static_cast<T>(value);
             }
         }
 
         for (int phase = 0; phase < phases_; ++phase) {
             for (int j = 1; j <= nr; ++j) {
-                poisson_work_[j-1] = at(rhs_, phase, j);
+                poisson_work_[j-1] = rhs_[phase][j];
             }
-            int info = 0;
-            lapack::gttrs(
-                "N", nr, 1, poisson_lower_.data(),
-                poisson_diagonal_.data(), poisson_upper_.data(),
-                poisson_upper2_.data(), poisson_pivots_.data(),
-                poisson_work_.data(), nr, &info);
-            if (info != 0) {
-                throw std::runtime_error("native Fourier Poisson solve failed");
+            if (cyclic_reduction_) {
+                cr_.execute(cr_diagonal_.data(), cr_lower_.data(), cr_upper_.data(), poisson_work_.data());
+            } else {
+                int info = 0;
+                lapack::gttrs(
+                    "N", nr, 1, poisson_lower_.data(),
+                    poisson_diagonal_.data(), poisson_upper_.data(),
+                    poisson_upper2_.data(), poisson_pivots_.data(),
+                    poisson_work_.data(), nr, &info);
+                if (info != 0) {
+                    throw std::runtime_error(
+                        "native Fourier Poisson solve failed");
+                }
             }
             for (int j = 1; j <= nr; ++j) {
-                at(x_, phase, j) = poisson_work_[j-1];
+                x_[phase][j] = poisson_work_[j-1];
             }
         }
     }
@@ -515,19 +493,19 @@ private:
     void update() {
         for (int phase = 0; phase < phases_; ++phase) {
             for (int j = 1; j < nr; ++j) {
-                at(u_, phase, j) = at(F_, phase, j)
+                u_[phase][j] = F_[phase][j]
                     -static_cast<T>(dt/dr)
-                        *(at(x_, phase, j+1)-at(x_, phase, j));
+                        *(x_[phase][j+1]-x_[phase][j]);
             }
             for (int j = 1; j <= nr; ++j) {
                 const double radius = r0+(j-0.5)*dr;
-                at(v_, phase, j) = at(G_, phase, j)
+                v_[phase][j] = G_[phase][j]
                     -static_cast<T>(dt/dz)
                         *transformed(forward_z_, x_, phase, j);
-                at(w_, phase, j) = at(H_, phase, j)
+                w_[phase][j] = H_[phase][j]
                     -static_cast<T>(dt/(dphi*radius))
                         *transformed(forward_phi_, x_, phase, j);
-                at(p_, phase, j) = at(x_, phase, j);
+                p_[phase][j] = x_[phase][j];
             }
         }
     }
