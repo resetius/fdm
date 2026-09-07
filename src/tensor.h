@@ -273,6 +273,10 @@ public:
         this->vec = vec;
         acc.use(vec);
     }
+
+    void fill(T value) {
+        std::fill(this->vec, this->vec+this->size, value);
+    }
 };
 
 } // namespace fdm
