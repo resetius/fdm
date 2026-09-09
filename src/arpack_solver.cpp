@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <vector>
 #include <complex>
+#include <new>
 #include <random>
 
 #include "verify.h"
@@ -18,6 +19,20 @@ using std::is_same;
 // The bundled ARPACK is translated by f2c. Its character arguments carry
 // explicit trailing lengths; ftnlen is long on the supported non-alpha ABI.
 using arpack_ftnlen = long int;
+
+// The state objects are intentionally opaque here.  Including f2c.h in a
+// public project include path would make ARPACK's compatibility headers
+// shadow system C headers.  Allocation and lifetime stay inside ARPACK.
+extern "C" {
+typedef struct arpack_snstate arpack_snstate;
+typedef struct arpack_dnstate arpack_dnstate;
+arpack_snstate* arpack_snstate_create(void);
+void arpack_snstate_destroy(arpack_snstate*);
+arpack_snstate* arpack_snstate_set(arpack_snstate*);
+arpack_dnstate* arpack_dnstate_create(void);
+void arpack_dnstate_destroy(arpack_dnstate*);
+arpack_dnstate* arpack_dnstate_set(arpack_dnstate*);
+}
 
 extern "C" void dnaupd_(
     int* ido,
@@ -116,6 +131,58 @@ extern "C" void sneupd_(
     arpack_ftnlen bmat_len,
     arpack_ftnlen which_len);
 
+template<typename T>
+struct arpack_state_traits;
+
+template<>
+struct arpack_state_traits<float> {
+    using type = arpack_snstate;
+
+    static type* create() { return arpack_snstate_create(); }
+    static void destroy(type* state) { arpack_snstate_destroy(state); }
+    static type* set(type* state) { return arpack_snstate_set(state); }
+};
+
+template<>
+struct arpack_state_traits<double> {
+    using type = arpack_dnstate;
+
+    static type* create() { return arpack_dnstate_create(); }
+    static void destroy(type* state) { arpack_dnstate_destroy(state); }
+    static type* set(type* state) { return arpack_dnstate_set(state); }
+};
+
+// ARPACK keeps reverse-communication state between *naupd calls.  Install a
+// fresh state for this solve and restore the caller's state on return.  The
+// restoration matters when an operator callback starts another solve on the
+// same thread.
+template<typename T>
+class arpack_state_scope {
+    using traits = arpack_state_traits<T>;
+    using state_type = typename traits::type;
+
+public:
+    arpack_state_scope() {
+        state_ = traits::create();
+        if (state_ == nullptr) {
+            throw std::bad_alloc();
+        }
+        previous_ = traits::set(state_);
+    }
+
+    ~arpack_state_scope() {
+        traits::set(previous_);
+        traits::destroy(state_);
+    }
+
+    arpack_state_scope(const arpack_state_scope&) = delete;
+    arpack_state_scope& operator=(const arpack_state_scope&) = delete;
+
+private:
+    state_type* state_ = nullptr;
+    state_type* previous_ = nullptr;
+};
+
 
 template<typename T>
 void arpack_solver<T>::solve(
@@ -126,6 +193,7 @@ void arpack_solver<T>::solve(
     int n_eigenvalues
     )
 {
+    arpack_state_scope<T> state_scope;
     last_naupd_info_ = 0;
     last_neupd_info_ = 0;
     last_nconv_ = 0;

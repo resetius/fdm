@@ -127,7 +127,7 @@ void test_zero_convergence_is_reported_without_abort(void**) {
     assert_true(eigenvectors.empty());
 }
 
-// Each reverse-communication loop remains on one thread; TLS isolates loops.
+// Concurrent reverse-communication loops use independent explicit states.
 template<typename T>
 static vector<complex<T>> solve_shifted(T shift, T tolerance) {
     int n = 200;
@@ -202,6 +202,66 @@ void test_concurrent_solvers_float(void**) {
     check_concurrent_solvers<float>(1e-5f, 1e-5);
 }
 
+// A nested solve temporarily replaces the ARPACK state on this same thread.
+// On return it must restore the outer reverse-communication loop exactly.
+template<typename T>
+void check_nested_solver(T tolerance, double comparison_tolerance) {
+    constexpr int n = 120;
+    constexpr int nev = 6;
+    csr_matrix<T> matrix;
+    for (int i = 0; i < n; ++i) {
+        if (i > 0) {
+            matrix.add(i, i-1, T(-1));
+        }
+        matrix.add(i, i, T(2.125));
+        if (i+1 < n) {
+            matrix.add(i, i+1, T(-1));
+        }
+    }
+    matrix.close();
+
+    auto run_outer = [&](bool nest) {
+        arpack_solver<T> solver(
+            n, 10000, arpack_solver<T>::standard,
+            arpack_solver<T>::largest_magnitude,
+            arpack_solver<T>::fixed, tolerance);
+        solver.set_resid(T(1));
+        vector<complex<T>> eigenvalues;
+        vector<vector<T>> eigenvectors;
+        bool nested = false;
+        solver.solve([&](T* y, const T* x) {
+            if (nest && !nested) {
+                const auto inner = solve_shifted<T>(T(0.375), tolerance);
+                assert_int_equal(inner.size(), nev);
+                nested = true;
+            }
+            matrix.mul(y, x);
+        }, eigenvalues, eigenvectors, nev);
+        assert_int_equal(solver.last_naupd_info(), 0);
+        assert_int_equal(solver.last_neupd_info(), 0);
+        sort(eigenvalues.begin(), eigenvalues.end(), [](auto a, auto b) {
+            return abs(a) > abs(b);
+        });
+        return eigenvalues;
+    };
+
+    const auto expected = run_outer(false);
+    const auto got = run_outer(true);
+    assert_int_equal(got.size(), expected.size());
+    for (size_t i = 0; i < expected.size(); ++i) {
+        assert_float_equal(abs(got[i]-expected[i]), 0.0,
+                           comparison_tolerance);
+    }
+}
+
+void test_nested_solver_double(void**) {
+    check_nested_solver<double>(1e-7, 1e-12);
+}
+
+void test_nested_solver_float(void**) {
+    check_nested_solver<float>(1e-5f, 1e-5);
+}
+
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_laplace_double),
@@ -209,6 +269,8 @@ int main() {
         cmocka_unit_test(test_zero_convergence_is_reported_without_abort),
         cmocka_unit_test(test_concurrent_solvers_double),
         cmocka_unit_test(test_concurrent_solvers_float),
+        cmocka_unit_test(test_nested_solver_double),
+        cmocka_unit_test(test_nested_solver_float),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
