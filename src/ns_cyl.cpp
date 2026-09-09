@@ -84,13 +84,17 @@ void NSCyl<T,check,zflag>::init_bound() {
         for (int k = z0; k <= znn; k++) {
             // 0.5*(w[i][k][0] + w[i][k][1]) = U0
             w[i][k][0] = 2*U0 - w[i][k][1]; // inner
-            w[i][k][nr+1] = -w[i][k][nr]; // outer
+            const T outer = outer_azimuthal_velocity(i, k);
+            // 0.5*(w[nr]+w[nr+1]) = outer wall velocity.
+            w[i][k][nr+1] = 2*outer-w[i][k][nr];
         }
     }
     for (int i = 0; i < nphi; i++) {
         for (int k = z_; k <= znn; k++) {
             v[i][k][0]    = - v[i][k][1]; // inner
-            v[i][k][nr+1] = -v[i][k][nr]; // outer
+            const T outer = outer_axial_velocity(i, k);
+            // 0.5*(v[nr]+v[nr+1]) = outer wall velocity.
+            v[i][k][nr+1] = 2*outer-v[i][k][nr];
         }
     }
 
@@ -98,6 +102,7 @@ void NSCyl<T,check,zflag>::init_bound() {
     // инициализация узлов за пределами области
     for (int i = 0; i < nphi; i++) {
         for (int k = z0; k <= znn; k++) {
+            u[i][k][nr] = outer_radial_velocity(i, k);
             u[i][k][-1]   = u[i][k][1];
             u[i][k][nr+1] = u[i][k][nr-1];
         }
@@ -130,7 +135,8 @@ void NSCyl<T,check,zflag>::init_bound() {
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) {
             verify(std::abs(u[i][k][0]) < 1e-15);
-            verify(std::abs(u[i][k][nr]) < 1e-15);
+            verify(std::abs(u[i][k][nr]
+                            -outer_radial_velocity(i, k)) < 1e-15);
         }
     }
     if constexpr(zflag==tensor_flag::none) {
@@ -386,7 +392,11 @@ void NSCyl<T,check,zflag>::poisson() {
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) {
             p[i][k][0] = p[i][k][1] - dr*F[i][k][0]/dt;
-            p[i][k][nr+1] = p[i][k][nr] + dr*F[i][k][nr]/dt;
+            // Choose dp/dr so that the projected normal velocity equals the
+            // prescribed value on r=R, rather than implicitly forcing it to
+            // zero.
+            p[i][k][nr+1] = p[i][k][nr]
+                +dr*(F[i][k][nr]-outer_radial_velocity(i, k))/dt;
         }
     }
     if constexpr(zflag==tensor_flag::none) {

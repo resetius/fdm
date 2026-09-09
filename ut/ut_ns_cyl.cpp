@@ -557,6 +557,97 @@ void test_periodic_z_uniform_state_stays_uniform(void**) {
     assert_true(max_axial_variation < 1e-12);
 }
 
+void test_periodic_outer_boundary_velocity(void**) {
+    using Task = NSCyl<double, true, tensor_flag::periodic>;
+    Config config = make_config(8, 8, 8, false, 1.0, 10.0, 1e-4);
+    Task ns(config);
+    fill_smooth_state(ns);
+
+    const std::size_t plane_size =
+        static_cast<std::size_t>(ns.nphi)*ns.nz;
+    std::vector<double> radial(plane_size);
+    std::vector<double> axial(plane_size);
+    std::vector<double> azimuthal(plane_size);
+    for (int i = 0; i < ns.nphi; ++i) {
+        for (int k = 0; k < ns.nz; ++k) {
+            const std::size_t index = static_cast<std::size_t>(i)*ns.nz+k;
+            radial[index] = 0.002*std::sin(2*M_PI*i/ns.nphi)
+                *std::cos(2*M_PI*k/ns.nz);
+            axial[index] = 0.003*std::cos(2*M_PI*i/ns.nphi)
+                *std::sin(2*M_PI*k/ns.nz);
+            azimuthal[index] = 0.004*std::sin(4*M_PI*i/ns.nphi)
+                *std::cos(2*M_PI*k/ns.nz);
+        }
+    }
+
+    ns.set_outer_boundary_velocity(radial, axial, azimuthal);
+    assert_true(ns.has_outer_boundary_velocity());
+    ns.apply_boundary_conditions();
+    for (int i = 0; i < ns.nphi; ++i) {
+        for (int k = 0; k < ns.nz; ++k) {
+            const std::size_t index = static_cast<std::size_t>(i)*ns.nz+k;
+            assert_float_equal(ns.u[i][k][ns.nr], radial[index], 1e-15);
+            assert_float_equal(
+                0.5*(ns.v[i][k][ns.nr]+ns.v[i][k][ns.nr+1]),
+                axial[index], 1e-15);
+            assert_float_equal(
+                0.5*(ns.w[i][k][ns.nr]+ns.w[i][k][ns.nr+1]),
+                azimuthal[index], 1e-15);
+        }
+    }
+
+    ns.step();
+    ns.apply_boundary_conditions();
+    double max_interior_divergence = 0;
+    for (int i = 0; i < ns.nphi; ++i) {
+        for (int k = 0; k < ns.nz; ++k) {
+            const std::size_t index = static_cast<std::size_t>(i)*ns.nz+k;
+            assert_float_equal(ns.u[i][k][ns.nr], radial[index], 1e-15);
+            assert_float_equal(
+                0.5*(ns.v[i][k][ns.nr]+ns.v[i][k][ns.nr+1]),
+                axial[index], 1e-15);
+            assert_float_equal(
+                0.5*(ns.w[i][k][ns.nr]+ns.w[i][k][ns.nr+1]),
+                azimuthal[index], 1e-15);
+            for (int j = 2; j < ns.nr; ++j) {
+                max_interior_divergence = std::max(
+                    max_interior_divergence,
+                    std::abs(cell_divergence(ns, i, k, j)));
+            }
+        }
+    }
+    assert_true(max_interior_divergence < 1e-10);
+
+    ns.clear_outer_boundary_velocity();
+    assert_false(ns.has_outer_boundary_velocity());
+    ns.apply_boundary_conditions();
+    for (int i = 0; i < ns.nphi; ++i) {
+        for (int k = 0; k < ns.nz; ++k) {
+            assert_float_equal(ns.u[i][k][ns.nr], 0.0, 1e-15);
+            assert_float_equal(
+                0.5*(ns.v[i][k][ns.nr]+ns.v[i][k][ns.nr+1]),
+                0.0, 1e-15);
+            assert_float_equal(
+                0.5*(ns.w[i][k][ns.nr]+ns.w[i][k][ns.nr+1]),
+                0.0, 1e-15);
+        }
+    }
+}
+
+void test_outer_boundary_velocity_rejects_wrong_shape(void**) {
+    using Task = NSCyl<double, true, tensor_flag::periodic>;
+    Config config = make_config(4, 4, 4);
+    Task ns(config);
+    std::vector<double> plane(15, 0.0);
+    bool rejected = false;
+    try {
+        ns.set_outer_boundary_velocity(plane, plane, plane);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert_true(rejected);
+}
+
 } // namespace
 
 int main() {
@@ -574,6 +665,8 @@ int main() {
         cmocka_unit_test(test_periodic_z_projection_is_divergence_free),
         cmocka_unit_test(test_nonperiodic_z_wall_divergence_matches_pressure_lag),
         cmocka_unit_test(test_periodic_z_uniform_state_stays_uniform),
+        cmocka_unit_test(test_periodic_outer_boundary_velocity),
+        cmocka_unit_test(test_outer_boundary_velocity_rejects_wrong_shape),
     };
     return cmocka_run_group_tests(tests, nullptr, nullptr);
 }

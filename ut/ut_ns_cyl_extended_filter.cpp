@@ -152,6 +152,7 @@ void test_biorthogonal_auxiliary_correction(void**) {
     }
     const auto before = state;
     const auto diagnostics = filter.apply(state);
+    const auto boundary = filter.correction_boundary_velocity();
 
     std::vector<T> correction(state.size());
     for (std::size_t index = 0; index < correction.size(); ++index) {
@@ -163,6 +164,75 @@ void test_biorthogonal_auxiliary_correction(void**) {
     assert_true(diagnostics.correction_velocity_norm > 0);
     assert_true(diagnostics.original_domain_change_norm < 1e-13);
     assert_true(maximum_divergence(config, correction) < 1e-11);
+    assert_int_equal(boundary.nphi, layout.nphi);
+    assert_int_equal(boundary.nz, layout.nz);
+    assert_true(boundary.rms_norm() > 0);
+    for (int i = 0; i < layout.nphi; ++i) {
+        for (int k = 0; k < layout.nz; ++k) {
+            const std::size_t plane = static_cast<std::size_t>(i)*layout.nz+k;
+            assert_float_equal(boundary.radial[plane], 0.0, 1e-14);
+            assert_float_equal(
+                boundary.axial[plane],
+                T(0.5)*correction[packed_index(
+                    layout, Component::v, i, k, 5)], 1e-14);
+            assert_float_equal(
+                boundary.azimuthal[plane],
+                T(0.5)*correction[packed_index(
+                    layout, Component::w, i, k, 5)], 1e-14);
+        }
+    }
+}
+
+void test_supported_correction_can_target_nonzero_coordinates(void**) {
+    Config config = make_config();
+    auto projector = make_projector(config);
+    Filter filter(config, std::move(projector));
+    const Layout layout(8, 4, 4);
+    fdm::PeriodicPackedFFT2<T> fft(layout.nphi, layout.nz);
+
+    std::vector<T> state(layout.state_size, T(0));
+    std::vector<T> values(fft.size());
+    std::vector<T> plane(fft.size(), T(0));
+    plane[1] = T(1);
+    fft.synthesis(plane.data(), values.data());
+    for (int i = 0; i < layout.nphi; ++i) {
+        for (int k = 0; k < layout.nz; ++k) {
+            state[packed_index(layout, Component::v, i, k, 2)] =
+                values[static_cast<std::size_t>(i)*layout.nz+k];
+        }
+    }
+    const auto before = state;
+    std::vector<T> target(state.size());
+    for (std::size_t index = 0; index < state.size(); ++index) {
+        target[index] = T(0.25)*state[index];
+    }
+
+    const auto diagnostics = filter.apply_towards(state, target);
+    assert_true(diagnostics.unstable_coordinate_norm_before > 0.25);
+    assert_true(diagnostics.unstable_coordinate_norm_after
+                < 1e-12*diagnostics.unstable_coordinate_norm_before);
+
+    // Only the auxiliary annulus may change, even though the requested
+    // target has different values in Omega.
+    for (int i = 0; i < layout.nphi; ++i) {
+        for (int k = 0; k < layout.nz; ++k) {
+            for (int j = 1; j < 4; ++j) {
+                assert_float_equal(
+                    state[packed_index(layout, Component::u, i, k, j)],
+                    before[packed_index(layout, Component::u, i, k, j)],
+                    1e-14);
+            }
+            for (Component component : {Component::v, Component::w}) {
+                for (int j = 1; j <= 4; ++j) {
+                    assert_float_equal(
+                        state[packed_index(layout, component, i, k, j)],
+                        before[packed_index(layout, component, i, k, j)],
+                        1e-14);
+                }
+            }
+        }
+    }
+    assert_true(filter.correction_boundary_velocity().rms_norm() > 0);
 }
 
 void test_auxiliary_interface_must_be_grid_aligned(void**) {
@@ -182,6 +252,7 @@ void test_auxiliary_interface_must_be_grid_aligned(void**) {
 int main() {
     const CMUnitTest tests[] = {
         cmocka_unit_test(test_biorthogonal_auxiliary_correction),
+        cmocka_unit_test(test_supported_correction_can_target_nonzero_coordinates),
         cmocka_unit_test(test_auxiliary_interface_must_be_grid_aligned)
     };
     return cmocka_run_group_tests(tests, nullptr, nullptr);

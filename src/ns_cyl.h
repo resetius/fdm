@@ -6,6 +6,7 @@
 #include <cmath>
 #include <chrono>
 #include <random>
+#include <stdexcept>
 
 #include "tensor.h"
 #include "matrix_plot.h"
@@ -132,7 +133,76 @@ public:
         init_bound();
     }
 
+    // Prescribe the velocity of the outer cylindrical wall on the periodic
+    // (phi,z) grid.  The radial component lives directly on r=R; axial and
+    // azimuthal components are imposed through the cell-centred ghost values.
+    // Keeping this state separate from u/v/w is important: every step rebuilds
+    // the ghost layer, while the prescribed wall value must persist.
+    void set_outer_boundary_velocity(
+        const std::vector<T>& radial,
+        const std::vector<T>& axial,
+        const std::vector<T>& azimuthal) {
+        if constexpr(zflag != tensor_flag::periodic) {
+            throw std::invalid_argument(
+                "spatially varying outer boundary requires periodic z");
+        }
+        const std::size_t expected =
+            static_cast<std::size_t>(nphi)*nz;
+        if (radial.size() != expected || axial.size() != expected
+            || azimuthal.size() != expected) {
+            throw std::invalid_argument(
+                "outer boundary velocity has the wrong plane size");
+        }
+        outer_radial_velocity_ = radial;
+        outer_axial_velocity_ = axial;
+        outer_azimuthal_velocity_ = azimuthal;
+        outer_boundary_velocity_enabled_ = true;
+    }
+
+    void set_outer_boundary_velocity(
+        const std::vector<T>& axial,
+        const std::vector<T>& azimuthal) {
+        set_outer_boundary_velocity(
+            std::vector<T>(static_cast<std::size_t>(nphi)*nz, T(0)),
+            axial, azimuthal);
+    }
+
+    void clear_outer_boundary_velocity() {
+        outer_boundary_velocity_enabled_ = false;
+        outer_radial_velocity_.clear();
+        outer_axial_velocity_.clear();
+        outer_azimuthal_velocity_.clear();
+    }
+
+    bool has_outer_boundary_velocity() const {
+        return outer_boundary_velocity_enabled_;
+    }
+
 private:
+    bool outer_boundary_velocity_enabled_ = false;
+    std::vector<T> outer_radial_velocity_;
+    std::vector<T> outer_axial_velocity_;
+    std::vector<T> outer_azimuthal_velocity_;
+
+    std::size_t outer_boundary_index(int i, int k) const {
+        return static_cast<std::size_t>(i)*nz+k;
+    }
+
+    T outer_radial_velocity(int i, int k) const {
+        return outer_boundary_velocity_enabled_
+            ? outer_radial_velocity_[outer_boundary_index(i, k)] : T(0);
+    }
+
+    T outer_axial_velocity(int i, int k) const {
+        return outer_boundary_velocity_enabled_
+            ? outer_axial_velocity_[outer_boundary_index(i, k)] : T(0);
+    }
+
+    T outer_azimuthal_velocity(int i, int k) const {
+        return outer_boundary_velocity_enabled_
+            ? outer_azimuthal_velocity_[outer_boundary_index(i, k)] : T(0);
+    }
+
     void init_bound();
 
     void FGH();

@@ -46,6 +46,40 @@ struct NSCylExtendedFilterDiagnostics {
     std::vector<NSCylExtendedBlockFilterDiagnostics> blocks;
 };
 
+template<typename T>
+struct NSCylOuterBoundaryVelocity {
+    int nphi = 0;
+    int nz = 0;
+    std::vector<T> radial;
+    std::vector<T> axial;
+    std::vector<T> azimuthal;
+
+    double rms_norm() const {
+        if (radial.empty()) {
+            return 0;
+        }
+        long double sum = 0;
+        for (std::size_t index = 0; index < radial.size(); ++index) {
+            const long double ur = radial[index];
+            const long double uz = axial[index];
+            const long double uphi = azimuthal[index];
+            sum += ur*ur+uz*uz+uphi*uphi;
+        }
+        return std::sqrt(static_cast<double>(sum/radial.size()));
+    }
+
+    double maximum_norm() const {
+        double result = 0;
+        for (std::size_t index = 0; index < radial.size(); ++index) {
+            result = std::max(result, std::sqrt(
+                static_cast<double>(radial[index])*radial[index]
+                +static_cast<double>(axial[index])*axial[index]
+                +static_cast<double>(azimuthal[index])*azimuthal[index]));
+        }
+        return result;
+    }
+};
+
 // Builds the continuation correction only in the auxiliary annulus. For each
 // unstable real Fourier block, restricted right modes are passed through a
 // discrete stationary Stokes inverse in omega. If
@@ -111,6 +145,94 @@ public:
     int original_nr() const { return original_nr_; }
     int auxiliary_nr() const { return auxiliary_nr_; }
     double base_outer_radius() const { return base_outer_radius_; }
+
+    // Embed the independent unknowns from Omega into G.  The auxiliary
+    // degrees of freedom are zero; the interface-normal velocity is an
+    // independent interior face of G and is therefore also initialized to
+    // zero.  This embedding preserves the packed pressure convention.
+    std::vector<T> embed_original_perturbation(
+        const std::vector<T>& original) const {
+        const Layout source(original_nr_, geometry_.nz, geometry_.nphi);
+        if (static_cast<int>(original.size()) != source.state_size) {
+            throw std::invalid_argument(
+                "original perturbation has the wrong packed size");
+        }
+        std::vector<T> result(layout_.state_size, T(0));
+        for (int i = 0; i < geometry_.nphi; ++i) {
+            for (int k = 0; k < geometry_.nz; ++k) {
+                for (int j = 1; j < original_nr_; ++j) {
+                    result[state_index(Component::u, i, k, j)] = original[
+                        packed_index(source, Component::u, i, k, j)];
+                }
+                for (Component component : {
+                        Component::v, Component::w, Component::p}) {
+                    for (int j = 1; j <= original_nr_; ++j) {
+                        result[state_index(component, i, k, j)] = original[
+                            packed_index(source, component, i, k, j)];
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    // Return the wall velocity induced by the most recent supported
+    // correction Wc.  For cell-centred tangential velocities the trace is
+    // the average of the samples adjacent to r=r_o.  The correction is zero
+    // in Omega, so this is one half of the first auxiliary sample.  Using the
+    // trace of the complete extended state here would incorrectly mix the
+    // last interior sample into the control.
+    NSCylOuterBoundaryVelocity<T> correction_boundary_velocity() const {
+        NSCylOuterBoundaryVelocity<T> result;
+        result.nphi = geometry_.nphi;
+        result.nz = geometry_.nz;
+        const std::size_t size =
+            static_cast<std::size_t>(geometry_.nphi)*geometry_.nz;
+        result.radial.resize(size);
+        result.axial.resize(size);
+        result.azimuthal.resize(size);
+        for (int i = 0; i < geometry_.nphi; ++i) {
+            for (int k = 0; k < geometry_.nz; ++k) {
+                const std::size_t plane =
+                    static_cast<std::size_t>(i)*geometry_.nz+k;
+                result.radial[plane] = correction_physical_[state_index(
+                    Component::u, i, k, original_nr_)];
+                result.axial[plane] = T(0.5)*(
+                    correction_physical_[state_index(
+                        Component::v, i, k, original_nr_)]
+                    +correction_physical_[state_index(
+                        Component::v, i, k, original_nr_+1)]);
+                result.azimuthal[plane] = T(0.5)*(
+                    correction_physical_[state_index(
+                        Component::w, i, k, original_nr_)]
+                    +correction_physical_[state_index(
+                        Component::w, i, k, original_nr_+1)]);
+            }
+        }
+        return result;
+    }
+
+    // Adjust only omega so that the result has the unstable coordinates of
+    // target.  This is the supported analogue of projection onto a nonlinear
+    // graph: apply the linear correction to q-target, then add target back.
+    NSCylExtendedFilterDiagnostics apply_towards(
+        std::vector<T>& extended_perturbation,
+        const std::vector<T>& target) {
+        if (extended_perturbation.size() != target.size()
+            || static_cast<int>(target.size()) != layout_.state_size) {
+            throw std::invalid_argument(
+                "extended target has the wrong packed size");
+        }
+        std::vector<T> difference(target.size());
+        for (std::size_t index = 0; index < target.size(); ++index) {
+            difference[index] = extended_perturbation[index]-target[index];
+        }
+        auto result = apply(difference);
+        for (std::size_t index = 0; index < target.size(); ++index) {
+            extended_perturbation[index] = target[index]+difference[index];
+        }
+        return result;
+    }
 
     NSCylExtendedFilterDiagnostics apply(
         std::vector<T>& extended_perturbation) {
@@ -659,6 +781,19 @@ private:
     int state_index(Component component, int i, int k, int j) const {
         return component_offset(component)
             +(i*layout_.nz+k)*component_size(component)+(j-1);
+    }
+
+    static int packed_index(const Layout& layout, Component component,
+                            int i, int k, int j) {
+        const int size = component == Component::u ? layout.nr-1 : layout.nr;
+        int offset = 0;
+        switch (component) {
+        case Component::u: offset = layout.u_offset; break;
+        case Component::v: offset = layout.v_offset; break;
+        case Component::w: offset = layout.w_offset; break;
+        case Component::p: offset = layout.p_offset; break;
+        }
+        return offset+(i*layout.nz+k)*size+(j-1);
     }
 
     std::size_t plane_index(int i, int k) const {

@@ -162,38 +162,6 @@ std::vector<T> couette_reference(Task& task, const Layout& layout) {
     return result;
 }
 
-std::vector<T> embed_original_perturbation(
-    const std::vector<T>& original, const Layout& original_layout,
-    const Layout& extended_layout) {
-    if (static_cast<int>(original.size()) != original_layout.state_size
-        || original_layout.nphi != extended_layout.nphi
-        || original_layout.nz != extended_layout.nz
-        || original_layout.nr >= extended_layout.nr) {
-        throw std::invalid_argument("invalid Omega-to-G embedding");
-    }
-    std::vector<T> result(extended_layout.state_size, T(0));
-    for (int i = 0; i < original_layout.nphi; ++i) {
-        for (int k = 0; k < original_layout.nz; ++k) {
-            for (int j = 1; j < original_layout.nr; ++j) {
-                result[state_index(
-                    extended_layout, Component::u, i, k, j)] =
-                    original[state_index(
-                        original_layout, Component::u, i, k, j)];
-            }
-            for (Component component : {
-                    Component::v, Component::w, Component::p}) {
-                for (int j = 1; j <= original_layout.nr; ++j) {
-                    result[state_index(
-                        extended_layout, component, i, k, j)] =
-                        original[state_index(
-                            original_layout, component, i, k, j)];
-                }
-            }
-        }
-    }
-    return result;
-}
-
 double maximum_divergence(
     const std::vector<T>& state, const ExtendedFilter::Geometry& geometry) {
     const Layout layout(geometry.nr, geometry.nz, geometry.nphi);
@@ -328,11 +296,10 @@ void write_diagnostics(
     }
 }
 
-void write_trace(const std::string& filename,
-                 const std::vector<T>& perturbation,
-                 const ExtendedFilter::Geometry& geometry,
-                 int original_nr) {
-    const Layout layout(geometry.nr, geometry.nz, geometry.nphi);
+void write_trace(
+    const std::string& filename,
+    const fdm::NSCylOuterBoundaryVelocity<T>& boundary,
+    const ExtendedFilter::Geometry& geometry) {
     std::ofstream output(filename);
     if (!output) {
         throw std::runtime_error("cannot create boundary trace CSV: "+filename);
@@ -341,23 +308,148 @@ void write_trace(const std::string& filename,
     output << std::scientific << std::setprecision(16);
     for (int i = 0; i < geometry.nphi; ++i) {
         for (int k = 0; k < geometry.nz; ++k) {
-            const double radial = perturbation[state_index(
-                layout, Component::u, i, k, original_nr)];
-            const double axial = 0.5*(
-                perturbation[state_index(
-                    layout, Component::v, i, k, original_nr)]
-                +perturbation[state_index(
-                    layout, Component::v, i, k, original_nr+1)]);
-            const double azimuthal = 0.5*(
-                perturbation[state_index(
-                    layout, Component::w, i, k, original_nr)]
-                +perturbation[state_index(
-                    layout, Component::w, i, k, original_nr+1)]);
+            const std::size_t index = static_cast<std::size_t>(i)*geometry.nz+k;
             output << i << ',' << k << ',' << i*geometry.dphi << ','
                    << geometry.h1+k*geometry.dz << ','
-                   << radial << ',' << axial << ',' << azimuthal << '\n';
+                   << boundary.radial[index] << ','
+                   << boundary.axial[index] << ','
+                   << boundary.azimuthal[index] << '\n';
         }
     }
+}
+
+std::vector<T> perturbation(Task& state, const Layout& layout,
+                            const std::vector<T>& reference) {
+    auto result = layout.pack(state);
+    for (std::size_t index = 0; index < result.size(); ++index) {
+        result[index] -= reference[index];
+    }
+    layout.normalize_packed_pressure(state, result.data());
+    return result;
+}
+
+double maximum_divergence(Task& state) {
+    double result = 0;
+    for (int i = 0; i < state.nphi; ++i) {
+        const int im = (i+state.nphi-1)%state.nphi;
+        for (int k = 0; k < state.nz; ++k) {
+            const int km = (k+state.nz-1)%state.nz;
+            for (int j = 1; j <= state.nr; ++j) {
+                const double radius = state.r0+(j-0.5)*state.dr;
+                const double divergence =
+                    ((radius+0.5*state.dr)*state.u[i][k][j]
+                     -(radius-0.5*state.dr)*state.u[i][k][j-1])
+                        /(radius*state.dr)
+                    +(state.v[i][k][j]-state.v[i][km][j])/state.dz
+                    +(state.w[i][k][j]-state.w[im][k][j])
+                        /(radius*state.dphi);
+                result = std::max(result, std::abs(divergence));
+            }
+        }
+    }
+    return result;
+}
+
+struct BoundaryEvolutionResult {
+    std::vector<T> uncontrolled;
+    std::vector<T> controlled;
+};
+
+BoundaryEvolutionResult run_boundary_evolution(
+    const Config& original_config, ExtendedFilter& filter,
+    const std::vector<T>& reference, const std::vector<T>& initial,
+    int initial_time_index, int steps, int log_interval,
+    int feedback_interval, double maximum_velocity_norm,
+    const std::string& output_name) {
+    if (steps < 0 || log_interval <= 0 || feedback_interval <= 0
+        || !(maximum_velocity_norm > 0) || output_name.empty()) {
+        throw std::invalid_argument("invalid boundary evolution settings");
+    }
+
+    Task uncontrolled(original_config);
+    Task controlled(original_config);
+    const Layout layout(uncontrolled);
+    layout.unpack_sum(uncontrolled, reference, initial.data());
+    layout.unpack_sum(controlled, reference, initial.data());
+
+    std::ofstream output(output_name);
+    if (!output) {
+        throw std::runtime_error(
+            "cannot create boundary evolution CSV: "+output_name);
+    }
+    output << "branch,step,time,feedback_applied,coordinate_norm,"
+              "velocity_norm,maximum_divergence,boundary_rms,boundary_maximum,"
+              "supported_correction_norm\n";
+    output << std::scientific << std::setprecision(16);
+
+    fdm::NSCylOuterBoundaryVelocity<T> control;
+    fdm::NSCylExtendedFilterDiagnostics controlled_modal;
+    for (int step = 0; step <= steps; ++step) {
+        const bool feedback = step%feedback_interval == 0;
+        if (feedback) {
+            auto q = perturbation(controlled, layout, reference);
+            auto extended = filter.embed_original_perturbation(q);
+            controlled_modal = filter.apply(extended);
+            control = filter.correction_boundary_velocity();
+            controlled.set_outer_boundary_velocity(
+                control.radial, control.axial, control.azimuthal);
+            controlled.apply_boundary_conditions();
+        }
+
+        const bool log = step == 0 || step == steps
+            || step%log_interval == 0 || feedback;
+        if (log) {
+            auto q_uncontrolled = perturbation(
+                uncontrolled, layout, reference);
+            auto extended_uncontrolled =
+                filter.embed_original_perturbation(q_uncontrolled);
+            const auto uncontrolled_modal = filter.apply(
+                extended_uncontrolled);
+            output << "uncontrolled," << step << ','
+                   << (initial_time_index+step)*filter.geometry().dt
+                   << ",0,"
+                   << uncontrolled_modal.unstable_coordinate_norm_before
+                   << ',' << layout.velocity_norm(
+                       uncontrolled, q_uncontrolled.data())
+                   << ',' << maximum_divergence(uncontrolled)
+                   << ",0,0,0\n";
+
+            auto q_controlled = perturbation(controlled, layout, reference);
+            if (!feedback) {
+                auto extended_controlled =
+                    filter.embed_original_perturbation(q_controlled);
+                controlled_modal = filter.apply(extended_controlled);
+            }
+            output << "boundary," << step << ','
+                   << (initial_time_index+step)*filter.geometry().dt << ','
+                   << (feedback ? 1 : 0) << ','
+                   << controlled_modal.unstable_coordinate_norm_before << ','
+                   << layout.velocity_norm(controlled, q_controlled.data())
+                   << ',' << maximum_divergence(controlled) << ','
+                   << control.rms_norm() << ',' << control.maximum_norm()
+                   << ',' << controlled_modal.correction_velocity_norm
+                   << '\n';
+
+            const double unorm = layout.velocity_norm(
+                uncontrolled, q_uncontrolled.data());
+            const double cnorm = layout.velocity_norm(
+                controlled, q_controlled.data());
+            if (!std::isfinite(unorm) || !std::isfinite(cnorm)
+                || unorm > maximum_velocity_norm
+                || cnorm > maximum_velocity_norm) {
+                throw std::runtime_error(
+                    "boundary evolution exceeded the velocity norm limit at "
+                    "step "+std::to_string(step));
+            }
+        }
+
+        if (step != steps) {
+            uncontrolled.step();
+            controlled.step();
+        }
+    }
+
+    return {layout.pack(uncontrolled), layout.pack(controlled)};
 }
 
 struct EvolutionResult {
@@ -445,6 +537,8 @@ EvolutionResult run_evolution(
 int run(const Config& config) {
     const std::string checkpoint_input = config.get(
         "checkpoint", "input", std::string());
+    const std::string checkpoint_input_datatype = config.get(
+        "checkpoint", "input_datatype", std::string("double"));
     const std::string spectrum_input = config.get(
         "extended", "spectrum_input", std::string());
     const std::string checkpoint_output = config.get(
@@ -475,6 +569,16 @@ int run(const Config& config) {
         "extended", "evolution_output", std::string());
     const std::string evolution_checkpoint_output = config.get(
         "extended", "evolution_checkpoint_output", std::string());
+    const int boundary_evolution_steps = config.get(
+        "extended", "boundary_evolution_steps", 0);
+    const int boundary_log_interval = config.get(
+        "extended", "boundary_log_interval", 100);
+    const int boundary_feedback_interval = config.get(
+        "extended", "boundary_feedback_interval", 250);
+    const std::string boundary_evolution_output = config.get(
+        "extended", "boundary_evolution_output", std::string());
+    const std::string boundary_checkpoint_output = config.get(
+        "extended", "boundary_checkpoint_output", std::string());
     if (checkpoint_input.empty() || spectrum_input.empty()
         || checkpoint_output.empty() || diagnostics_output.empty()
         || trace_output.empty()) {
@@ -491,9 +595,20 @@ int run(const Config& config) {
     const Layout original_layout(original_task);
     std::vector<T> checkpoint;
     fdm::NSCylCheckpointMetadata checkpoint_metadata;
-    fdm::NSCylCheckpointStorage(checkpoint_input).load(
-        checkpoint, checkpoint_metadata,
-        fdm::make_ns_cyl_checkpoint_metadata<T>(config, 0));
+    if (checkpoint_input_datatype == "double") {
+        fdm::NSCylCheckpointStorage(checkpoint_input).load(
+            checkpoint, checkpoint_metadata,
+            fdm::make_ns_cyl_checkpoint_metadata<T>(config, 0));
+    } else if (checkpoint_input_datatype == "float") {
+        std::vector<float> source;
+        fdm::NSCylCheckpointStorage(checkpoint_input).load(
+            source, checkpoint_metadata,
+            fdm::make_ns_cyl_checkpoint_metadata<float>(config, 0));
+        checkpoint.assign(source.begin(), source.end());
+    } else {
+        throw std::invalid_argument(
+            "checkpoint input_datatype must be 'double' or 'float'");
+    }
 
     auto reference = couette_reference(original_task, original_layout);
     std::vector<T> original_perturbation(checkpoint.size());
@@ -518,8 +633,8 @@ int run(const Config& config) {
     ExtendedFilter filter(extended_config, std::move(projector));
     const Layout extended_layout(
         spectral_metadata.nr, spectral_metadata.nz, spectral_metadata.nphi);
-    auto extended_perturbation = embed_original_perturbation(
-        original_perturbation, original_layout, extended_layout);
+    auto extended_perturbation = filter.embed_original_perturbation(
+        original_perturbation);
     const auto unfiltered_perturbation = extended_perturbation;
     const double divergence_before = maximum_divergence(
         extended_perturbation, filter.geometry());
@@ -550,8 +665,8 @@ int run(const Config& config) {
     fdm::NSCylCheckpointStorage(checkpoint_output).save(
         extended_state, output_metadata);
     write_diagnostics(diagnostics_output, diagnostics);
-    write_trace(trace_output, extended_perturbation, filter.geometry(),
-                filter.original_nr());
+    write_trace(trace_output, filter.correction_boundary_velocity(),
+                filter.geometry());
 
     if (evolution_steps > 0) {
         if (evolution_output.empty()) {
@@ -583,6 +698,33 @@ int run(const Config& config) {
                     "csv=%s\n",
                     evolution_steps, reorthogonalization_interval,
                     evolution_output.c_str());
+    }
+
+
+    if (boundary_evolution_steps > 0) {
+        if (boundary_evolution_output.empty()) {
+            throw std::invalid_argument(
+                "extended boundary_evolution_output is required when "
+                "boundary_evolution_steps is positive");
+        }
+        auto boundary = run_boundary_evolution(
+            config, filter, reference, original_perturbation,
+            checkpoint_metadata.time_index, boundary_evolution_steps,
+            boundary_log_interval, boundary_feedback_interval,
+            maximum_velocity_norm, boundary_evolution_output);
+        if (!boundary_checkpoint_output.empty()) {
+            original_layout.normalize_packed_pressure(
+                original_task, boundary.controlled.data());
+            auto metadata = fdm::make_ns_cyl_checkpoint_metadata<T>(
+                config,
+                checkpoint_metadata.time_index+boundary_evolution_steps);
+            fdm::NSCylCheckpointStorage(boundary_checkpoint_output).save(
+                boundary.controlled, metadata);
+        }
+        std::printf("boundary evolution: steps=%d feedback_interval=%d "
+                    "csv=%s\n",
+                    boundary_evolution_steps, boundary_feedback_interval,
+                    boundary_evolution_output.c_str());
     }
 
     const double coordinate_ratio = diagnostics.unstable_coordinate_norm_after
