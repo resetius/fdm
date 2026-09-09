@@ -322,6 +322,37 @@ void test_removes_selected_mode_and_preserves_complement(void**) {
     assert_true(diagnostics.remaining_unstable_norm < 1e-13);
 }
 
+void test_packed_filter_matches_task_filter(void**) {
+    const Config config = make_config();
+    Task state(config);
+    const Layout layout(state);
+    const auto reference = couette_reference(state, layout);
+    fdm::NSCylFourierBlockReference<T, true> block(config, 1, 1);
+
+    std::vector<T> block_state(block.size(), 0);
+    block_state[0] = 1.25;
+    block_state[1] = -0.375;
+    const auto perturbation = physical_block(block, block_state, layout);
+    layout.unpack_sum(state, reference, perturbation.data());
+    auto packed = layout.pack(state);
+
+    fdm::NSCylSpectralFilter<T> task_filter(
+        state.nr, state.nphi, state.nz, coordinate_projector(block));
+    fdm::NSCylSpectralFilter<T> packed_filter(
+        state.nr, state.nphi, state.nz, coordinate_projector(block));
+    const auto task_diagnostics = task_filter.remove(state, reference);
+    const auto packed_diagnostics = packed_filter.remove_packed(
+        state, packed, reference);
+
+    const auto task_result = layout.pack(state);
+    assert_true(relative_error(packed, task_result) < 2e-14);
+    assert_true(std::abs(packed_diagnostics.removed_norm
+                         -task_diagnostics.removed_norm) < 1e-13);
+    assert_true(std::abs(packed_diagnostics.filtered_velocity_norm
+                         -task_diagnostics.filtered_velocity_norm) < 1e-13);
+    assert_true(packed_diagnostics.remaining_unstable_norm < 1e-13);
+}
+
 void test_filter_does_not_change_discrete_couette_state(void**) {
     const Config config = make_config();
     Task state(config);
@@ -475,6 +506,7 @@ int main() {
         cmocka_unit_test(test_velocity_norm_uses_cylindrical_measure),
         cmocka_unit_test(test_linear_unstable_trajectory_is_removed),
         cmocka_unit_test(test_removes_selected_mode_and_preserves_complement),
+        cmocka_unit_test(test_packed_filter_matches_task_filter),
         cmocka_unit_test(test_filter_does_not_change_discrete_couette_state),
         cmocka_unit_test(
             test_actual_filter_preserves_stable_mode_and_constraints),

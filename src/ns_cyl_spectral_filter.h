@@ -52,6 +52,7 @@ public:
         , physical_(layout_.state_size)
         , original_physical_(layout_.state_size)
         , removed_physical_(layout_.state_size)
+        , packed_state_(layout_.state_size)
         , packed_fourier_(layout_.state_size)
         , values_(fft_.size())
         , coefficients_(fft_.size()) {
@@ -78,6 +79,75 @@ public:
         return execute(state, reference, removal, true);
     }
 
+    template<typename Geometry>
+    NSCylSpectralFilterDiagnostics measure_packed(
+        const Geometry& geometry, const std::vector<T>& state,
+        const std::vector<T>& reference,
+        NSCylSpectralRemoval removal =
+            NSCylSpectralRemoval::unstable_eigenspace) {
+        require_packed_size(state);
+        // execute_packed writes only when asked to, but takes a mutable
+        // pointer; measuring goes through the scratch copy.
+        packed_state_ = state;
+        return execute_packed(
+            geometry, packed_state_.data(), reference, removal, false);
+    }
+
+    template<typename Geometry>
+    NSCylSpectralFilterDiagnostics remove_packed(
+        const Geometry& geometry, std::vector<T>& state,
+        const std::vector<T>& reference,
+        NSCylSpectralRemoval removal =
+            NSCylSpectralRemoval::unstable_eigenspace) {
+        require_packed_size(state);
+        return execute_packed(
+            geometry, state.data(), reference, removal, true);
+    }
+
+    // Replace the perturbation by its unstable part with the coordinates
+    // rescaled by `scale`, which receives the block index and its coordinates.
+    template<typename Geometry, typename Scale>
+    void scale_unstable_packed(const Geometry& geometry, std::vector<T>& state,
+                               const std::vector<T>& reference, Scale&& scale) {
+        require_packed_size(state);
+        require_packed_size(reference);
+        if (projector_.blocks().empty()) {
+            return;
+        }
+        for (int i = 0; i < layout_.state_size; ++i) {
+            physical_[i] = state[i]-reference[i];
+        }
+        analysis();
+        canonicalize_pressure_gauge(geometry);
+
+        std::vector<std::vector<T>> scaled;
+        std::size_t index = 0;
+        for (const auto& projector : projector_.blocks()) {
+            gather_block(projector, geometry);
+            std::vector<T> coordinates(projector.dimension());
+            projector.coordinates(coordinates.data(), block_.data());
+            scale(index++, coordinates);
+            std::vector<T> image(projector.block_size(), T(0));
+            const auto& basis = projector.right_basis();
+            for (int i = 0; i < projector.dimension(); ++i) {
+                for (int j = 0; j < projector.block_size(); ++j) {
+                    image[j] += coordinates[i]*basis[i][j];
+                }
+            }
+            scaled.push_back(std::move(image));
+        }
+
+        std::fill(packed_fourier_.begin(), packed_fourier_.end(), T(0));
+        index = 0;
+        for (const auto& projector : projector_.blocks()) {
+            scatter_block(projector, geometry, scaled[index++].data());
+        }
+        synthesis();
+        for (int i = 0; i < layout_.state_size; ++i) {
+            state[i] = reference[i]+physical_[i];
+        }
+    }
+
 private:
     using Layout = NSCylStateLayout<T>;
     using Component = typename Layout::Component;
@@ -89,6 +159,7 @@ private:
     std::vector<T> physical_;
     std::vector<T> original_physical_;
     std::vector<T> removed_physical_;
+    std::vector<T> packed_state_;
     std::vector<T> packed_fourier_;
     std::vector<T> values_;
     std::vector<T> coefficients_;
@@ -281,6 +352,13 @@ private:
         return std::sqrt(static_cast<double>(result));
     }
 
+    void require_packed_size(const std::vector<T>& state) const {
+        if (static_cast<int>(state.size()) != layout_.state_size) {
+            throw std::invalid_argument(
+                "packed NSCyl state has the wrong size");
+        }
+    }
+
     template<typename Task>
     NSCylSpectralFilterDiagnostics execute(
         Task& state, const std::vector<T>& reference,
@@ -291,23 +369,45 @@ private:
                 "NSCyl state dimensions do not match spectral filter");
         }
 
+        layout_.pack(state, packed_state_.data());
+        auto result = execute_packed(
+            state, packed_state_.data(), reference, removal, update_state);
+        if (update_state && !projector_.blocks().empty()) {
+            layout_.unpack(state, packed_state_.data());
+        }
+        return result;
+    }
+
+    template<typename Geometry>
+    NSCylSpectralFilterDiagnostics execute_packed(
+        const Geometry& geometry, T* state, const std::vector<T>& reference,
+        NSCylSpectralRemoval removal, bool update_state) {
+        if (geometry.nr != layout_.nr || geometry.nphi != layout_.nphi
+            || geometry.nz != layout_.nz) {
+            throw std::invalid_argument(
+                "NSCyl geometry dimensions do not match spectral filter");
+        }
+        require_packed_size(reference);
+
         NSCylSpectralFilterDiagnostics result;
         if (projector_.blocks().empty()) {
             return result;
         }
 
-        layout_.pack_difference(state, reference, physical_.data());
+        for (int i = 0; i < layout_.state_size; ++i) {
+            physical_[i] = state[i]-reference[i];
+        }
         result.velocity_perturbation_norm =
-            layout_.velocity_norm(state, physical_.data());
+            layout_.velocity_norm(geometry, physical_.data());
         original_physical_ = physical_;
         analysis();
-        canonicalize_pressure_gauge(state);
+        canonicalize_pressure_gauge(geometry);
         result.packed_perturbation_norm = norm(packed_fourier_);
 
         long double removed_squared = 0;
         long double remaining_squared = 0;
         for (const auto& projector : projector_.blocks()) {
-            gather_block(projector, state);
+            gather_block(projector, geometry);
             filtered_block_.resize(projector.block_size());
             removed_block_.resize(projector.block_size());
             remaining_unstable_.resize(projector.block_size());
@@ -345,7 +445,7 @@ private:
             remaining_squared += block_result.remaining_unstable_norm
                 *block_result.remaining_unstable_norm;
 
-            scatter_block(projector, state, filtered_block_.data());
+            scatter_block(projector, geometry, filtered_block_.data());
         }
         result.removed_norm = std::sqrt(static_cast<double>(removed_squared));
         result.remaining_unstable_norm =
@@ -353,15 +453,17 @@ private:
 
         synthesis();
         result.filtered_velocity_norm =
-            layout_.velocity_norm(state, physical_.data());
+            layout_.velocity_norm(geometry, physical_.data());
         for (int i = 0; i < layout_.state_size; ++i) {
             removed_physical_[i] = original_physical_[i]-physical_[i];
         }
         result.removed_velocity_norm =
-            layout_.velocity_norm(state, removed_physical_.data());
+            layout_.velocity_norm(geometry, removed_physical_.data());
 
         if (update_state) {
-            layout_.unpack_sum(state, reference, physical_.data());
+            for (int i = 0; i < layout_.state_size; ++i) {
+                state[i] = reference[i]+physical_[i];
+            }
         }
         return result;
     }

@@ -46,6 +46,15 @@ add_executable(fdm_ns_cyl_spectral_compare
     test_ns_cyl_spectral_compare.cpp)
 target_link_libraries(fdm_ns_cyl_spectral_compare fdm)
 
+add_executable(fdm_ns_cyl_nonlinear_filter test_ns_cyl_nonlinear_filter.cpp)
+target_link_libraries(fdm_ns_cyl_nonlinear_filter fdm)
+if (SYCL_FOUND)
+target_compile_definitions(fdm_ns_cyl_nonlinear_filter PRIVATE FDM_HAVE_SYCL=1)
+endif()
+
+add_executable(fdm_ns_cyl_lbb test_ns_cyl_lbb.cpp)
+target_link_libraries(fdm_ns_cyl_lbb fdm)
+
 add_executable(fdm_ns_cyl_extended_filter
     test_ns_cyl_extended_filter.cpp)
 target_link_libraries(fdm_ns_cyl_extended_filter fdm)
