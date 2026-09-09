@@ -262,6 +262,76 @@ void test_nested_solver_float(void**) {
     check_nested_solver<float>(1e-5f, 1e-5);
 }
 
+// Explicit RCI sessions must retain separate SAVE/COMMON state even when
+// every ARPACK call is made by the same host thread.
+template<typename T>
+void check_interleaved_sessions(T tolerance, double comparison_tolerance) {
+    constexpr int count = 4;
+    constexpr int n = 200;
+    constexpr int nev = 6;
+    vector<csr_matrix<T>> matrices(count);
+    vector<unique_ptr<arpack_solver<T>>> solvers;
+    vector<unique_ptr<arpack_rci_session<T>>> sessions;
+    vector<bool> done(count, false);
+
+    for (int k = 0; k < count; ++k) {
+        const T shift = T(0.01)*T(k);
+        for (int i = 0; i < n; ++i) {
+            if (i > 0) matrices[k].add(i, i-1, T(-1));
+            matrices[k].add(i, i, T(2)+shift);
+            if (i+1 < n) matrices[k].add(i, i+1, T(-1));
+        }
+        matrices[k].close();
+        solvers.push_back(std::make_unique<arpack_solver<T>>(
+            n, 10000, arpack_solver<T>::standard,
+            arpack_solver<T>::largest_magnitude,
+            arpack_solver<T>::fixed, tolerance));
+        solvers.back()->set_resid(T(1));
+        sessions.push_back(solvers.back()->start(nev));
+    }
+
+    int remaining = count;
+    while (remaining != 0) {
+        for (int k = 0; k < count; ++k) {
+            if (done[k]) continue;
+            const auto request = sessions[k]->advance();
+            if (request == arpack_rci_session<T>::request::apply_op) {
+                matrices[k].mul(sessions[k]->output(), sessions[k]->input());
+            } else if (request == arpack_rci_session<T>::request::apply_b) {
+                std::copy(sessions[k]->input(),
+                          sessions[k]->input()+sessions[k]->size(),
+                          sessions[k]->output());
+            } else {
+                done[k] = true;
+                --remaining;
+            }
+        }
+    }
+
+    for (int k = 0; k < count; ++k) {
+        assert_int_equal(sessions[k]->naupd_info(), 0);
+        assert_int_equal(sessions[k]->neupd_info(), 0);
+        auto got = sessions[k]->eigenvalues();
+        auto expected = solve_shifted<T>(T(0.01)*T(k), tolerance);
+        sort(got.begin(), got.end(), [](auto a, auto b) {
+            return abs(a) > abs(b);
+        });
+        assert_int_equal(got.size(), expected.size());
+        for (size_t i = 0; i < expected.size(); ++i) {
+            assert_float_equal(abs(got[i]-expected[i]), 0.0,
+                               comparison_tolerance);
+        }
+    }
+}
+
+void test_interleaved_sessions_double(void**) {
+    check_interleaved_sessions<double>(1e-7, 1e-12);
+}
+
+void test_interleaved_sessions_float(void**) {
+    check_interleaved_sessions<float>(1e-5f, 1e-5);
+}
+
 int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_laplace_double),
@@ -271,6 +341,8 @@ int main() {
         cmocka_unit_test(test_concurrent_solvers_float),
         cmocka_unit_test(test_nested_solver_double),
         cmocka_unit_test(test_nested_solver_float),
+        cmocka_unit_test(test_interleaved_sessions_double),
+        cmocka_unit_test(test_interleaved_sessions_float),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

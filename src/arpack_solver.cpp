@@ -152,10 +152,31 @@ struct arpack_state_traits<double> {
     static type* set(type* state) { return arpack_dnstate_set(state); }
 };
 
-// ARPACK keeps reverse-communication state between *naupd calls.  Install a
-// fresh state for this solve and restore the caller's state on return.  The
-// restoration matters when an operator callback starts another solve on the
-// same thread.
+// Temporarily select one explicit ARPACK state.  Each reverse-communication
+// call restores the caller's state before returning, so any number of solves
+// can be interleaved on one thread.
+template<typename T>
+class arpack_state_activation {
+    using traits = arpack_state_traits<T>;
+    using state_type = typename traits::type;
+
+public:
+    explicit arpack_state_activation(state_type* state)
+        : previous_(traits::set(state))
+    { }
+
+    ~arpack_state_activation() {
+        traits::set(previous_);
+    }
+
+    arpack_state_activation(const arpack_state_activation&) = delete;
+    arpack_state_activation& operator=(const arpack_state_activation&) = delete;
+
+private:
+    state_type* previous_ = nullptr;
+};
+
+// Owning scope used by the traditional blocking solve().
 template<typename T>
 class arpack_state_scope {
     using traits = arpack_state_traits<T>;
@@ -523,6 +544,261 @@ void arpack_solver<T>::solve(
 }
 
 template<typename T>
+struct arpack_rci_session<T>::impl {
+    using solver_type = arpack_solver<T>;
+    using traits = arpack_state_traits<T>;
+    using state_type = typename traits::type;
+    using request = typename arpack_rci_session<T>::request;
+
+    int n;
+    int nev;
+    int ncv;
+    int ldv;
+    int lworkl;
+    T tol;
+    int ido = 0;
+    int info;
+    bool finished = false;
+    char bmat[2]{};
+    char which[3]{};
+    state_type* state = nullptr;
+    vector<T> resid;
+    vector<T> v;
+    vector<int> iparam;
+    vector<int> ipntr;
+    vector<T> workd;
+    vector<T> workl;
+    vector<complex<T>> eigenvalues;
+    vector<vector<T>> eigenvectors;
+    int naupd_info = 0;
+    int neupd_info = 0;
+    int nconv = 0;
+    int iterations = 0;
+
+    impl(int dimension, int maximum_iterations,
+         typename solver_type::Mode mode,
+         typename solver_type::WhichEigenvalues which_eigenvalues,
+         typename solver_type::InitialResidMode initial_resid_mode,
+         T tolerance, int requested_ncv, const vector<T>& initial_resid,
+         int requested_nev)
+        : n(dimension)
+        , nev(requested_nev)
+        , ncv(requested_ncv > 0
+              ? requested_ncv : std::min(2*requested_nev+2, dimension))
+        , ldv(dimension)
+        , lworkl(3*ncv*(ncv+6))
+        , tol(tolerance)
+        , info(static_cast<int>(initial_resid_mode))
+        , resid(initial_resid)
+        , v(static_cast<std::size_t>(ldv)*ncv, T(0))
+        , iparam(11, 0)
+        , ipntr(14, 0)
+        , workd(3*n, T(0))
+        , workl(lworkl, T(0))
+    {
+        verify(0 < nev && nev < n-1);
+        verify(ncv <= n);
+        verify(ncv-nev >= 2);
+
+        switch (mode) {
+        case solver_type::standard: strcpy(bmat, "I"); break;
+        case solver_type::generalized: strcpy(bmat, "G"); break;
+        default: verify(false); break;
+        }
+        switch (which_eigenvalues) {
+        case solver_type::algebraically_largest: strcpy(which, "LA"); break;
+        case solver_type::algebraically_smallest: strcpy(which, "SA"); break;
+        case solver_type::largest_magnitude: strcpy(which, "LM"); break;
+        case solver_type::smallest_magnitude: strcpy(which, "SM"); break;
+        case solver_type::largest_real_part: strcpy(which, "LR"); break;
+        case solver_type::smallest_real_part: strcpy(which, "SR"); break;
+        case solver_type::largest_imaginary_part: strcpy(which, "LI"); break;
+        case solver_type::smallest_imaginary_part: strcpy(which, "SI"); break;
+        case solver_type::both_ends: strcpy(which, "BE"); break;
+        default: verify(false); break;
+        }
+
+        iparam[0] = 1;
+        iparam[2] = maximum_iterations;
+        iparam[6] = static_cast<int>(mode);
+        state = traits::create();
+        if (state == nullptr) {
+            throw std::bad_alloc();
+        }
+    }
+
+    ~impl() {
+        traits::destroy(state);
+    }
+
+    request advance() {
+        if (finished) {
+            return request::done;
+        }
+
+        {
+            arpack_state_activation<T> activation(state);
+            if constexpr (is_same<T,double>::value) {
+                dnaupd_(
+                    &ido, bmat, &n, which, &nev, &tol, resid.data(), &ncv,
+                    v.data(), &ldv, iparam.data(), ipntr.data(), workd.data(),
+                    workl.data(), &lworkl, &info, 1, 2);
+            } else {
+                snaupd_(
+                    &ido, bmat, &n, which, &nev, &tol, resid.data(), &ncv,
+                    v.data(), &ldv, iparam.data(), ipntr.data(), workd.data(),
+                    workl.data(), &lworkl, &info, 1, 2);
+            }
+        }
+
+        switch (ido) {
+        case -1:
+        case 1:
+            return request::apply_op;
+        case 2:
+            return request::apply_b;
+        case 99:
+            finish();
+            return request::done;
+        case 3:
+            verify(false, "ARPACK user shifts are unsupported");
+            break;
+        default:
+            verify(false, "unknown ARPACK reverse-communication request");
+            break;
+        }
+        return request::done;
+    }
+
+    const T* input() const {
+        return &workd[ipntr[0]-1];
+    }
+
+    T* output() {
+        return &workd[ipntr[1]-1];
+    }
+
+    void finish() {
+        naupd_info = info;
+        iterations = iparam[2];
+        nconv = iparam[4];
+        finished = true;
+        if (info == -8) {
+            return;
+        }
+        verify(info >= 0, format("*naupd: %d: ", info).c_str());
+
+        int rvec = 1;
+        char howmany = 'A';
+        vector<int> select(ncv, 1);
+        int ldz = n;
+        vector<T> z(static_cast<std::size_t>(n)*(2*nev), T(0));
+        T sigmar = T(0);
+        T sigmai = T(0);
+        vector<T> workev(3*ncv, T(0));
+        vector<T> eigenvalues_real(2*nev, T(0));
+        vector<T> eigenvalues_im(2*nev, T(0));
+
+        {
+            arpack_state_activation<T> activation(state);
+            if constexpr (is_same<T,double>::value) {
+                dneupd_(
+                    &rvec, &howmany, select.data(), eigenvalues_real.data(),
+                    eigenvalues_im.data(), z.data(), &ldz, &sigmar, &sigmai,
+                    workev.data(), bmat, &n, which, &nev, &tol, resid.data(),
+                    &ncv, v.data(), &ldv, iparam.data(), ipntr.data(),
+                    workd.data(), workl.data(), &lworkl, &info, 1, 1, 2);
+            } else {
+                sneupd_(
+                    &rvec, &howmany, select.data(), eigenvalues_real.data(),
+                    eigenvalues_im.data(), z.data(), &ldz, &sigmar, &sigmai,
+                    workev.data(), bmat, &n, which, &nev, &tol, resid.data(),
+                    &ncv, v.data(), &ldv, iparam.data(), ipntr.data(),
+                    workd.data(), workl.data(), &lworkl, &info, 1, 1, 2);
+            }
+        }
+
+        neupd_info = info;
+        if (info == -14 && nconv == 0) {
+            return;
+        }
+        verify(info == 0, format("*neupd: %d: ", info).c_str());
+        eigenvectors.resize(nconv);
+        eigenvalues.resize(nconv);
+        for (int i = 0; i < nconv; ++i) {
+            eigenvectors[i].assign(z.begin()+static_cast<std::size_t>(i)*n,
+                                   z.begin()+static_cast<std::size_t>(i+1)*n);
+            eigenvalues[i] = complex<T>(
+                eigenvalues_real[i], eigenvalues_im[i]);
+        }
+    }
+};
+
+template<typename T>
+std::unique_ptr<arpack_rci_session<T>> arpack_solver<T>::start(
+    int n_eigenvalues) const
+{
+    return std::unique_ptr<arpack_rci_session<T>>(
+        new arpack_rci_session<T>(*this, n_eigenvalues));
+}
+
+template<typename T>
+arpack_rci_session<T>::arpack_rci_session(
+    const arpack_solver<T>& solver, int n_eigenvalues)
+    : impl_(std::make_unique<impl>(
+          solver.n, solver.maxit, solver.mode, solver.eigenvalue_of_interest,
+          solver.initial_resid_mode, solver.tol, solver.requested_ncv,
+          solver.resid, n_eigenvalues))
+{ }
+
+template<typename T>
+arpack_rci_session<T>::~arpack_rci_session() = default;
+
+template<typename T>
+arpack_rci_session<T>::arpack_rci_session(
+    arpack_rci_session&&) noexcept = default;
+
+template<typename T>
+arpack_rci_session<T>& arpack_rci_session<T>::operator=(
+    arpack_rci_session&&) noexcept = default;
+
+template<typename T>
+typename arpack_rci_session<T>::request arpack_rci_session<T>::advance() {
+    return impl_->advance();
+}
+
+template<typename T>
+const T* arpack_rci_session<T>::input() const { return impl_->input(); }
+
+template<typename T>
+T* arpack_rci_session<T>::output() { return impl_->output(); }
+
+template<typename T>
+int arpack_rci_session<T>::size() const { return impl_->n; }
+
+template<typename T>
+int arpack_rci_session<T>::naupd_info() const { return impl_->naupd_info; }
+
+template<typename T>
+int arpack_rci_session<T>::neupd_info() const { return impl_->neupd_info; }
+
+template<typename T>
+int arpack_rci_session<T>::nconv() const { return impl_->nconv; }
+
+template<typename T>
+int arpack_rci_session<T>::iterations() const { return impl_->iterations; }
+
+template<typename T>
+const vector<complex<T>>& arpack_rci_session<T>::eigenvalues() const {
+    return impl_->eigenvalues;
+}
+
+template<typename T>
+const vector<vector<T>>& arpack_rci_session<T>::eigenvectors() const {
+    return impl_->eigenvectors;
+}
+
+template<typename T>
 void arpack_solver<T>::set_resid_random(T a, T b) {
     std::default_random_engine generator;
     std::uniform_real_distribution<T> distribution(a, b);
@@ -533,5 +809,7 @@ void arpack_solver<T>::set_resid_random(T a, T b) {
 
 template class arpack_solver<double>;
 template class arpack_solver<float>;
+template class arpack_rci_session<double>;
+template class arpack_rci_session<float>;
 
 } // namespace fdm

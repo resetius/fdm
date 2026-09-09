@@ -50,6 +50,18 @@ struct BlockIndex {
     int l;
 };
 
+bool force_dense_block(const Config& config, BlockIndex block) {
+    const int m_max = config.get("spectral", "force_dense_m_max", -1);
+    const int l_max = config.get("spectral", "force_dense_l_max", -1);
+    if (m_max < 0 || l_max < 0) {
+        return false;
+    }
+    const int m_min = config.get("spectral", "force_dense_m_min", 0);
+    const int l_min = config.get("spectral", "force_dense_l_min", 0);
+    return block.m >= m_min && block.m <= m_max
+        && block.l >= l_min && block.l <= l_max;
+}
+
 template<typename T>
 struct ProbeResult {
     BlockIndex block{};
@@ -68,6 +80,7 @@ struct ProbeResult {
     double max_leakage = 0;
     bool candidate = false;
     bool guard_reached = false;
+    bool forced_dense = false;
     bool dense_computed = false;
     string error;
     vector<complex<T>> eigenvalues;
@@ -99,6 +112,7 @@ ProbeResult<T> probe_block_impl(
 {
     ProbeResult<T> result;
     result.block = index;
+    result.forced_dense = force_dense_block(config, index);
 
     const int operator_steps = config.get("spectral", "operator_steps", 1);
     result.radial_size = block.radial_size();
@@ -197,8 +211,10 @@ ProbeResult<T> probe_block_impl(
             if (which == arpack_solver<T>::largest_real_part) {
               ++result.arpack_lr_starts;
             }
-            if (solver.last_naupd_info() == -8) {
-              ++result.arpack_failed_starts;
+            if (solver.last_naupd_info() != 0
+                || solver.last_nconv() < nev) {
+                ++result.arpack_failed_starts;
+                result.forced_dense = true;
             }
             result.max_leakage = std::max(result.max_leakage, max_leakage);
             double leading_magnitude = -1;
@@ -267,7 +283,7 @@ ProbeResult<T> probe_block_impl(
         nev = next_nev;
     }
 
-    if (compute_dense && (dense_all
+    if (compute_dense && (result.forced_dense || dense_all
         || (dense_candidates && (result.candidate || !result.guard_reached)))) {
         result.dense_spectrum = fdm::solve_ns_cyl_dense_block(
             block, dt, growth_tolerance, residual_limit);
@@ -603,7 +619,7 @@ void probe_batched_blocks_impl(const Config& config,
     for (int i = 0; i < static_cast<int>(results.size()); ++i) {
         const auto& result = results[i];
         if (result.error.empty()
-            && (dense_all || (dense_candidates
+            && (result.forced_dense || dense_all || (dense_candidates
                 && (result.candidate || !result.guard_reached)))) {
             dense_indices.push_back(i);
         }
@@ -694,6 +710,590 @@ void probe_batched_blocks_impl(const Config& config,
         std::chrono::steady_clock::now()-dense_before).count();
     printf("BATCHED_GEEV threads=%d seconds=%.3f\n",
            threads, dense_seconds-materialize_seconds);
+}
+
+template<typename T>
+class CooperativeBlockScreen {
+public:
+    using Session = fdm::arpack_rci_session<T>;
+    using Request = fdm::NSCylFourierBatchRequest<T>;
+
+    CooperativeBlockScreen(const Config& config, BlockIndex block,
+                           ProbeResult<T>& result)
+        : config_(config)
+        , block_(block)
+        , result_(result)
+        , nr_(config.get("ns", "nr", 32))
+        , nz_(config.get("ns", "nz", 32))
+        , nphi_(config.get("ns", "nphi", 32))
+        , operator_steps_(config.get("spectral", "operator_steps", 1))
+        , radial_size_(4*nr_-1)
+        , phase_count_(phase_count(block.m, nphi_)
+                       *phase_count(block.l, nz_))
+        , size_(radial_size_*phase_count_
+                -(block.m == 0 && block.l == 0 ? 1 : 0))
+        , max_nev_(std::min(
+              config.get("spectral", "max_nev", 32), size_-2))
+        , requested_ncv_(config.get("spectral", "ncv", 0))
+        , stable_guard_(config.get("spectral", "stable_guard", 4))
+        , maxit_(config.get("spectral", "maxit", 10000))
+        , residual_seed_(config.get("spectral", "residual_seed", 0))
+        , probe_starts_(std::max(
+              1, config.get("spectral", "probe_starts", 3)))
+        , probe_lr_starts_(std::max(
+              0, config.get("spectral", "probe_lr_starts", 1)))
+        , tolerance_(static_cast<T>(config.get(
+              "spectral", "tol",
+              std::max(1e-8, 8.0*static_cast<double>(
+                                  std::numeric_limits<T>::epsilon())))))
+        , growth_tolerance_(config.get(
+              "spectral", "growth_tol", 1e-8))
+        , dt_(config.get("ns", "dt", 0.001))
+    {
+        result_.block = block_;
+        result_.forced_dense = force_dense_block(config, block_);
+        result_.radial_size = radial_size_;
+        result_.phase_count = phase_count_;
+        result_.arpack_size = size_;
+
+        const bool arpack_screen =
+            config.get("spectral", "arpack_screen", 1) != 0;
+        const bool dense_all =
+            config.get("spectral", "dense_all", 0) != 0;
+        if (!arpack_screen) {
+            if (!dense_all) {
+                throw std::invalid_argument(
+                    "arpack_screen=0 requires dense_all=1");
+            }
+            done_ = true;
+            return;
+        }
+
+        nev_ = std::min(
+            config.get("spectral", "nev", 4), size_-2);
+        if (nev_ <= 0 || max_nev_ <= 0) {
+            throw std::invalid_argument(
+                "Fourier block is too small for ARPACK");
+        }
+        nev_ = std::min(nev_, max_nev_);
+        begin_round();
+    }
+
+    bool done() const { return done_; }
+    BlockIndex block() const { return block_; }
+
+    // Advance internal ARPACK work until this block either asks for OP*x or
+    // completes.  B*x is the identity for the standard problem and can be
+    // satisfied immediately without entering the physical batch.
+    bool advance_to_op() {
+        while (!done_) {
+            const auto request = session_->advance();
+            if (request == Session::request::apply_op) {
+                return true;
+            }
+            if (request == Session::request::apply_b) {
+                std::copy(session_->input(), session_->input()+session_->size(),
+                          session_->output());
+                continue;
+            }
+            finish_start();
+        }
+        return false;
+    }
+
+    Request request() {
+        return {block_.m, block_.l, session_->input(), session_->output(),
+                session_->size()};
+    }
+
+    void count_operator_call() {
+        ++result_.operator_calls;
+    }
+
+    void abandon_to_dense() {
+        session_.reset();
+        result_.guard_reached = false;
+        result_.forced_dense = true;
+        done_ = true;
+    }
+
+private:
+    enum class StartKind { lm, lr };
+
+    const Config& config_;
+    BlockIndex block_;
+    ProbeResult<T>& result_;
+    int nr_;
+    int nz_;
+    int nphi_;
+    int operator_steps_;
+    int radial_size_;
+    int phase_count_;
+    int size_;
+    int max_nev_;
+    int requested_ncv_;
+    int stable_guard_;
+    int maxit_;
+    int residual_seed_;
+    int probe_starts_;
+    int probe_lr_starts_;
+    T tolerance_;
+    double growth_tolerance_;
+    double dt_;
+    int nev_ = 0;
+    int ncv_ = 0;
+    int local_start_ = 0;
+    StartKind start_kind_ = StartKind::lm;
+    double best_magnitude_ = -1;
+    vector<complex<T>> best_eigenvalues_;
+    std::unique_ptr<Session> session_;
+    bool done_ = false;
+
+    static int phase_count(int q, int n) {
+        return q == 0 || 2*q == n ? 1 : 2;
+    }
+
+    bool has_unstable(const vector<complex<T>>& eigenvalues) const {
+        return std::any_of(eigenvalues.begin(), eigenvalues.end(),
+            [&](const complex<T>& value) {
+                const double magnitude = std::abs(value);
+                const double growth = magnitude > 0
+                    ? std::log(magnitude)/(operator_steps_*dt_)
+                    : -INFINITY;
+                return growth > growth_tolerance_;
+            });
+    }
+
+    void begin_round() {
+        ncv_ = requested_ncv_ > 0
+            ? std::max(requested_ncv_, nev_+2)
+            : std::max(2*nev_+2, nev_+8);
+        ncv_ = std::min(ncv_, size_);
+        if (ncv_-nev_ < 2) {
+            nev_ = ncv_-2;
+        }
+        result_.nev = nev_;
+        result_.ncv = ncv_;
+        result_.arpack_starts = 0;
+        result_.arpack_lr_starts = 0;
+        best_magnitude_ = -1;
+        best_eigenvalues_.clear();
+        start_kind_ = StartKind::lm;
+        local_start_ = 0;
+        begin_start();
+    }
+
+    void begin_start() {
+        const auto which = start_kind_ == StartKind::lm
+            ? arpack_solver<T>::largest_magnitude
+            : arpack_solver<T>::largest_real_part;
+        const int start = (start_kind_ == StartKind::lm ? 0 : probe_starts_)
+            +local_start_;
+        arpack_solver<T> solver(
+            size_, maxit_, arpack_solver<T>::standard, which,
+            arpack_solver<T>::fixed, tolerance_);
+        solver.set_ncv(ncv_);
+
+        vector<T> residual(size_);
+        const T seed = static_cast<T>(residual_seed_+start);
+        for (int i = 0; i < size_; ++i) {
+            const T x = static_cast<T>(i+1);
+            residual[i] =
+                std::sin((T(0.371)+T(0.017)*seed)*x
+                         +T(0.17)*block_.m+T(0.131)*seed)
+                +T(0.5)*std::cos((T(0.193)+T(0.011)*seed)*x
+                                 +T(0.11)*block_.l-T(0.073)*seed);
+        }
+        solver.set_resid(residual.data());
+        session_ = solver.start(nev_);
+    }
+
+    void finish_start() {
+        ++result_.arpack_starts;
+        if (start_kind_ == StartKind::lr) {
+            ++result_.arpack_lr_starts;
+        }
+        if (session_->naupd_info() != 0 || session_->nconv() < nev_) {
+            ++result_.arpack_failed_starts;
+            result_.forced_dense = true;
+        }
+
+        const auto& eigenvalues = session_->eigenvalues();
+        double leading_magnitude = -1;
+        for (const auto& value : eigenvalues) {
+            leading_magnitude = std::max(
+                leading_magnitude, static_cast<double>(std::abs(value)));
+        }
+        if (leading_magnitude > best_magnitude_) {
+            best_magnitude_ = leading_magnitude;
+            result_.arpack_info = session_->naupd_info();
+            result_.arpack_iterations = session_->iterations();
+            result_.arpack_nconv = session_->nconv();
+            best_eigenvalues_ = eigenvalues;
+        } else if (best_magnitude_ < 0) {
+            result_.arpack_info = session_->naupd_info();
+            result_.arpack_iterations = session_->iterations();
+            result_.arpack_nconv = session_->nconv();
+        }
+        session_.reset();
+
+        ++local_start_;
+        const int starts = start_kind_ == StartKind::lm
+            ? probe_starts_ : probe_lr_starts_;
+        if (local_start_ < starts) {
+            begin_start();
+            return;
+        }
+        if (start_kind_ == StartKind::lm
+            && !has_unstable(best_eigenvalues_)
+            && probe_lr_starts_ > 0) {
+            start_kind_ = StartKind::lr;
+            local_start_ = 0;
+            begin_start();
+            return;
+        }
+        finish_round();
+    }
+
+    void finish_round() {
+        result_.eigenvalues = best_eigenvalues_;
+        int unstable = 0;
+        int stable = 0;
+        for (const auto& value : result_.eigenvalues) {
+            const double magnitude = std::abs(value);
+            const double growth = magnitude > 0
+                ? std::log(magnitude)/(operator_steps_*dt_)
+                : -INFINITY;
+            if (growth > growth_tolerance_) ++unstable;
+            else ++stable;
+        }
+        result_.candidate = unstable > 0;
+        result_.guard_reached = stable >= stable_guard_;
+        if (result_.guard_reached || nev_ >= max_nev_) {
+            done_ = true;
+            return;
+        }
+        const int next_nev = std::min(
+            max_nev_, std::max(nev_+2, 2*nev_));
+        if (next_nev == nev_) {
+            done_ = true;
+            return;
+        }
+        nev_ = next_nev;
+        begin_round();
+    }
+};
+
+template<typename T, typename BatchOperator>
+void finish_cooperative_dense(const Config& config,
+                              vector<ProbeResult<T>>& results,
+                              BatchOperator& op) {
+    const bool dense_candidates =
+        config.get("spectral", "dense_candidates", 1) != 0;
+    const bool dense_all = config.get("spectral", "dense_all", 0) != 0;
+    vector<int> dense_indices;
+    for (int i = 0; i < static_cast<int>(results.size()); ++i) {
+        const auto& result = results[i];
+        if (result.error.empty()
+            && (result.forced_dense || dense_all || (dense_candidates
+                && (result.candidate || !result.guard_reached)))) {
+            dense_indices.push_back(i);
+        }
+    }
+    if (dense_indices.empty()) {
+        printf("COOPERATIVE_DENSE blocks=0\n");
+        return;
+    }
+
+
+    const string dense_backend = config.get(
+        "spectral", "cooperative_dense_backend", string("batch"));
+    if (dense_backend == "native") {
+        const int operator_steps = config.get(
+            "spectral", "operator_steps", 1);
+        const double dt = config.get("ns", "dt", 0.001);
+        const double growth_tolerance = config.get(
+            "spectral", "growth_tol", 1e-8);
+        const double residual_limit = residual_tolerance<T>(config);
+        int threads = config.get("spectral", "threads", 1);
+#ifdef _OPENMP
+        if (threads <= 0) threads = omp_get_max_threads();
+#else
+        threads = 1;
+#endif
+        threads = std::max(1, std::min(
+            threads, static_cast<int>(dense_indices.size())));
+        const auto before = std::chrono::steady_clock::now();
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(threads)
+#endif
+        for (int i = 0; i < static_cast<int>(dense_indices.size()); ++i) {
+            ProbeResult<T>& result = results[dense_indices[i]];
+            try {
+                fdm::NSCylFourierBlockNative<T> block(
+                    config, result.block.m, result.block.l, operator_steps);
+                result.dense_spectrum = fdm::solve_ns_cyl_dense_block(
+                    block, dt, growth_tolerance, residual_limit);
+                result.max_leakage = std::max(
+                    result.max_leakage,
+                    result.dense_spectrum.max_fourier_leakage);
+                result.dense_computed = true;
+            } catch (const std::exception& error) {
+                result.error = error.what();
+            }
+        }
+        const double seconds = std::chrono::duration<double>(
+            std::chrono::steady_clock::now()-before).count();
+        printf("COOPERATIVE_DENSE_NATIVE blocks=%zu threads=%d seconds=%.3f\n",
+               dense_indices.size(), threads, seconds);
+        return;
+    }
+    if (dense_backend != "batch") {
+        throw std::invalid_argument(
+            "cooperative_dense_backend must be 'batch' or 'native'");
+    }
+
+    int dense_batch = config.get(
+        "spectral", "cooperative_dense_blocks",
+        config.get("spectral", "batch_dense_blocks", 0));
+    if (dense_batch <= 0) {
+        dense_batch = static_cast<int>(dense_indices.size());
+    }
+    dense_batch = std::max(1, std::min(
+        dense_batch, static_cast<int>(dense_indices.size())));
+
+    struct DenseWork {
+        vector<T> matrix;
+        vector<T> basis;
+        vector<T> image;
+    };
+    vector<DenseWork> work(dense_indices.size());
+    int maximum_size = 0;
+    for (std::size_t i = 0; i < dense_indices.size(); ++i) {
+        const int n = results[dense_indices[i]].arpack_size;
+        maximum_size = std::max(maximum_size, n);
+        work[i].matrix.resize(static_cast<std::size_t>(n)*n);
+        work[i].basis.assign(n, T(0));
+        work[i].image.resize(n);
+    }
+
+    int physical_batches = 0;
+    const auto dense_before = std::chrono::steady_clock::now();
+    for (int column = 0; column < maximum_size; ++column) {
+        for (int begin = 0; begin < static_cast<int>(dense_indices.size());
+             begin += dense_batch) {
+            const int end = std::min(
+                static_cast<int>(dense_indices.size()), begin+dense_batch);
+            vector<fdm::NSCylFourierBatchRequest<T>> requests;
+            vector<int> request_work_indices;
+            for (int i = begin; i < end; ++i) {
+                const int result_index = dense_indices[i];
+                const int n = results[result_index].arpack_size;
+                if (column >= n) continue;
+                work[i].basis[column] = T(1);
+                requests.push_back({
+                    results[result_index].block.m,
+                    results[result_index].block.l,
+                    work[i].basis.data(), work[i].image.data(), n});
+                request_work_indices.push_back(i);
+            }
+            if (!requests.empty()) {
+                op.apply(requests);
+                ++physical_batches;
+            }
+            for (int i : request_work_indices) {
+                const int n = results[dense_indices[i]].arpack_size;
+                work[i].basis[column] = T(0);
+                std::copy(work[i].image.begin(), work[i].image.end(),
+                          work[i].matrix.begin()
+                          +static_cast<std::size_t>(column)*n);
+            }
+        }
+    }
+    const double materialize_seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-dense_before).count();
+    printf("COOPERATIVE_DENSE physical_batches=%d blocks=%zu columns=%d "
+           "batch=%d seconds=%.3f\n", physical_batches,
+           dense_indices.size(), maximum_size, dense_batch,
+           materialize_seconds);
+
+    const int operator_steps = config.get("spectral", "operator_steps", 1);
+    const double dt = config.get("ns", "dt", 0.001);
+    const double growth_tolerance = config.get(
+        "spectral", "growth_tol", 1e-8);
+    const double residual_limit = residual_tolerance<T>(config);
+    int threads = config.get("spectral", "threads", 1);
+#ifdef _OPENMP
+    if (threads <= 0) threads = omp_get_max_threads();
+#else
+    threads = 1;
+#endif
+    threads = std::max(1, std::min(
+        threads, static_cast<int>(dense_indices.size())));
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(threads)
+#endif
+    for (int i = 0; i < static_cast<int>(dense_indices.size()); ++i) {
+        try {
+            set_dense_metadata(
+                results[dense_indices[i]], work[i].matrix, operator_steps, dt,
+                growth_tolerance, residual_limit);
+        } catch (const std::exception& error) {
+            results[dense_indices[i]].error = error.what();
+        }
+    }
+    const double dense_seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-dense_before).count();
+    printf("COOPERATIVE_GEEV threads=%d seconds=%.3f\n",
+           threads, dense_seconds-materialize_seconds);
+}
+
+template<typename T, typename BatchOperator>
+void probe_cooperative_blocks_impl(const Config& config,
+                                   const vector<BlockIndex>& blocks,
+                                   vector<ProbeResult<T>>& results,
+                                   BatchOperator& op) {
+    int batch_size = config.get(
+        "spectral", "cooperative_arnoldi_blocks",
+        config.get("spectral", "batch_arnoldi_blocks", 0));
+    if (batch_size <= 0) {
+        batch_size = static_cast<int>(blocks.size());
+    }
+    batch_size = std::max(1, std::min(
+        batch_size, static_cast<int>(blocks.size())));
+    printf("COOPERATIVE_LAYOUT arnoldi_blocks=%d\n", batch_size);
+
+    int physical_batches = 0;
+    long long logical_calls = 0;
+    const int progress_interval = config.get(
+        "spectral", "batch_progress_batches", 500);
+    const int tail_min_fill = std::max(0, config.get(
+        "spectral", "cooperative_tail_min_fill", 0));
+    const int tail_grace_batches = std::max(0, config.get(
+        "spectral", "cooperative_tail_grace_batches", 0));
+    const auto arpack_before = std::chrono::steady_clock::now();
+    for (int begin = 0; begin < static_cast<int>(blocks.size());
+         begin += batch_size) {
+        const int end = std::min(
+            static_cast<int>(blocks.size()), begin+batch_size);
+        vector<std::unique_ptr<CooperativeBlockScreen<T>>> screens;
+        screens.reserve(end-begin);
+        for (int i = begin; i < end; ++i) {
+            try {
+                screens.push_back(
+                    std::make_unique<CooperativeBlockScreen<T>>(
+                        config, blocks[i], results[i]));
+            } catch (const std::exception& error) {
+                results[i].block = blocks[i];
+                results[i].error = error.what();
+                screens.push_back(nullptr);
+            }
+        }
+
+        for (;;) {
+            vector<fdm::NSCylFourierBatchRequest<T>> requests;
+            vector<CooperativeBlockScreen<T>*> waiting;
+            bool any_active = false;
+            for (auto& screen : screens) {
+                if (!screen || screen->done()) continue;
+                any_active = true;
+                try {
+                    if (screen->advance_to_op()) {
+                        requests.push_back(screen->request());
+                        waiting.push_back(screen.get());
+                    }
+                } catch (const std::exception& error) {
+                    const auto failed_block = screen->block();
+                    const auto it = std::find_if(
+                        results.begin(), results.end(), [&](const auto& result) {
+                            return result.block.m == failed_block.m
+                                && result.block.l == failed_block.l;
+                        });
+                    if (it != results.end()) it->error = error.what();
+                    screen.reset();
+                }
+            }
+            if (requests.empty()) {
+                if (!any_active) break;
+                continue;
+            }
+            if (tail_min_fill > 0
+                && physical_batches >= tail_grace_batches
+                && static_cast<int>(requests.size()) <= tail_min_fill) {
+                printf("COOPERATIVE_TAIL after_physical_batches=%d blocks=%zu",
+                       physical_batches, waiting.size());
+                for (auto* screen : waiting) {
+                    const BlockIndex block = screen->block();
+                    printf(" (%d,%d)", block.m, block.l);
+                    screen->abandon_to_dense();
+                }
+                printf("\n");
+                break;
+            }
+            op.apply(requests);
+            ++physical_batches;
+            logical_calls += static_cast<long long>(requests.size());
+            for (auto* screen : waiting) screen->count_operator_call();
+            if (progress_interval > 0
+                && physical_batches%progress_interval == 0) {
+                printf("COOPERATIVE_ARPACK_PROGRESS physical_batches=%d "
+                       "current_fill=%zu\n",
+                       physical_batches, requests.size());
+                fflush(stdout);
+            }
+        }
+    }
+
+    int slowest_calls = -1;
+    BlockIndex slowest_block{};
+    for (const auto& result : results) {
+        if (result.operator_calls > slowest_calls) {
+            slowest_calls = result.operator_calls;
+            slowest_block = result.block;
+        }
+    }
+    const double seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-arpack_before).count();
+    const double mean_fill = physical_batches > 0
+        ? static_cast<double>(logical_calls)/physical_batches : 0;
+    printf("COOPERATIVE_ARPACK physical_batches=%d logical_calls=%lld "
+           "mean_fill=%.2f slowest=(%d,%d):%d seconds=%.3f\n",
+           physical_batches, logical_calls, mean_fill,
+           slowest_block.m, slowest_block.l, slowest_calls, seconds);
+
+    finish_cooperative_dense(config, results, op);
+}
+
+template<typename T>
+void probe_cooperative_blocks(const Config& config,
+                              const vector<BlockIndex>& blocks,
+                              vector<ProbeResult<T>>& results,
+                              const string& backend) {
+    const int operator_steps = config.get("spectral", "operator_steps", 1);
+    if (backend == "cpu") {
+        fdm::NSCylFourierBlockBatchReference<T> op(config, operator_steps);
+        probe_cooperative_blocks_impl(config, blocks, results, op);
+        return;
+    }
+#ifdef FDM_HAVE_SYCL
+    if constexpr (std::is_same_v<T, float>) {
+        const sycl::device device = select_sycl_device();
+        printf("SYCL device: %s\n",
+               device.get_info<sycl::info::device::name>().c_str());
+        sycl::queue queue{device, sycl::property::queue::in_order{}};
+        fdm::NSCylSyclFourierBlockBatchReference<T> op(
+            queue, config, operator_steps);
+        probe_cooperative_blocks_impl(config, blocks, results, op);
+    } else {
+        throw std::invalid_argument(
+            "SYCL cooperative probe currently supports datatype=float only");
+    }
+#else
+    (void)config;
+    (void)blocks;
+    (void)results;
+    throw std::runtime_error("spectral probe was built without SYCL");
+#endif
 }
 
 template<typename T>
@@ -1404,7 +2004,13 @@ void run(const Config& config) {
 
     vector<ProbeResult<T>> results(blocks.size());
 
-    if (strategy == "batched_blocks") {
+    if (strategy == "cooperative_blocks") {
+        if (backend == "native") {
+            throw std::invalid_argument(
+                "cooperative_blocks requires the physical cpu or sycl backend");
+        }
+        probe_cooperative_blocks(config, blocks, results, backend);
+    } else if (strategy == "batched_blocks") {
         if (backend == "native") {
             throw std::invalid_argument(
                 "batched_blocks does not use the native per-block backend");
@@ -1490,7 +2096,7 @@ void run(const Config& config) {
                "nev=%d ncv=%d starts=%d lr_starts=%d failed_starts=%d "
                "calls=%d info=%d "
                "iterations=%d "
-               "nconv=%d leakage=%.3e guard=%s%s\n",
+               "nconv=%d leakage=%.3e guard=%s%s%s\n",
                result.block.m, result.block.l,
                result.radial_size, result.phase_count, result.arpack_size,
                result.nev, result.ncv, result.arpack_starts,
@@ -1500,7 +2106,8 @@ void run(const Config& config) {
                result.arpack_info, result.arpack_iterations,
                result.arpack_nconv, result.max_leakage,
                result.guard_reached ? "yes" : "no",
-               result.candidate ? " CANDIDATE" : "");
+               result.candidate ? " CANDIDATE" : "",
+               result.forced_dense ? " FORCED_DENSE" : "");
 
         const auto indices = sorted_indices(result.eigenvalues);
         if (!indices.empty()) {
@@ -1655,10 +2262,11 @@ int main(int argc, char** argv) {
         const string strategy = config.get(
             "spectral", "strategy", string("blocks"));
         if (strategy != "blocks" && strategy != "global"
-            && strategy != "batched_blocks") {
+            && strategy != "batched_blocks"
+            && strategy != "cooperative_blocks") {
             throw std::invalid_argument(
                 "spectral strategy must be 'blocks', 'batched_blocks', "
-                "or 'global'");
+                "'cooperative_blocks', or 'global'");
         }
         if (datatype == "float") {
             if (strategy == "global") {

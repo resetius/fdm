@@ -4,8 +4,12 @@
 #include <functional>
 #include <cstring>
 #include <complex>
+#include <memory>
 
 namespace fdm {
+
+template<typename T>
+class arpack_rci_session;
 
 template<typename T>
 class arpack_solver {
@@ -110,6 +114,12 @@ public:
     int last_nconv() const { return last_nconv_; }
     int last_iterations() const { return last_iterations_; }
 
+    // Start a non-blocking reverse-communication solve.  Independent
+    // sessions may be advanced in turn on one thread, allowing their OP*x
+    // requests to be served by one batched operator application.
+    std::unique_ptr<arpack_rci_session<T>> start(
+        int n_eigenvalues) const;
+
     void solve(
         const std::function<void(T*, const T*)>& OP,
         const std::function<void(T*, const T*)>& BX,
@@ -128,6 +138,46 @@ public:
             memcpy(y, x, n*sizeof(T));
         }, eigenvalues, eigenvectors, n_eigenvalues);
     }
+
+private:
+    friend class arpack_rci_session<T>;
+};
+
+template<typename T>
+class arpack_rci_session {
+public:
+    enum class request {
+        done,
+        apply_op,
+        apply_b
+    };
+
+    ~arpack_rci_session();
+    arpack_rci_session(arpack_rci_session&&) noexcept;
+    arpack_rci_session& operator=(arpack_rci_session&&) noexcept;
+
+    arpack_rci_session(const arpack_rci_session&) = delete;
+    arpack_rci_session& operator=(const arpack_rci_session&) = delete;
+
+    request advance();
+    const T* input() const;
+    T* output();
+    int size() const;
+
+    int naupd_info() const;
+    int neupd_info() const;
+    int nconv() const;
+    int iterations() const;
+    const std::vector<std::complex<T>>& eigenvalues() const;
+    const std::vector<std::vector<T>>& eigenvectors() const;
+
+private:
+    struct impl;
+    std::unique_ptr<impl> impl_;
+
+    explicit arpack_rci_session(
+        const arpack_solver<T>& solver, int n_eigenvalues);
+    friend class arpack_solver<T>;
 };
 
 } // namespace fdm
