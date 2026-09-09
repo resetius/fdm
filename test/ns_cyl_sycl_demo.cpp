@@ -18,16 +18,26 @@
 
 // ── SYCL + simulation ─────────────────────────────────────────────────────────
 #include "ns_cyl_sycl.h"
+#include "ns_cyl_spectral_filter.h"
+#include "ns_cyl_spectral_storage.h"
 #include "ns_cyl_state.h"
 
 // ── Standard ──────────────────────────────────────────────────────────────────
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <limits>
+#include <memory>
+#include <optional>
 #include <random>
 #include <chrono>
+#include <stdexcept>
+#include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Metal shaders
@@ -125,21 +135,25 @@ fragment float4 ns_frag(VOut in [[stage_in]],
 // ═════════════════════════════════════════════════════════════════════════════
 // Demo
 // ═════════════════════════════════════════════════════════════════════════════
-//static constexpr int kNR=32, kNZ=64, kNPHI=64;
 static constexpr int kNR=32, kNZ=32, kNPHI=32;
 static constexpr int kNP=32768;
 
+// Initial perturbation amplitude relative to the inner-wall speed.
+static constexpr float kSeed = 1e-3f;
+
 static constexpr float kR0   = 1.5707963267948966;   // inner cylinder radius
 static constexpr float kR    = 3.141592653589793;   // outer cylinder radius
+static constexpr float kU0   = 1.0f;
+static constexpr float kRe   = 100.0f;
+static constexpr float kDefaultDt = 0.002f;
 
 // Axial period.  A Taylor vortex is nearly square in cross-section, so its
 // height is about the gap width d = kR - kR0 = 1.  z is periodic, so only
 // whole wavelengths fit and one wavelength holds a counter-rotating pair:
 // the vortex count is kLZ/d rounded to an even number.  Formally it is
 // 2*round(k_c*kLZ/2pi) with the critical Taylor wavenumber k_c*d ~ 3.16.
-// The flow is never seeded: it starts from the Couette base state and the
-// fastest growing mode wins over round-off noise -- so the count below is
-// what you get.
+// The flow starts from the Couette base plus broadband noise, and the fastest
+// growing mode wins over the rest -- so the count below is what you get.
 static constexpr float kLZ = 10.0f;
 //static constexpr float kLZ = 2.0f;            //  2 vortices (k=3.14, best fit)
 //static constexpr float kLZ = float(M_PI);     //  4 vortices (borderline: the
@@ -154,6 +168,54 @@ static constexpr float kLZ = 10.0f;
                                                 // per vortex -- raise kNZ to 96
                                                 // or 128 for a clean picture.
 
+struct ProjectorInput {
+    std::string filename;
+    fdm::NSCylSpectralMetadata metadata;
+    fdm::NSCylSpectralProjector<float> projector;
+};
+
+static void require_projector_value(
+    const char* name, double actual, double expected)
+{
+    const double scale = std::max({1.0, std::abs(actual), std::abs(expected)});
+    const double tolerance =
+        4*static_cast<double>(std::numeric_limits<float>::epsilon())*scale;
+    if (std::abs(actual-expected) > tolerance) {
+        throw std::runtime_error(
+            std::string("projector ")+name+" mismatch: file="
+            +std::to_string(actual)+", demo="+std::to_string(expected));
+    }
+}
+
+static ProjectorInput load_projector(const std::string& filename)
+{
+    fdm::NSCylSpectralModeSet<float> modes;
+    fdm::NSCylSpectralMetadata metadata;
+    fdm::NSCylSpectralStorage(filename).load(modes, metadata);
+
+    if (metadata.nr != kNR || metadata.nphi != kNPHI
+        || metadata.nz != kNZ) {
+        throw std::runtime_error(
+            "projector grid mismatch: file="+std::to_string(metadata.nr)
+            +"x"+std::to_string(metadata.nphi)+"x"
+            +std::to_string(metadata.nz)+", demo="+std::to_string(kNR)
+            +"x"+std::to_string(kNPHI)+"x"+std::to_string(kNZ));
+    }
+    require_projector_value("r0", metadata.r, kR0);
+    require_projector_value("R", metadata.R, kR);
+    require_projector_value("z0", metadata.h1, 0.0);
+    require_projector_value("Lz", metadata.h2-metadata.h1, kLZ);
+    require_projector_value("Re", metadata.reynolds, kRe);
+    require_projector_value("U0", metadata.wall_speed, kU0);
+
+    return {
+        filename,
+        metadata,
+        fdm::NSCylSpectralProjector<float>(
+            modes, metadata.condition_limit)
+    };
+}
+
 struct Demo {
     sycl::queue syclQ{
         []() {
@@ -165,6 +227,10 @@ struct Demo {
         sycl::property::queue::in_order{}};
 
     fdm::NSCylSycl<float> sim;
+    fdm::NSCylStateLayout<float> stateLayout;
+    std::unique_ptr<fdm::NSCylSpectralFilter<float>> spectralFilter;
+    std::vector<float> couetteReference;
+    std::string projectorFilename;
 
     float *part_px=nullptr, *part_py=nullptr, *part_pz=nullptr;
     float *color_buf=nullptr;
@@ -189,6 +255,7 @@ struct Demo {
     bool                      interop         = false;
 
     uint32_t frame      = 0;
+    uint64_t simulationSteps = 0;
     bool     paused     = false;
 
     // Command line: --no-vsync frees the frame rate from the display refresh
@@ -238,12 +305,152 @@ struct Demo {
         std::cout << "colour: " << color_name(colorMode) << "\n";
     }
 
-    Demo()
+    // Restore the initial particle distribution without changing the flow.
+    void reset_particles()
+    {
+        syclQ.wait(); // The previous frame may still be reading the particles.
+
+        std::mt19937 rng(42);
+        std::uniform_real_distribution<float> rr(kR0*1.01f, kR*0.99f);
+        std::uniform_real_distribution<float> rphi(0.f, float(2*M_PI));
+        std::uniform_real_distribution<float> rz(0.f, kLZ);
+        for (int ip = 0; ip < kNP; ip++) {
+            float pr   = rr(rng);
+            float pphi = rphi(rng);
+            part_px[ip]   = pr * std::cos(pphi);
+            part_py[ip]   = pr * std::sin(pphi);
+            part_pz[ip]   = rz(rng);
+            // Lagrangian marker: where the particle started radially, so the
+            // outflow jets visibly carry inner fluid to the outer wall.  A
+            // particle that escapes and gets reseeded keeps its old marker,
+            // so this mode slowly decorrelates -- fine for watching transport.
+            color_buf[ip] = (pr - kR0) / (kR - kR0);
+        }
+        clearFrames = clearCycle;
+    }
+
+    explicit Demo(std::optional<ProjectorInput> projectorInput)
         : sim(syclQ, kNR, kNZ, kNPHI,
               float(kR0), float(kR), float(kLZ),
-              /*U0=*/1.f, /*Re=*/100.f, /*dt=*/0.002f)
+              kU0, kRe, kDefaultDt)
+        , stateLayout(kNR, kNZ, kNPHI)
     {
         init_couette_base();
+        couetteReference = pack_state();
+        seed_noise();
+        if (projectorInput) {
+            projectorFilename = std::move(projectorInput->filename);
+            const int dimension = projectorInput->projector.real_dimension();
+            const int blocks = static_cast<int>(
+                projectorInput->projector.blocks().size());
+            spectralFilter =
+                std::make_unique<fdm::NSCylSpectralFilter<float>>(
+                    sim.nr, sim.nphi, sim.nz,
+                    std::move(projectorInput->projector));
+            std::cout << "projector: " << projectorFilename
+                      << "  blocks=" << blocks
+                      << "  real_dimension=" << dimension
+                      << "  stored_steps="
+                      << projectorInput->metadata.operator_steps
+                      << "  stored_dt=" << projectorInput->metadata.dt
+                      << "  demo_dt=" << sim.dt << "\n";
+        }
+    }
+
+    std::vector<float> pack_state() const
+    {
+        std::vector<float> packed(stateLayout.state_size);
+        auto u = sim.ua();
+        auto v = sim.va();
+        auto w = sim.wa();
+        auto p = sim.pa();
+
+        int index = stateLayout.u_offset;
+        for (int i = 0; i < sim.nphi; i++)
+            for (int k = 0; k < sim.nz; k++)
+                for (int j = 1; j < sim.nr; j++)
+                    packed[index++] = u(i,k,j);
+        for (auto field : {v, w, p})
+            for (int i = 0; i < sim.nphi; i++)
+                for (int k = 0; k < sim.nz; k++)
+                    for (int j = 1; j <= sim.nr; j++)
+                        packed[index++] = field(i,k,j);
+        return packed;
+    }
+
+    void unpack_state(const std::vector<float>& packed)
+    {
+        if (static_cast<int>(packed.size()) != stateLayout.state_size)
+            throw std::invalid_argument("packed demo state has the wrong size");
+
+        auto u = sim.ua();
+        auto v = sim.va();
+        auto w = sim.wa();
+        auto p = sim.pa();
+        int index = stateLayout.u_offset;
+        for (int i = 0; i < sim.nphi; i++) {
+            for (int k = 0; k < sim.nz; k++) {
+                u(i,k,0) = 0;
+                for (int j = 1; j < sim.nr; j++)
+                    u(i,k,j) = packed[index++];
+                u(i,k,sim.nr) = 0;
+            }
+        }
+        for (auto field : {v, w, p})
+            for (int i = 0; i < sim.nphi; i++)
+                for (int k = 0; k < sim.nz; k++)
+                    for (int j = 1; j <= sim.nr; j++)
+                        field(i,k,j) = packed[index++];
+        sim.apply_boundary_conditions();
+    }
+
+    void apply_spectral_filter()
+    {
+        if (!spectralFilter) {
+            std::cout << "filter: no projector loaded; use --projector FILE.nc\n";
+            return;
+        }
+
+        syclQ.wait();
+        auto packed = pack_state();
+        const auto diagnostics = spectralFilter->remove_packed(
+            sim, packed, couetteReference);
+        unpack_state(packed);
+        clearFrames = clearCycle;
+
+        std::cout << "filter: t=" << simulationSteps*sim.dt
+                  << "  blocks=" << diagnostics.blocks.size()
+                  << "  velocity=" << diagnostics.velocity_perturbation_norm
+                  << " -> " << diagnostics.filtered_velocity_norm
+                  << "  removed_velocity="
+                  << diagnostics.removed_velocity_norm
+                  << "  remaining_unstable="
+                  << diagnostics.remaining_unstable_norm << "\n";
+    }
+
+    // Add deterministic broadband noise; the first step projects it onto the
+    // divergence-free subspace and enforces the wall conditions.
+    void seed_noise()
+    {
+        std::mt19937 rng(1234);
+        std::uniform_real_distribution<float> noise(-kSeed*sim.U0, kSeed*sim.U0);
+
+        auto u = sim.ua();
+        auto v = sim.va();
+        auto w = sim.wa();
+        for (int i = 0; i < sim.nphi; i++) {
+            for (int k = 0; k < sim.nz; k++) {
+                // Radial velocity is staggered on faces; leave both walls set
+                // by the Couette initializer.
+                for (int j = 1; j < sim.nr; j++) {
+                    u(i,k,j) += noise(rng);
+                }
+                for (int j = 1; j <= sim.nr; j++) {
+                    v(i,k,j) += noise(rng);
+                    w(i,k,j) += noise(rng);
+                }
+            }
+        }
     }
 
     // Use the same stationary discrete Couette state as the spectral probe.
@@ -285,22 +492,7 @@ struct Demo {
         color_buf  = sycl::malloc_shared<float>(kNP,     syclQ);
         render_buf = sycl::malloc_shared<float>(kNP * 4, syclQ);
 
-        std::mt19937 rng(42);
-        std::uniform_real_distribution<float> rr(kR0*1.01f, kR*0.99f);
-        std::uniform_real_distribution<float> rphi(0.f, float(2*M_PI));
-        std::uniform_real_distribution<float> rz(0.f, kLZ);
-        for (int ip = 0; ip < kNP; ip++) {
-            float pr   = rr(rng);
-            float pphi = rphi(rng);
-            part_px[ip]   = pr * std::cos(pphi);
-            part_py[ip]   = pr * std::sin(pphi);
-            part_pz[ip]   = rz(rng);
-            // Lagrangian marker: where the particle started radially, so the
-            // outflow jets visibly carry inner fluid to the outer wall.  A
-            // particle that escapes and gets reseeded keeps its old marker,
-            // so this mode slowly decorrelates -- fine for watching transport.
-            color_buf[ip] = (pr - kR0) / (kR - kR0);
-        }
+        reset_particles();
 
 #ifdef SYCL_EXT_ACPP_BACKEND_METAL
         // Events can only be shared with the device the SYCL queue actually runs
@@ -421,8 +613,11 @@ struct Demo {
                   << "  particles=" << kNP
                   << "  steps/frame=" << stepsPerFrame << "\n";
         std::cout << "Initial state: stationary discrete Couette base "
-                     "(same base as the spectral probe)\n";
-        std::cout << "Keys: arrows rotate, space pauses, C cycles colour, Esc quits\n"
+                     "(same base as the spectral probe) + noise "
+                  << kSeed << "*U0\n";
+        std::cout << "Keys: arrows rotate, space pauses, C cycles colour,\n"
+                     "      F applies spectral filter, R reseeds particles,\n"
+                     "      Esc quits\n"
                      "colour: " << color_name(colorMode) << "\n";
         return true;
     }
@@ -450,8 +645,10 @@ struct Demo {
             prevCB->waitUntilCompleted(); prevCB->release(); prevCB = nullptr;
         }
 
-        if (!paused)
+        if (!paused) {
             for (int k = 0; k < stepsPerFrame; k++) sim.step();
+            simulationSteps += stepsPerFrame;
+        }
         sim.advect_particles(part_px, part_py, part_pz, color_buf, render_buf,
                              kNP, frame++, colorMode);
         // In-order queue: whatever is enqueued here runs after advect.  With
@@ -563,6 +760,7 @@ int main(int argc, char** argv)
 {
     bool vsync = true, showFps = false;
     int stepsPerFrame = 3;
+    std::string projectorFilename;
     const auto parseSteps = [](std::string_view text, int& value) {
         int parsed = 0;
         const auto result = std::from_chars(
@@ -576,12 +774,14 @@ int main(int argc, char** argv)
     };
     const auto usage = [&]() {
         std::cerr << "usage: " << argv[0]
-                  << " [--no-vsync] [--fps] [--steps-per-frame=N]\n";
+                  << " [--no-vsync] [--fps] [--steps-per-frame=N]"
+                     " [--projector FILE.nc]\n";
     };
 
     for (int i = 1; i < argc; i++) {
         const std::string_view arg = argv[i];
         constexpr std::string_view prefix = "--steps-per-frame=";
+        constexpr std::string_view projectorPrefix = "--projector=";
         if      (arg == "--no-vsync") vsync   = false;
         else if (arg == "--fps")      showFps = true;
         else if (arg.starts_with(prefix)) {
@@ -594,11 +794,34 @@ int main(int argc, char** argv)
                 usage();
                 return 1;
             }
+        } else if (arg.starts_with(projectorPrefix)) {
+            projectorFilename = arg.substr(projectorPrefix.size());
+            if (projectorFilename.empty()) {
+                usage();
+                return 1;
+            }
+        } else if (arg == "--projector") {
+            if (++i == argc || std::string_view(argv[i]).empty()) {
+                usage();
+                return 1;
+            }
+            projectorFilename = argv[i];
         } else {
             usage();
             return 1;
         }
     }
+
+    std::optional<ProjectorInput> projectorInput;
+    try {
+        if (!projectorFilename.empty())
+            projectorInput.emplace(load_projector(projectorFilename));
+    } catch (const std::exception& error) {
+        std::cerr << "cannot load projector: " << error.what() << "\n";
+        return 1;
+    }
+
+    Demo demo(std::move(projectorInput));
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::cerr << "SDL_Init: " << SDL_GetError() << "\n";
@@ -621,7 +844,6 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    Demo demo;
     demo.vsync   = vsync;
     demo.showFps = showFps;
     demo.stepsPerFrame = stepsPerFrame;
@@ -641,6 +863,8 @@ int main(int argc, char** argv)
                 case SDLK_UP:     demo.rotate( 0.f,   -0.05f);  break;
                 case SDLK_DOWN:   demo.rotate( 0.f,   +0.05f);  break;
                 case SDLK_c:      demo.cycle_color();          break;
+                case SDLK_f:      demo.apply_spectral_filter(); break;
+                case SDLK_r:      demo.reset_particles();      break;
                 }
             }
         }

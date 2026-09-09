@@ -146,6 +146,11 @@ public:
         kernel_update_uvwp();
     }
 
+    void apply_boundary_conditions() {
+        kernel_init_bound(U0);
+        q.wait();
+    }
+
     void initialize_couette_linearization(
         T wall_speed, T outer_radius) {
         struct Geometry {
