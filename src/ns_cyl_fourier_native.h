@@ -137,6 +137,123 @@ public:
     bool pressure_gauge_fixed() const { return pressure_gauge_fixed_; }
     double last_fourier_leakage() const { return 0; }
     const StateLayout& state_layout() const { return layout_; }
+    const std::vector<T>& backward_phi_matrix() const {
+        return backward_phi_;
+    }
+    const std::vector<T>& backward_z_matrix() const {
+        return backward_z_;
+    }
+
+    // Velocity-only block layout used by the LBB and auxiliary Stokes
+    // systems.  It follows the native phase order and stores (u,v,w) for
+    // every phase; the pressure rows follow the same phase order.
+    int velocity_block_size() const { return phases_*(3*nr-1); }
+    int pressure_block_size() const { return phases_*nr; }
+
+    int velocity_block_index(Component component, int phase, int j) const {
+        if (phase < 0 || phase >= phases_) {
+            throw std::out_of_range("native Fourier phase index");
+        }
+        int offset = 0;
+        switch (component) {
+        case Component::u:
+            if (j < 1 || j >= nr) {
+                throw std::out_of_range("native radial velocity index");
+            }
+            offset = j-1;
+            break;
+        case Component::v:
+            if (j < 1 || j > nr) {
+                throw std::out_of_range("native axial velocity index");
+            }
+            offset = nr-1+j-1;
+            break;
+        case Component::w:
+            if (j < 1 || j > nr) {
+                throw std::out_of_range("native azimuthal velocity index");
+            }
+            offset = 2*nr-1+j-1;
+            break;
+        case Component::p:
+            throw std::invalid_argument("pressure is not a velocity");
+        }
+        return phase*(3*nr-1)+offset;
+    }
+
+    int pressure_block_index(int phase, int j) const {
+        if (phase < 0 || phase >= phases_ || j < 1 || j > nr) {
+            throw std::out_of_range("native Fourier pressure index");
+        }
+        return phase*nr+j-1;
+    }
+
+    T phase_value(int phase, int i, int k) const {
+        if (phase < 0 || phase >= phases_) {
+            throw std::out_of_range("native Fourier phase index");
+        }
+        const int phi_phase = phase/z_phases_;
+        const int z_phase = phase%z_phases_;
+        const double phi_angle =
+            2*M_PI*static_cast<double>(m_)*i/nphi;
+        const double z_angle =
+            2*M_PI*static_cast<double>(l_)*k/nz;
+        const double phi_value = phi_phase == 0
+            ? std::cos(phi_angle) : std::sin(phi_angle);
+        const double z_value = z_phase == 0
+            ? std::cos(z_angle) : std::sin(z_angle);
+        return static_cast<T>(phi_value*z_value);
+    }
+
+    // Row-major matrix of the same staggered divergence used in project().
+    // The optional reduction removes the redundant final pressure row from
+    // the constant Fourier block.
+    std::vector<T> velocity_divergence_matrix(
+        bool reduce_constant = false) const {
+        const bool reduce = reduce_constant && m_ == 0 && l_ == 0;
+        const int columns = velocity_block_size();
+        const int rows = pressure_block_size()-(reduce ? 1 : 0);
+        std::vector<T> result(
+            static_cast<std::size_t>(rows)*columns, T(0));
+        int row = 0;
+        for (int phase = 0; phase < phases_; ++phase) {
+            for (int j = 1; j <= nr; ++j) {
+                if (reduce && phase == phases_-1 && j == nr) {
+                    continue;
+                }
+                const double radius = r0+(j-0.5)*dr;
+                if (j < nr) {
+                    result[static_cast<std::size_t>(row)*columns
+                           +velocity_block_index(
+                               Component::u, phase, j)] += static_cast<T>(
+                        (radius+0.5*dr)/(radius*dr));
+                }
+                if (j > 1) {
+                    result[static_cast<std::size_t>(row)*columns
+                           +velocity_block_index(
+                               Component::u, phase, j-1)] -= static_cast<T>(
+                        (radius-0.5*dr)/(radius*dr));
+                }
+                for (int column_phase = 0;
+                     column_phase < phases_; ++column_phase) {
+                    result[static_cast<std::size_t>(row)*columns
+                           +velocity_block_index(
+                               Component::v, column_phase, j)] +=
+                        backward_z_[phase*phases_+column_phase]
+                        /static_cast<T>(dz);
+                    result[static_cast<std::size_t>(row)*columns
+                           +velocity_block_index(
+                               Component::w, column_phase, j)] +=
+                        backward_phi_[phase*phases_+column_phase]
+                        /static_cast<T>(radius*dphi);
+                }
+                ++row;
+            }
+        }
+        if (row != rows) {
+            throw std::logic_error("invalid native divergence matrix size");
+        }
+        return result;
+    }
 
     void apply(T* output, const T* input) {
         if (!output || !input) {

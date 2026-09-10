@@ -502,131 +502,6 @@ private:
         return result;
     }
 
-    std::vector<T> phase_shift(const BlockProjector& projector,
-                               bool azimuthal, int direction) const {
-        const int phi_phases =
-            (projector.m() == 0 || 2*projector.m() == geometry_.nphi)
-            ? 1 : 2;
-        const int z_phases =
-            (projector.l() == 0 || 2*projector.l() == geometry_.nz)
-            ? 1 : 2;
-        const int one_count = azimuthal ? phi_phases : z_phases;
-        const int frequency = azimuthal ? projector.m() : projector.l();
-        const int grid_size = azimuthal ? geometry_.nphi : geometry_.nz;
-        const T angle = static_cast<T>(
-            direction*2*M_PI*static_cast<double>(frequency)/grid_size);
-        std::vector<T> one(
-            static_cast<std::size_t>(one_count)*one_count, T(0));
-        if (one_count == 1) {
-            one[0] = std::cos(angle);
-        } else {
-            const T cosine = std::cos(angle);
-            const T sine = std::sin(angle);
-            one[0] = cosine;
-            one[1] = sine;
-            one[2] = -sine;
-            one[3] = cosine;
-        }
-
-        const int phases = projector.phase_count();
-        std::vector<T> result(
-            static_cast<std::size_t>(phases)*phases, T(0));
-        for (int phi_row = 0; phi_row < phi_phases; ++phi_row) {
-            for (int z_row = 0; z_row < z_phases; ++z_row) {
-                const int row = phi_row*z_phases+z_row;
-                for (int phi_column = 0;
-                     phi_column < phi_phases; ++phi_column) {
-                    for (int z_column = 0;
-                         z_column < z_phases; ++z_column) {
-                        const int column = phi_column*z_phases+z_column;
-                        if (azimuthal && z_row == z_column) {
-                            result[row*phases+column] =
-                                one[phi_row*phi_phases+phi_column];
-                        } else if (!azimuthal
-                                   && phi_row == phi_column) {
-                            result[row*phases+column] =
-                                one[z_row*z_phases+z_column];
-                        }
-                    }
-                }
-            }
-        }
-        return result;
-    }
-
-    // Row-major matrix of the exact staggered divergence in omega.  The
-    // normal velocity at both radial boundaries is zero and is therefore not
-    // an unknown.  For the constant Fourier block one redundant conservation
-    // row is omitted together with the pressure gauge.
-    std::vector<T> divergence_matrix(
-        const BlockProjector& projector,
-        const std::vector<int>& velocity_indices,
-        int& constraint_count) const {
-        const Layout auxiliary(auxiliary_nr_, geometry_.nz, geometry_.nphi);
-        const int phases = projector.phase_count();
-        const bool constant = projector.m() == 0 && projector.l() == 0;
-        constraint_count = phases*auxiliary_nr_-(constant ? 1 : 0);
-        const int velocity_size = static_cast<int>(velocity_indices.size());
-        std::vector<int> position(
-            static_cast<std::size_t>(phases)*auxiliary.radial_size, -1);
-        for (int index = 0; index < velocity_size; ++index) {
-            position[velocity_indices[index]] = index;
-        }
-        std::vector<T> result(
-            static_cast<std::size_t>(constraint_count)*velocity_size, T(0));
-        const auto phi_minus = phase_shift(projector, true, -1);
-        const auto z_minus = phase_shift(projector, false, -1);
-        int row = 0;
-        for (int phase = 0; phase < phases; ++phase) {
-            for (int j = 1; j <= auxiliary_nr_; ++j) {
-                if (constant && phase == phases-1 && j == auxiliary_nr_) {
-                    continue;
-                }
-                const double radius = base_outer_radius_
-                    +(j-0.5)*geometry_.dr;
-                if (j < auxiliary_nr_) {
-                    const int coordinate = phase*auxiliary.radial_size
-                        +auxiliary.radial_index(Component::u, j);
-                    result[static_cast<std::size_t>(row)*velocity_size
-                           +position[coordinate]] += static_cast<T>(
-                        (radius+0.5*geometry_.dr)
-                        /(radius*geometry_.dr));
-                }
-                if (j > 1) {
-                    const int coordinate = phase*auxiliary.radial_size
-                        +auxiliary.radial_index(Component::u, j-1);
-                    result[static_cast<std::size_t>(row)*velocity_size
-                           +position[coordinate]] -= static_cast<T>(
-                        (radius-0.5*geometry_.dr)
-                        /(radius*geometry_.dr));
-                }
-                for (int column_phase = 0;
-                     column_phase < phases; ++column_phase) {
-                    const int v_coordinate =
-                        column_phase*auxiliary.radial_size
-                        +auxiliary.radial_index(Component::v, j);
-                    const int w_coordinate =
-                        column_phase*auxiliary.radial_size
-                        +auxiliary.radial_index(Component::w, j);
-                    const T identity = phase == column_phase ? T(1) : T(0);
-                    result[static_cast<std::size_t>(row)*velocity_size
-                           +position[v_coordinate]] +=
-                        (identity-z_minus[phase*phases+column_phase])
-                        /static_cast<T>(geometry_.dz);
-                    result[static_cast<std::size_t>(row)*velocity_size
-                           +position[w_coordinate]] +=
-                        (identity-phi_minus[phase*phases+column_phase])
-                        /static_cast<T>(radius*geometry_.dphi);
-                }
-                ++row;
-            }
-        }
-        if (row != constraint_count) {
-            throw std::logic_error("invalid auxiliary divergence size");
-        }
-        return result;
-    }
-
     CorrectionBlock build_correction(const Config& stokes_config,
                                      const BlockProjector& projector) const {
         NSCylFourierBlockNative<T> stokes(
@@ -637,6 +512,10 @@ private:
             full_auxiliary_velocity_indices(projector.phase_count());
         const int velocity_size = static_cast<int>(local_indices.size());
         const int dimension = projector.dimension();
+        if (velocity_size != stokes.velocity_block_size()) {
+            throw std::logic_error(
+                "auxiliary velocity layout does not match native block");
+        }
 
         std::vector<T> matrix(
             static_cast<std::size_t>(velocity_size)*velocity_size);
@@ -653,9 +532,9 @@ private:
             }
         }
 
-        int constraint_count = 0;
-        const auto divergence = divergence_matrix(
-            projector, local_indices, constraint_count);
+        const int constraint_count = stokes.pressure_block_size()
+            -(stokes.m() == 0 && stokes.l() == 0 ? 1 : 0);
+        const auto divergence = stokes.velocity_divergence_matrix(true);
         const int saddle_size = velocity_size+constraint_count;
         std::vector<T> saddle(
             static_cast<std::size_t>(saddle_size)*saddle_size, T(0));
