@@ -43,6 +43,7 @@
 
 #include "config.h"
 #include "ns_cyl.h"
+#include "ns_cyl_nonlinear_gluing.h"
 #include "ns_cyl_spectral_filter.h"
 #include "ns_cyl_spectral_storage.h"
 #include "ns_cyl_state.h"
@@ -149,28 +150,6 @@ Vector<T> sub(const Vector<T>& a, const Vector<T>& b) {
     return r;
 }
 
-// Per-coordinate multipliers in the projector's own order: blocks
-// lexicographic in (m,l), modes in file order, one or two columns per mode.
-template<typename T>
-std::vector<std::vector<std::complex<T>>> block_multipliers(
-    const fdm::NSCylSpectralModeSet<T>& modes) {
-    std::map<std::pair<int, int>, std::vector<fdm::NSCylSpectralMode<T>>> groups;
-    for (const auto& mode : modes.modes()) {
-        groups[{mode.m, mode.l}].push_back(mode);
-    }
-    std::vector<std::vector<std::complex<T>>> result;
-    for (const auto& [index, block] : groups) {
-        std::vector<std::complex<T>> column;
-        for (const auto& mode : block) {
-            for (int i = 0; i < mode.column_count; ++i) {
-                column.push_back(mode.multiplier);
-            }
-        }
-        result.push_back(std::move(column));
-    }
-    return result;
-}
-
 // Device work is asynchronous, so drain before reading the fields back.
 template<typename TaskT>
 void drain(TaskT&) { }
@@ -262,36 +241,6 @@ private:
     Task<T> geometry_;
     Layout<T> layout_;
     long long applications_ = 0;
-};
-
-template<typename MethodT>
-class Gluing {
-    using T = typename MethodT::value_type;
-
-public:
-    Gluing(MethodT& method) : method_(method) { }
-
-    Vector<T> operator()(const Vector<T>& y, int n, int level) {
-        const auto key = std::make_pair(level, n);
-        const auto known = memo_.find(key);
-        if (known != memo_.end()) { return known->second; }
-        if (n <= 0) { return method_.zero(); }
-
-        const Vector<T> x1 = (*this)(y, n-1, level);
-        const Vector<T> image = method_.S(add(x1, y));
-        const Vector<T> y1 = method_.Pminus(image);
-        const Vector<T> x2 = method_.Pplus(image);
-        const Vector<T> xx = (*this)(y1, n-1, level+1);
-        Vector<T> x = add(method_.PplusLinv(sub(xx, x2)), x1);
-        memo_[key] = x;
-        return x;
-    }
-
-    void clear() { memo_.clear(); }
-
-private:
-    MethodT& method_;
-    std::map<std::pair<int, int>, Vector<T>> memo_;
 };
 
 // Advance a perturbation by the exact nonlinear map for the given steps.
@@ -407,7 +356,7 @@ int run(const Config& config) {
 
     const Vector<T> reference = couette_reference<T>(config);
     Method<T, StepTask> method(
-        config, reference, filter, block_multipliers(modes),
+        config, reference, filter, fdm::ns_cyl_block_multipliers(modes),
         map_steps, power);
 
     printf("nonlinear spectral filter\n");
@@ -437,7 +386,7 @@ int run(const Config& config) {
     run_branch<StepTask>(config, method, reference, q0, "unfiltered",
                          branch_steps, interval, unstable_threshold, csv);
 
-    Gluing<Method<T, StepTask>> glue(method);
+    fdm::NSCylNonlinearGluing<Method<T, StepTask>> glue(method);
     for (int n = 0; n <= iterations; ++n) {
         const Vector<T> x = glue(y, n, 0);
         const Vector<T> projected = add(y, x);

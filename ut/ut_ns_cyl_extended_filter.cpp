@@ -9,6 +9,7 @@
 #include "config.h"
 #include "ns_cyl_extended_filter.h"
 #include "ns_cyl_fourier_block.h"
+#include "ns_cyl_spectral_filter.h"
 #include "ns_cyl_spectral_modes.h"
 #include "ns_cyl_spectral_projector.h"
 #include "ns_cyl_state.h"
@@ -235,6 +236,60 @@ void test_supported_correction_can_target_nonzero_coordinates(void**) {
     assert_true(filter.correction_boundary_velocity().rms_norm() > 0);
 }
 
+void test_zero_order_nonlinear_target_matches_linear_correction(void**) {
+    Config config = make_config();
+    const Layout layout(8, 4, 4);
+    fdm::PeriodicPackedFFT2<T> fft(layout.nphi, layout.nz);
+    std::vector<T> state(layout.state_size, T(0));
+    std::vector<T> values(fft.size());
+    std::vector<T> plane(fft.size(), T(0));
+    plane[1] = T(1);
+    fft.synthesis(plane.data(), values.data());
+    for (int i = 0; i < layout.nphi; ++i) {
+        for (int k = 0; k < layout.nz; ++k) {
+            state[packed_index(layout, Component::v, i, k, 2)] =
+                values[static_cast<std::size_t>(i)*layout.nz+k];
+        }
+    }
+
+    Task geometry(config);
+    std::vector<T> reference(layout.state_size, T(0));
+    auto stable_target = state;
+    fdm::NSCylSpectralFilter<T> full_filter(
+        layout.nr, layout.nphi, layout.nz, make_projector(config));
+    full_filter.remove_packed(geometry, stable_target, reference);
+
+    auto linear_state = state;
+    Filter linear_filter(config, make_projector(config));
+    linear_filter.apply(linear_state);
+    const auto linear_boundary =
+        linear_filter.correction_boundary_velocity();
+
+    auto target_state = state;
+    Filter target_filter(config, make_projector(config));
+    const auto diagnostics = target_filter.apply_towards(
+        target_state, stable_target);
+    const auto target_boundary =
+        target_filter.correction_boundary_velocity();
+
+    assert_true(diagnostics.unstable_coordinate_norm_after < 1e-12);
+    for (std::size_t index = 0; index < state.size(); ++index) {
+        assert_float_equal(target_state[index], linear_state[index], 1e-12);
+    }
+    for (std::size_t index = 0;
+         index < linear_boundary.radial.size(); ++index) {
+        assert_float_equal(
+            target_boundary.radial[index], linear_boundary.radial[index],
+            1e-12);
+        assert_float_equal(
+            target_boundary.axial[index], linear_boundary.axial[index],
+            1e-12);
+        assert_float_equal(
+            target_boundary.azimuthal[index],
+            linear_boundary.azimuthal[index], 1e-12);
+    }
+}
+
 void test_auxiliary_interface_must_be_grid_aligned(void**) {
     Config config = make_config(2.01);
     auto projector = make_projector(make_config());
@@ -253,6 +308,7 @@ int main() {
     const CMUnitTest tests[] = {
         cmocka_unit_test(test_biorthogonal_auxiliary_correction),
         cmocka_unit_test(test_supported_correction_can_target_nonzero_coordinates),
+        cmocka_unit_test(test_zero_order_nonlinear_target_matches_linear_correction),
         cmocka_unit_test(test_auxiliary_interface_must_be_grid_aligned)
     };
     return cmocka_run_group_tests(tests, nullptr, nullptr);

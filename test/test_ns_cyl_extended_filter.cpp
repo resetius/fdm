@@ -1,10 +1,12 @@
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -14,6 +16,8 @@
 #include "ns_cyl.h"
 #include "ns_cyl_checkpoint_storage.h"
 #include "ns_cyl_extended_filter.h"
+#include "ns_cyl_nonlinear_gluing.h"
+#include "ns_cyl_spectral_filter.h"
 #include "ns_cyl_spectral_storage.h"
 #include "ns_cyl_state.h"
 
@@ -131,6 +135,18 @@ void validate_domains(const Task& original,
         throw std::runtime_error(
             "Omega and G must use the same radial mesh spacing");
     }
+}
+
+fdm::NSCylSpectralModeSet<T> select_control_modes(
+    const fdm::NSCylSpectralModeSet<T>& source, double minimum_growth) {
+    fdm::NSCylSpectralModeSet<T> result;
+    for (const auto& mode : source.modes()) {
+        if (mode.growth_rate >= minimum_growth) {
+            result.append_filterable_mode(mode);
+        }
+    }
+    result.sort_by_block_and_growth();
+    return result;
 }
 
 int state_index(const Layout& layout, Component component,
@@ -255,6 +271,44 @@ TraceNorm boundary_trace_norm(
     return result;
 }
 
+fdm::NSCylOuterBoundaryVelocity<T> boundary_trace_difference(
+    const std::vector<T>& controlled,
+    const std::vector<T>& uncontrolled,
+    const ExtendedFilter::Geometry& geometry, int original_nr) {
+    if (controlled.size() != uncontrolled.size()) {
+        throw std::invalid_argument(
+            "extended trace states have different sizes");
+    }
+    const Layout layout(geometry.nr, geometry.nz, geometry.nphi);
+    fdm::NSCylOuterBoundaryVelocity<T> result;
+    result.nphi = geometry.nphi;
+    result.nz = geometry.nz;
+    const std::size_t plane_size =
+        static_cast<std::size_t>(geometry.nphi)*geometry.nz;
+    result.radial.resize(plane_size);
+    result.axial.resize(plane_size);
+    result.azimuthal.resize(plane_size);
+    for (int i = 0; i < geometry.nphi; ++i) {
+        for (int k = 0; k < geometry.nz; ++k) {
+            const std::size_t plane =
+                static_cast<std::size_t>(i)*geometry.nz+k;
+            auto difference = [&](Component component, int j) {
+                const int index = state_index(
+                    layout, component, i, k, j);
+                return controlled[index]-uncontrolled[index];
+            };
+            result.radial[plane] = difference(Component::u, original_nr);
+            result.axial[plane] = T(0.5)*(
+                difference(Component::v, original_nr)
+                +difference(Component::v, original_nr+1));
+            result.azimuthal[plane] = T(0.5)*(
+                difference(Component::w, original_nr)
+                +difference(Component::w, original_nr+1));
+        }
+    }
+    return result;
+}
+
 void write_evolution_row(
     std::ofstream& output, const char* branch, int step, double time,
     bool filter_applied,
@@ -355,8 +409,131 @@ struct BoundaryEvolutionResult {
     std::vector<T> controlled;
 };
 
+class ExtendedNonlinearMethod {
+public:
+    using value_type = T;
+
+    ExtendedNonlinearMethod(
+        const Config& config, const std::vector<T>& reference,
+        fdm::NSCylSpectralFilter<T>& filter,
+        std::vector<std::vector<std::complex<T>>> multipliers,
+        int map_steps, double power)
+        : reference_(reference)
+        , filter_(filter)
+        , multipliers_(std::move(multipliers))
+        , map_steps_(map_steps)
+        , power_(power)
+        , geometry_(config)
+        , layout_(geometry_)
+        , stepper_(config, reference) {
+        if (map_steps_ <= 0 || !(power_ > 0)) {
+            throw std::invalid_argument(
+                "invalid extended nonlinear map parameters");
+        }
+    }
+
+    std::vector<T> zero() const {
+        return std::vector<T>(layout_.state_size, T(0));
+    }
+
+    std::vector<T> S(const std::vector<T>& perturbation) {
+        std::vector<T> result = perturbation;
+        for (int step = 0; step < map_steps_; ++step) {
+            stepper_.step(result);
+        }
+        ++applications_;
+        return result;
+    }
+
+    std::vector<T> Pminus(const std::vector<T>& perturbation) {
+        auto state = make_state(perturbation);
+        filter_.remove_packed(geometry_, state, reference_);
+        return make_perturbation(state);
+    }
+
+    std::vector<T> Pplus(const std::vector<T>& perturbation) {
+        auto stable = Pminus(perturbation);
+        for (std::size_t index = 0; index < stable.size(); ++index) {
+            stable[index] = perturbation[index]-stable[index];
+        }
+        return stable;
+    }
+
+    std::vector<T> PplusLinv(const std::vector<T>& perturbation) {
+        auto state = make_state(perturbation);
+        filter_.scale_unstable_packed(
+            geometry_, state, reference_,
+            [&](std::size_t block, std::vector<T>& coordinates) {
+                divide(multipliers_.at(block), coordinates);
+            });
+        return make_perturbation(state);
+    }
+
+    double velocity_norm(const std::vector<T>& perturbation) const {
+        return layout_.velocity_norm(geometry_, perturbation.data());
+    }
+
+    long long applications() const { return applications_; }
+
+private:
+    std::vector<T> make_state(const std::vector<T>& perturbation) const {
+        if (static_cast<int>(perturbation.size()) != layout_.state_size) {
+            throw std::invalid_argument(
+                "extended nonlinear perturbation has the wrong size");
+        }
+        std::vector<T> result(perturbation.size());
+        for (std::size_t index = 0; index < result.size(); ++index) {
+            result[index] = reference_[index]+perturbation[index];
+        }
+        return result;
+    }
+
+    std::vector<T> make_perturbation(const std::vector<T>& state) const {
+        std::vector<T> result(state.size());
+        for (std::size_t index = 0; index < result.size(); ++index) {
+            result[index] = state[index]-reference_[index];
+        }
+        return result;
+    }
+
+    void divide(const std::vector<std::complex<T>>& multipliers,
+                std::vector<T>& coordinates) const {
+        for (std::size_t index = 0; index < coordinates.size();) {
+            const std::complex<double> multiplier = std::pow(
+                std::complex<double>(multipliers[index].real(),
+                                     multipliers[index].imag()),
+                power_);
+            if (index+1 < coordinates.size()
+                && multipliers[index].imag() != T(0)
+                && multipliers[index+1] == multipliers[index]) {
+                const std::complex<double> value(
+                    coordinates[index], coordinates[index+1]);
+                const auto scaled = value/std::conj(multiplier);
+                coordinates[index] = static_cast<T>(scaled.real());
+                coordinates[index+1] = static_cast<T>(scaled.imag());
+                index += 2;
+            } else {
+                coordinates[index] = static_cast<T>(
+                    coordinates[index]/multiplier.real());
+                ++index;
+            }
+        }
+    }
+
+    const std::vector<T>& reference_;
+    fdm::NSCylSpectralFilter<T>& filter_;
+    std::vector<std::vector<std::complex<T>>> multipliers_;
+    int map_steps_;
+    double power_;
+    Task geometry_;
+    Layout layout_;
+    ExtendedPerturbationStepper stepper_;
+    long long applications_ = 0;
+};
+
 BoundaryEvolutionResult run_boundary_evolution(
     const Config& original_config, ExtendedFilter& filter,
+    ExtendedNonlinearMethod* nonlinear_method, int nonlinear_iterations,
     const std::vector<T>& reference, const std::vector<T>& initial,
     int initial_time_index, int steps, int log_interval,
     int feedback_interval, double maximum_velocity_norm,
@@ -378,18 +555,65 @@ BoundaryEvolutionResult run_boundary_evolution(
             "cannot create boundary evolution CSV: "+output_name);
     }
     output << "branch,step,time,feedback_applied,coordinate_norm,"
-              "velocity_norm,maximum_divergence,boundary_rms,boundary_maximum,"
-              "supported_correction_norm\n";
+              "target_coordinate_norm,response_residual_norm,velocity_norm,"
+              "maximum_divergence,boundary_rms,boundary_maximum,"
+              "supported_correction_norm,gluing_correction_velocity_norm,"
+              "nonlinear_S_applications\n";
     output << std::scientific << std::setprecision(16);
 
     fdm::NSCylOuterBoundaryVelocity<T> control;
     fdm::NSCylExtendedFilterDiagnostics controlled_modal;
+    double target_coordinate_norm = 0;
+    double response_residual_norm = 0;
+    double supported_correction_norm = 0;
+    double gluing_correction_velocity_norm = 0;
+    std::unique_ptr<fdm::NSCylNonlinearGluing<ExtendedNonlinearMethod>> glue;
+    if (nonlinear_method != nullptr) {
+        if (nonlinear_iterations < 0) {
+            throw std::invalid_argument(
+                "boundary nonlinear iterations must be nonnegative");
+        }
+        glue = std::make_unique<
+            fdm::NSCylNonlinearGluing<ExtendedNonlinearMethod>>(
+                *nonlinear_method);
+    }
     for (int step = 0; step <= steps; ++step) {
         const bool feedback = step%feedback_interval == 0;
         if (feedback) {
             auto q = perturbation(controlled, layout, reference);
             auto extended = filter.embed_original_perturbation(q);
-            controlled_modal = filter.apply(extended);
+            if (nonlinear_method == nullptr) {
+                controlled_modal = filter.apply(extended);
+                target_coordinate_norm = 0;
+                response_residual_norm =
+                    controlled_modal.unstable_coordinate_norm_after;
+                gluing_correction_velocity_norm = 0;
+            } else {
+                auto diagnostic = extended;
+                controlled_modal = filter.apply(diagnostic);
+                const auto stable = nonlinear_method->Pminus(extended);
+                glue->clear();
+                const auto nonlinear = (*glue)(
+                    stable, nonlinear_iterations);
+                std::vector<T> target(stable.size());
+                for (std::size_t index = 0; index < target.size(); ++index) {
+                    target[index] = stable[index]+nonlinear[index];
+                }
+                auto target_diagnostic = target;
+                target_coordinate_norm = filter.apply(
+                    target_diagnostic).unstable_coordinate_norm_before;
+                gluing_correction_velocity_norm =
+                    nonlinear_method->velocity_norm(nonlinear);
+                const auto response = filter.apply_towards(extended, target);
+                response_residual_norm =
+                    response.unstable_coordinate_norm_after;
+                supported_correction_norm =
+                    response.correction_velocity_norm;
+            }
+            if (nonlinear_method == nullptr) {
+                supported_correction_norm =
+                    controlled_modal.correction_velocity_norm;
+            }
             control = filter.correction_boundary_velocity();
             controlled.set_outer_boundary_velocity(
                 control.radial, control.axial, control.azimuthal);
@@ -409,10 +633,11 @@ BoundaryEvolutionResult run_boundary_evolution(
                    << (initial_time_index+step)*filter.geometry().dt
                    << ",0,"
                    << uncontrolled_modal.unstable_coordinate_norm_before
+                   << ",0,0"
                    << ',' << layout.velocity_norm(
                        uncontrolled, q_uncontrolled.data())
                    << ',' << maximum_divergence(uncontrolled)
-                   << ",0,0,0\n";
+                   << ",0,0,0,0,0\n";
 
             auto q_controlled = perturbation(controlled, layout, reference);
             if (!feedback) {
@@ -424,10 +649,15 @@ BoundaryEvolutionResult run_boundary_evolution(
                    << (initial_time_index+step)*filter.geometry().dt << ','
                    << (feedback ? 1 : 0) << ','
                    << controlled_modal.unstable_coordinate_norm_before << ','
+                   << target_coordinate_norm << ','
+                   << response_residual_norm << ','
                    << layout.velocity_norm(controlled, q_controlled.data())
                    << ',' << maximum_divergence(controlled) << ','
                    << control.rms_norm() << ',' << control.maximum_norm()
-                   << ',' << controlled_modal.correction_velocity_norm
+                   << ',' << supported_correction_norm << ','
+                   << gluing_correction_velocity_norm << ','
+                   << (nonlinear_method == nullptr
+                           ? 0 : nonlinear_method->applications())
                    << '\n';
 
             const double unorm = layout.velocity_norm(
@@ -450,6 +680,191 @@ BoundaryEvolutionResult run_boundary_evolution(
     }
 
     return {layout.pack(uncontrolled), layout.pack(controlled)};
+}
+
+BoundaryEvolutionResult run_extended_trace_evolution(
+    const Config& original_config, const Config& extended_config,
+    ExtendedFilter& filter, ExtendedNonlinearMethod* nonlinear_method,
+    int nonlinear_iterations, const std::vector<T>& extended_reference,
+    const std::vector<T>& original_reference,
+    const std::vector<T>& initial, int initial_time_index, int steps,
+    int log_interval, int reorthogonalization_interval,
+    double maximum_velocity_norm, const std::string& output_name) {
+    if (steps < 0 || log_interval <= 0
+        || reorthogonalization_interval <= 0
+        || !(maximum_velocity_norm > 0) || output_name.empty()) {
+        throw std::invalid_argument(
+            "invalid extended trace evolution settings");
+    }
+
+    Task original_uncontrolled(original_config);
+    Task original_controlled(original_config);
+    const Layout original_layout(original_uncontrolled);
+    original_layout.unpack_sum(
+        original_uncontrolled, original_reference, initial.data());
+    original_layout.unpack_sum(
+        original_controlled, original_reference, initial.data());
+
+    std::vector<T> extended_uncontrolled =
+        filter.embed_original_perturbation(initial);
+    std::vector<T> extended_controlled = extended_uncontrolled;
+    ExtendedPerturbationStepper extended_stepper(
+        extended_config, extended_reference);
+    const Layout extended_layout(
+        filter.geometry().nr, filter.geometry().nz,
+        filter.geometry().nphi);
+
+    std::ofstream output(output_name);
+    if (!output) {
+        throw std::runtime_error(
+            "cannot create extended trace evolution CSV: "+output_name);
+    }
+    output << "branch,step,time,filter_applied,coordinate_norm,velocity_norm,"
+              "maximum_divergence,boundary_rms,boundary_maximum,"
+              "extended_coordinate_norm,extended_delta_velocity_norm,"
+              "extended_delta_Omega_velocity_norm,target_coordinate_norm,"
+              "response_residual_norm,gluing_correction_velocity_norm,"
+              "nonlinear_S_applications\n";
+    output << std::scientific << std::setprecision(16);
+
+    std::unique_ptr<fdm::NSCylNonlinearGluing<ExtendedNonlinearMethod>> glue;
+    if (nonlinear_method != nullptr) {
+        if (nonlinear_iterations < 0) {
+            throw std::invalid_argument(
+                "extended trace nonlinear iterations must be nonnegative");
+        }
+        glue = std::make_unique<
+            fdm::NSCylNonlinearGluing<ExtendedNonlinearMethod>>(
+                *nonlinear_method);
+    }
+
+    double target_coordinate_norm = 0;
+    double response_residual_norm = 0;
+    double gluing_correction_velocity_norm = 0;
+    for (int step = 0; step <= steps; ++step) {
+        const bool apply = step%reorthogonalization_interval == 0;
+        if (apply) {
+            if (nonlinear_method == nullptr) {
+                const auto response = filter.apply(extended_controlled);
+                target_coordinate_norm = 0;
+                response_residual_norm =
+                    response.unstable_coordinate_norm_after;
+                gluing_correction_velocity_norm = 0;
+            } else {
+                const auto stable =
+                    nonlinear_method->Pminus(extended_controlled);
+                glue->clear();
+                const auto nonlinear = (*glue)(
+                    stable, nonlinear_iterations);
+                std::vector<T> target(stable.size());
+                for (std::size_t index = 0; index < target.size(); ++index) {
+                    target[index] = stable[index]+nonlinear[index];
+                }
+                auto target_diagnostic = target;
+                target_coordinate_norm = filter.apply(
+                    target_diagnostic).unstable_coordinate_norm_before;
+                gluing_correction_velocity_norm =
+                    nonlinear_method->velocity_norm(nonlinear);
+                const auto response = filter.apply_towards(
+                    extended_controlled, target);
+                response_residual_norm =
+                    response.unstable_coordinate_norm_after;
+            }
+        }
+
+        const auto control = boundary_trace_difference(
+            extended_controlled, extended_uncontrolled,
+            filter.geometry(), filter.original_nr());
+        original_controlled.set_outer_boundary_velocity(
+            control.radial, control.axial, control.azimuthal);
+        original_controlled.apply_boundary_conditions();
+
+        const bool log = step == 0 || step == steps
+            || step%log_interval == 0 || apply;
+        if (log) {
+            const auto q_uncontrolled = perturbation(
+                original_uncontrolled, original_layout,
+                original_reference);
+            const auto q_controlled = perturbation(
+                original_controlled, original_layout, original_reference);
+            auto embedded_uncontrolled =
+                filter.embed_original_perturbation(q_uncontrolled);
+            auto embedded_controlled =
+                filter.embed_original_perturbation(q_controlled);
+            const auto uncontrolled_modal = filter.apply(
+                embedded_uncontrolled);
+            const auto controlled_modal = filter.apply(
+                embedded_controlled);
+            auto extended_diagnostic = extended_controlled;
+            const auto extended_modal = filter.apply(
+                extended_diagnostic);
+
+            std::vector<T> extended_delta(extended_controlled.size());
+            for (std::size_t index = 0;
+                 index < extended_delta.size(); ++index) {
+                extended_delta[index] = extended_controlled[index]
+                    -extended_uncontrolled[index];
+            }
+            const double extended_delta_norm = extended_layout.velocity_norm(
+                filter.geometry(), extended_delta.data());
+            const double extended_delta_omega_norm =
+                original_domain_velocity_norm(
+                    extended_delta, filter.geometry(),
+                    filter.original_nr());
+
+            auto write = [&](const char* branch,
+                             bool controlled_branch,
+                             const fdm::NSCylExtendedFilterDiagnostics& modal,
+                             const std::vector<T>& q, Task& task) {
+                output << branch << ',' << step << ','
+                       << (initial_time_index+step)*filter.geometry().dt
+                       << ',' << (controlled_branch && apply ? 1 : 0) << ','
+                       << modal.unstable_coordinate_norm_before << ','
+                       << original_layout.velocity_norm(task, q.data())
+                       << ',' << maximum_divergence(task) << ','
+                       << control.rms_norm() << ','
+                       << control.maximum_norm() << ','
+                       << extended_modal.unstable_coordinate_norm_before
+                       << ',' << extended_delta_norm << ','
+                       << extended_delta_omega_norm << ','
+                       << target_coordinate_norm << ','
+                       << response_residual_norm << ','
+                       << gluing_correction_velocity_norm << ','
+                       << (nonlinear_method == nullptr
+                               ? 0 : nonlinear_method->applications())
+                       << '\n';
+            };
+            write("uncontrolled", false, uncontrolled_modal, q_uncontrolled,
+                  original_uncontrolled);
+            write("boundary", true, controlled_modal, q_controlled,
+                  original_controlled);
+
+            const double uncontrolled_norm = original_layout.velocity_norm(
+                original_uncontrolled, q_uncontrolled.data());
+            const double controlled_norm = original_layout.velocity_norm(
+                original_controlled, q_controlled.data());
+            if (!std::isfinite(uncontrolled_norm)
+                || !std::isfinite(controlled_norm)
+                || !std::isfinite(extended_delta_norm)
+                || uncontrolled_norm > maximum_velocity_norm
+                || controlled_norm > maximum_velocity_norm
+                || extended_delta_norm > maximum_velocity_norm) {
+                throw std::runtime_error(
+                    "extended trace evolution exceeded the velocity norm "
+                    "limit at step "+std::to_string(step));
+            }
+        }
+
+        if (step != steps) {
+            original_uncontrolled.step();
+            original_controlled.step();
+            extended_stepper.step(extended_uncontrolled);
+            extended_stepper.step(extended_controlled);
+        }
+    }
+
+    return {original_layout.pack(original_uncontrolled),
+            original_layout.pack(original_controlled)};
 }
 
 struct EvolutionResult {
@@ -549,6 +964,8 @@ int run(const Config& config) {
         "extended", "trace_output", std::string());
     const double response_condition_limit = config.get(
         "extended", "response_condition_limit", 1e12);
+    const double control_growth_min = config.get(
+        "extended", "control_growth_min", 0.0);
     const double coordinate_tolerance = config.get(
         "extended", "coordinate_tolerance", 1e-10);
     const double preservation_tolerance = config.get(
@@ -571,10 +988,16 @@ int run(const Config& config) {
         "extended", "evolution_checkpoint_output", std::string());
     const int boundary_evolution_steps = config.get(
         "extended", "boundary_evolution_steps", 0);
+    const std::string boundary_mode = config.get(
+        "extended", "boundary_mode", std::string("feedback"));
     const int boundary_log_interval = config.get(
         "extended", "boundary_log_interval", 100);
     const int boundary_feedback_interval = config.get(
         "extended", "boundary_feedback_interval", 250);
+    const int boundary_nonlinear_iterations = config.get(
+        "extended", "boundary_nonlinear_iterations", -1);
+    const int boundary_nonlinear_map_steps = config.get(
+        "extended", "boundary_nonlinear_map_steps", 20000);
     const std::string boundary_evolution_output = config.get(
         "extended", "boundary_evolution_output", std::string());
     const std::string boundary_checkpoint_output = config.get(
@@ -622,8 +1045,12 @@ int run(const Config& config) {
     fdm::NSCylSpectralStorage(spectrum_input).load(
         modes, spectral_metadata);
     validate_domains(original_task, spectral_metadata);
+    const std::size_t available_mode_count = modes.size();
+    const int available_real_dimension = modes.real_dimension();
+    modes = select_control_modes(modes, control_growth_min);
     if (modes.empty()) {
-        throw std::runtime_error("extended spectrum has no unstable modes");
+        throw std::runtime_error(
+            "extended control growth threshold selected no modes");
     }
 
     Config extended_config = make_extended_config(
@@ -653,6 +1080,27 @@ int run(const Config& config) {
     extended_layout.initialize_couette_state(
         extended_task, spectral_metadata.base_outer_radius);
     auto extended_reference = extended_layout.pack(extended_task);
+    std::unique_ptr<fdm::NSCylSpectralFilter<T>> nonlinear_filter;
+    std::unique_ptr<ExtendedNonlinearMethod> nonlinear_method;
+    if (boundary_evolution_steps > 0
+        && boundary_nonlinear_iterations >= 0) {
+        if (boundary_nonlinear_map_steps <= 0
+            || spectral_metadata.operator_steps <= 0) {
+            throw std::invalid_argument(
+                "extended boundary nonlinear map steps must be positive");
+        }
+        nonlinear_filter = std::make_unique<fdm::NSCylSpectralFilter<T>>(
+            spectral_metadata.nr, spectral_metadata.nphi,
+            spectral_metadata.nz,
+            fdm::NSCylSpectralProjector<T>(
+                modes, spectral_metadata.condition_limit));
+        nonlinear_method = std::make_unique<ExtendedNonlinearMethod>(
+            extended_config, extended_reference, *nonlinear_filter,
+            fdm::ns_cyl_block_multipliers(modes),
+            boundary_nonlinear_map_steps,
+            static_cast<double>(boundary_nonlinear_map_steps)
+                /spectral_metadata.operator_steps);
+    }
     std::vector<T> extended_state(extended_layout.state_size);
     for (int index = 0; index < extended_layout.state_size; ++index) {
         extended_state[index] =
@@ -707,11 +1155,28 @@ int run(const Config& config) {
                 "extended boundary_evolution_output is required when "
                 "boundary_evolution_steps is positive");
         }
-        auto boundary = run_boundary_evolution(
-            config, filter, reference, original_perturbation,
-            checkpoint_metadata.time_index, boundary_evolution_steps,
-            boundary_log_interval, boundary_feedback_interval,
-            maximum_velocity_norm, boundary_evolution_output);
+        BoundaryEvolutionResult boundary;
+        if (boundary_mode == "feedback") {
+            boundary = run_boundary_evolution(
+                config, filter, nonlinear_method.get(),
+                boundary_nonlinear_iterations, reference,
+                original_perturbation, checkpoint_metadata.time_index,
+                boundary_evolution_steps, boundary_log_interval,
+                boundary_feedback_interval, maximum_velocity_norm,
+                boundary_evolution_output);
+        } else if (boundary_mode == "extended_trace") {
+            boundary = run_extended_trace_evolution(
+                config, extended_config, filter, nonlinear_method.get(),
+                boundary_nonlinear_iterations, extended_reference,
+                reference, original_perturbation,
+                checkpoint_metadata.time_index, boundary_evolution_steps,
+                boundary_log_interval, boundary_feedback_interval,
+                maximum_velocity_norm, boundary_evolution_output);
+        } else {
+            throw std::invalid_argument(
+                "extended boundary_mode must be 'feedback' or "
+                "'extended_trace'");
+        }
         if (!boundary_checkpoint_output.empty()) {
             original_layout.normalize_packed_pressure(
                 original_task, boundary.controlled.data());
@@ -721,9 +1186,14 @@ int run(const Config& config) {
             fdm::NSCylCheckpointStorage(boundary_checkpoint_output).save(
                 boundary.controlled, metadata);
         }
-        std::printf("boundary evolution: steps=%d feedback_interval=%d "
+        std::printf("boundary evolution: mode=%s steps=%d "
+                    "feedback_interval=%d "
+                    "nonlinear_iterations=%d nonlinear_map_steps=%d "
                     "csv=%s\n",
-                    boundary_evolution_steps, boundary_feedback_interval,
+                    boundary_mode.c_str(), boundary_evolution_steps,
+                    boundary_feedback_interval,
+                    boundary_nonlinear_iterations,
+                    boundary_nonlinear_map_steps,
                     boundary_evolution_output.c_str());
     }
 
@@ -738,6 +1208,10 @@ int run(const Config& config) {
     std::printf("spectrum: groups=%zu blocks=%zu real_dimension=%d\n",
                 modes.size(), diagnostics.blocks.size(),
                 modes.real_dimension());
+    std::printf("control selection: growth>=%.9e, available groups=%zu "
+                "real_dimension=%d\n",
+                control_growth_min, available_mode_count,
+                available_real_dimension);
     std::printf("initial perturbation scale: %.9e\n",
                 initial_perturbation_scale);
     std::printf("coordinates: before=%.9e after=%.9e ratio=%.9e\n",
