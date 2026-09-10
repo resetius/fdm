@@ -18,7 +18,7 @@
 namespace fdm {
 namespace {
 
-constexpr int schema_version = 1;
+constexpr int schema_version = 2;
 
 void nc_check(int code, const std::string& operation) {
     if (code != NC_NOERR) {
@@ -115,6 +115,7 @@ void write_metadata(int ncid, const NSCylSpectralMetadata& metadata,
     put_text_attribute(ncid, "fourier_layout", metadata.fourier_layout);
     put_text_attribute(ncid, "state_layout", metadata.state_layout);
     put_text_attribute(ncid, "pressure_gauge", metadata.pressure_gauge);
+    put_text_attribute(ncid, "pressure_boundary", metadata.pressure_boundary);
     put_text_attribute(ncid, "config", metadata.config_text);
 
     put_int_attribute(ncid, "nr", metadata.nr);
@@ -163,6 +164,7 @@ NSCylSpectralMetadata read_metadata(int ncid) {
     result.fourier_layout = get_text_attribute(ncid, "fourier_layout");
     result.state_layout = get_text_attribute(ncid, "state_layout");
     result.pressure_gauge = get_text_attribute(ncid, "pressure_gauge");
+    result.pressure_boundary = get_text_attribute(ncid, "pressure_boundary");
     result.config_text = get_text_attribute(ncid, "config");
 
     result.nr = get_int_attribute(ncid, "nr");
@@ -210,7 +212,7 @@ void validate_metadata(const NSCylSpectralMetadata& metadata,
             +std::to_string(metadata.schema_version));
     }
     if (metadata.operator_name != "NSCyl::L_step"
-        || metadata.operator_version != 1) {
+        || metadata.operator_version != 2) {
         throw std::runtime_error("incompatible NSCyl spectral operator");
     }
     if (metadata.scalar_type != scalar_type) {
@@ -223,7 +225,9 @@ void validate_metadata(const NSCylSpectralMetadata& metadata,
         || metadata.state_layout
             != "staggered_radial_component_major_u_v_w_p_v1"
         || metadata.pressure_gauge
-            != "weighted_radial_zero_mean_last_pressure_dependent_v1") {
+            != "weighted_radial_zero_mean_last_pressure_dependent_v1"
+        || metadata.pressure_boundary
+            != "radial_same_time_neumann_v1") {
         throw std::runtime_error("incompatible NSCyl spectral layout");
     }
     if (metadata.nr <= 0 || metadata.nphi <= 0 || metadata.nz <= 0
@@ -295,6 +299,8 @@ void validate_compatibility(const NSCylSpectralMetadata& actual,
                   expected.state_layout);
     require_equal("pressure_gauge", actual.pressure_gauge,
                   expected.pressure_gauge);
+    require_equal("pressure_boundary", actual.pressure_boundary,
+                  expected.pressure_boundary);
     require_equal("nr", actual.nr, expected.nr);
     require_equal("nphi", actual.nphi, expected.nphi);
     require_equal("nz", actual.nz, expected.nz);

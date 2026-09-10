@@ -12,14 +12,15 @@
 namespace fdm {
 
 struct NSCylCheckpointMetadata {
-    int schema_version = 1;
+    int schema_version = 2;
     std::string format_name = "NSCyl nonlinear checkpoint";
-    int step_operator_version = 1;
+    int step_operator_version = 2;
     std::string scalar_type;
     std::string axial_boundary = "periodic";
     std::string state_layout =
         "staggered_component_major_u_v_w_p_v1";
     std::string pressure_gauge = "weighted_volume_zero_mean_v1";
+    std::string pressure_boundary = "radial_same_time_neumann_v1";
     std::string config_text;
 
     int nr = 0;

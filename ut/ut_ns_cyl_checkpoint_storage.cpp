@@ -73,6 +73,8 @@ void assert_metadata_equal(const fdm::NSCylCheckpointMetadata& actual,
     assert_string_equal(actual.state_layout.c_str(), expected.state_layout.c_str());
     assert_string_equal(actual.pressure_gauge.c_str(),
                         expected.pressure_gauge.c_str());
+    assert_string_equal(actual.pressure_boundary.c_str(),
+                        expected.pressure_boundary.c_str());
     assert_string_equal(actual.config_text.c_str(), expected.config_text.c_str());
     assert_int_equal(actual.nr, expected.nr);
     assert_int_equal(actual.nphi, expected.nphi);

@@ -15,7 +15,7 @@
 namespace fdm {
 namespace {
 
-constexpr int checkpoint_schema_version = 1;
+constexpr int checkpoint_schema_version = 2;
 
 void nc_check(int code, const std::string& operation) {
     if (code != NC_NOERR) {
@@ -100,6 +100,7 @@ void write_metadata(int ncid, const NSCylCheckpointMetadata& metadata) {
     put_text(ncid, "axial_boundary", metadata.axial_boundary);
     put_text(ncid, "state_layout", metadata.state_layout);
     put_text(ncid, "pressure_gauge", metadata.pressure_gauge);
+    put_text(ncid, "pressure_boundary", metadata.pressure_boundary);
     put_text(ncid, "config", metadata.config_text);
 
     put_int(ncid, "nr", metadata.nr);
@@ -140,6 +141,7 @@ NSCylCheckpointMetadata read_metadata(int ncid) {
     result.axial_boundary = get_text(ncid, "axial_boundary");
     result.state_layout = get_text(ncid, "state_layout");
     result.pressure_gauge = get_text(ncid, "pressure_gauge");
+    result.pressure_boundary = get_text(ncid, "pressure_boundary");
     result.config_text = get_text(ncid, "config");
 
     result.nr = get_int(ncid, "nr");
@@ -181,7 +183,7 @@ void validate_metadata(const NSCylCheckpointMetadata& metadata,
             +std::to_string(metadata.schema_version));
     }
     if (metadata.format_name != "NSCyl nonlinear checkpoint"
-        || metadata.step_operator_version != 1) {
+        || metadata.step_operator_version != 2) {
         throw std::runtime_error("incompatible NSCyl checkpoint operator");
     }
     if (metadata.scalar_type != scalar_type) {
@@ -192,7 +194,9 @@ void validate_metadata(const NSCylCheckpointMetadata& metadata,
     if (metadata.axial_boundary != "periodic"
         || metadata.state_layout
             != "staggered_component_major_u_v_w_p_v1"
-        || metadata.pressure_gauge != "weighted_volume_zero_mean_v1") {
+        || metadata.pressure_gauge != "weighted_volume_zero_mean_v1"
+        || metadata.pressure_boundary
+            != "radial_same_time_neumann_v1") {
         throw std::runtime_error("incompatible NSCyl checkpoint layout");
     }
     if (metadata.nr < 2 || metadata.nphi <= 0 || metadata.nz <= 0
@@ -254,6 +258,8 @@ void validate_compatibility(const NSCylCheckpointMetadata& actual,
     require_equal("state_layout", actual.state_layout, expected.state_layout);
     require_equal("pressure_gauge", actual.pressure_gauge,
                   expected.pressure_gauge);
+    require_equal("pressure_boundary", actual.pressure_boundary,
+                  expected.pressure_boundary);
     require_equal("nr", actual.nr, expected.nr);
     require_equal("nphi", actual.nphi, expected.nphi);
     require_equal("nz", actual.nz, expected.nz);

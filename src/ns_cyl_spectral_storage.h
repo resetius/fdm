@@ -12,15 +12,16 @@
 namespace fdm {
 
 struct NSCylSpectralMetadata {
-    int schema_version = 1;
+    int schema_version = 2;
     std::string operator_name = "NSCyl::L_step";
-    int operator_version = 1;
+    int operator_version = 2;
     std::string scalar_type;
     std::string fourier_layout = "samarskii_nikolaev_real_packed_v1";
     std::string state_layout =
         "staggered_radial_component_major_u_v_w_p_v1";
     std::string pressure_gauge =
         "weighted_radial_zero_mean_last_pressure_dependent_v1";
+    std::string pressure_boundary = "radial_same_time_neumann_v1";
     std::string config_text;
 
     int nr = 0;

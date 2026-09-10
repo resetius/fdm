@@ -127,6 +127,8 @@ void assert_metadata_equal(const fdm::NSCylSpectralMetadata& actual,
                         expected.state_layout.c_str());
     assert_string_equal(actual.pressure_gauge.c_str(),
                         expected.pressure_gauge.c_str());
+    assert_string_equal(actual.pressure_boundary.c_str(),
+                        expected.pressure_boundary.c_str());
     assert_string_equal(actual.config_text.c_str(), expected.config_text.c_str());
     assert_int_equal(actual.nr, expected.nr);
     assert_int_equal(actual.nphi, expected.nphi);
@@ -245,6 +247,9 @@ void test_rejects_incompatible_metadata(void**) {
     rejects(expected);
     expected = metadata;
     expected.state_layout += "_incompatible";
+    rejects(expected);
+    expected = metadata;
+    expected.pressure_boundary += "_incompatible";
     rejects(expected);
 }
 
