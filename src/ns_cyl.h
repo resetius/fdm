@@ -151,6 +151,8 @@ public:
         outer_boundary_step_data_enabled_ = false;
         outer_radial_predictor_.clear();
         outer_radial_velocity_next_.clear();
+        outer_axial_velocity_next_.clear();
+        outer_azimuthal_velocity_next_.clear();
     }
 
     void set_outer_boundary_velocity(
@@ -187,6 +189,34 @@ public:
         outer_azimuthal_velocity_ = azimuthal;
         outer_radial_predictor_ = radial_predictor;
         outer_radial_velocity_next_ = radial_next;
+        outer_axial_velocity_next_.clear();
+        outer_azimuthal_velocity_next_.clear();
+        outer_boundary_velocity_enabled_ = true;
+        outer_boundary_step_data_enabled_ = true;
+    }
+
+    // Prescribe a time-dependent physical wall over one complete step.  F at
+    // the wall is evaluated by this domain's momentum stencil; radial_next
+    // supplies the new-time normal flux required by the pressure Neumann
+    // condition.  All three next values become the persistent wall velocity
+    // after the step.
+    void set_outer_boundary_step_data(
+        const std::vector<T>& radial,
+        const std::vector<T>& axial,
+        const std::vector<T>& azimuthal,
+        const std::vector<T>& radial_next,
+        const std::vector<T>& axial_next,
+        const std::vector<T>& azimuthal_next) {
+        validate_outer_boundary_plane(radial, axial, azimuthal);
+        validate_outer_boundary_plane(
+            radial_next, axial_next, azimuthal_next);
+        outer_radial_velocity_ = radial;
+        outer_axial_velocity_ = axial;
+        outer_azimuthal_velocity_ = azimuthal;
+        outer_radial_predictor_.clear();
+        outer_radial_velocity_next_ = radial_next;
+        outer_axial_velocity_next_ = axial_next;
+        outer_azimuthal_velocity_next_ = azimuthal_next;
         outer_boundary_velocity_enabled_ = true;
         outer_boundary_step_data_enabled_ = true;
     }
@@ -199,6 +229,8 @@ public:
         outer_boundary_step_data_enabled_ = false;
         outer_radial_predictor_.clear();
         outer_radial_velocity_next_.clear();
+        outer_axial_velocity_next_.clear();
+        outer_azimuthal_velocity_next_.clear();
     }
 
     bool has_outer_boundary_velocity() const {
@@ -213,6 +245,8 @@ private:
     std::vector<T> outer_azimuthal_velocity_;
     std::vector<T> outer_radial_predictor_;
     std::vector<T> outer_radial_velocity_next_;
+    std::vector<T> outer_axial_velocity_next_;
+    std::vector<T> outer_azimuthal_velocity_next_;
 
     void validate_outer_boundary_plane(
         const std::vector<T>& radial,

@@ -856,10 +856,18 @@ BoundaryEvolutionResult run_extended_trace_evolution(
         }
 
         if (step != steps) {
-            original_uncontrolled.step();
-            original_controlled.step();
             extended_stepper.step(extended_uncontrolled);
             extended_stepper.step(extended_controlled);
+            const auto next_control = boundary_trace_difference(
+                extended_controlled, extended_uncontrolled,
+                filter.geometry(), filter.original_nr());
+
+            original_uncontrolled.step();
+            original_controlled.set_outer_boundary_step_data(
+                control.radial, control.axial, control.azimuthal,
+                next_control.radial, next_control.axial,
+                next_control.azimuthal);
+            original_controlled.step();
         }
     }
 

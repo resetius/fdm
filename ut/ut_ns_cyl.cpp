@@ -642,6 +642,64 @@ void test_periodic_outer_boundary_velocity(void**) {
     }
 }
 
+void test_periodic_time_dependent_outer_boundary_velocity(void**) {
+    using Task = NSCyl<double, true, tensor_flag::periodic>;
+    Config config = make_config(8, 8, 8, false, 1.0, 10.0, 1e-4);
+    Task ns(config);
+    fill_smooth_state(ns);
+
+    const std::size_t plane_size =
+        static_cast<std::size_t>(ns.nphi)*ns.nz;
+    std::vector<double> radial(plane_size);
+    std::vector<double> axial(plane_size);
+    std::vector<double> azimuthal(plane_size);
+    std::vector<double> radial_next(plane_size);
+    std::vector<double> axial_next(plane_size);
+    std::vector<double> azimuthal_next(plane_size);
+    for (int i = 0; i < ns.nphi; ++i) {
+        for (int k = 0; k < ns.nz; ++k) {
+            const std::size_t index = static_cast<std::size_t>(i)*ns.nz+k;
+            const double phi = 2*M_PI*i/ns.nphi;
+            const double z = 2*M_PI*k/ns.nz;
+            radial[index] = 0.002*std::sin(phi)*std::cos(z);
+            axial[index] = 0.003*std::cos(phi)*std::sin(z);
+            azimuthal[index] = 0.004*std::sin(2*phi)*std::cos(z);
+            radial_next[index] = 0.0015*std::cos(phi)*std::sin(z);
+            axial_next[index] = 0.0025*std::sin(phi)*std::cos(z);
+            azimuthal_next[index] = 0.0035*std::cos(2*phi)*std::sin(z);
+        }
+    }
+
+    ns.set_outer_boundary_step_data(
+        radial, axial, azimuthal,
+        radial_next, axial_next, azimuthal_next);
+    ns.step();
+    ns.apply_boundary_conditions();
+
+    double maximum_divergence = 0;
+    for (int i = 0; i < ns.nphi; ++i) {
+        for (int k = 0; k < ns.nz; ++k) {
+            const std::size_t index = static_cast<std::size_t>(i)*ns.nz+k;
+            assert_float_equal(
+                ns.u[i][k][ns.nr], radial_next[index], 1e-15);
+            assert_float_equal(
+                0.5*(ns.v[i][k][ns.nr]+ns.v[i][k][ns.nr+1]),
+                axial_next[index], 1e-15);
+            assert_float_equal(
+                0.5*(ns.w[i][k][ns.nr]+ns.w[i][k][ns.nr+1]),
+                azimuthal_next[index], 1e-15);
+            for (int j = 1; j <= ns.nr; ++j) {
+                maximum_divergence = std::max(
+                    maximum_divergence,
+                    std::abs(cell_divergence(ns, i, k, j)));
+            }
+        }
+    }
+    printf("time-dependent radial wall: max|div| = %e\n",
+           maximum_divergence);
+    assert_true(maximum_divergence < 1e-10);
+}
+
 template<typename T>
 void check_periodic_outer_interface_matches_restricted_step() {
     using Task = NSCyl<T, true, tensor_flag::periodic>;
@@ -833,6 +891,8 @@ int main() {
         cmocka_unit_test(test_nonperiodic_z_wall_divergence_matches_pressure_lag),
         cmocka_unit_test(test_periodic_z_uniform_state_stays_uniform),
         cmocka_unit_test(test_periodic_outer_boundary_velocity),
+        cmocka_unit_test(
+            test_periodic_time_dependent_outer_boundary_velocity),
         cmocka_unit_test(
             test_periodic_outer_interface_matches_restricted_step_double),
         cmocka_unit_test(

@@ -389,7 +389,8 @@ void NSCyl<T,check,zflag>::L_FGH() {
 
 template<typename T, bool check, tensor_flag zflag>
 void NSCyl<T,check,zflag>::apply_outer_boundary_step_data() {
-    if (!outer_boundary_step_data_enabled_) {
+    if (!outer_boundary_step_data_enabled_
+        || outer_radial_predictor_.empty()) {
         return;
     }
     for (int i = 0; i < nphi; ++i) {
@@ -508,8 +509,15 @@ void NSCyl<T,check,zflag>::update_uvwp() {
             }
         }
         outer_radial_velocity_.swap(outer_radial_velocity_next_);
+        if (!outer_axial_velocity_next_.empty()) {
+            outer_axial_velocity_.swap(outer_axial_velocity_next_);
+            outer_azimuthal_velocity_.swap(
+                outer_azimuthal_velocity_next_);
+        }
         outer_radial_predictor_.clear();
         outer_radial_velocity_next_.clear();
+        outer_axial_velocity_next_.clear();
+        outer_azimuthal_velocity_next_.clear();
         outer_boundary_step_data_enabled_ = false;
     }
 }
