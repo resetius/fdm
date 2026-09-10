@@ -110,7 +110,7 @@ public:
         , G_mem  (shalloc(q_, nphi_*nz_*nr_))
         , H_mem  (shalloc(q_, nphi_*nz_*nr_))
         , RHS_mem(shalloc(q_, nphi_*nz_*nr_))
-        , lapl_solver(q_, nr_, nz_, nphi_, r0_-dr/T(2), dr, dz, lz_)
+        , lapl_solver(q_, nr_, nz_, nphi_, r0_-dr/T(2), dr, dz, lz_, true)
     {
         q.memset(u_mem,   0, nphi_*nz_*(nr_+3)*sizeof(T));
         q.memset(v_mem,   0, nphi_*nz_*(nr_+2)*sizeof(T));
@@ -140,10 +140,10 @@ public:
     void step() {
         kernel_init_bound(U0);
         kernel_FGH();
-        kernel_pressure_bound();
         kernel_poisson_rhs();
         lapl_solver.solve(x_mem, RHS_mem);
         kernel_update_uvwp();
+        kernel_pressure_bound();
     }
 
     void apply_boundary_conditions() {
@@ -184,19 +184,19 @@ public:
     void L_step() {
         kernel_init_bound(T(0));
         kernel_L_FGH();
-        kernel_L_pressure_bound();
         kernel_L_poisson_rhs();
         lapl_solver.solve(x_mem, RHS_mem);
         kernel_L_update_uvwp();
+        kernel_L_pressure_bound();
     }
 
     void L_step_fourier_block(int m, int l) {
         kernel_init_bound(T(0));
         kernel_L_FGH();
-        kernel_L_pressure_bound();
         kernel_L_poisson_rhs();
         lapl_solver.solve_fourier_block(x_mem, RHS_mem, m, l);
         kernel_L_update_uvwp();
+        kernel_L_pressure_bound();
     }
 
     // Colour source written into the render buffer's 4th component.
@@ -461,26 +461,25 @@ private:
     // q=dt*p.  Keeping u and dt*F separate avoids losing the small tendency
     // before the projection takes a divergence.
     void kernel_L_pressure_bound() {
-        auto ua_=ua(), pa_=pa(), Fa_=Fa();
+        auto ua_=ua(), pa_=pa(), xa_=xa(), Fa_=Fa();
         const int nr_=nr;
         const T dt_=dt, dr_=dr;
 
         q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
             [=](sycl::id<2> id) {
                 int i=(int)id[0], k=(int)id[1];
-                pa_(i,k,0) = dt_*pa_(i,k,1)
-                    -dr_*(ua_(i,k,0)+dt_*Fa_(i,k,0));
-                pa_(i,k,nr_+1) = dt_*pa_(i,k,nr_)
-                    +dr_*(ua_(i,k,nr_)+dt_*Fa_(i,k,nr_));
+                pa_(i,k,0) = (xa_(i,k,1)
+                    -dr_*(ua_(i,k,0)+dt_*Fa_(i,k,0)))/dt_;
+                pa_(i,k,nr_+1) = (xa_(i,k,nr_)
+                    +dr_*(ua_(i,k,nr_)+dt_*Fa_(i,k,nr_)))/dt_;
             });
     }
 
     void kernel_L_poisson_rhs() {
         auto ua_=ua(), va_=va(), wa_=wa();
-        auto Fa_=Fa(), Ga_=Ga(), Ha_=Ha(), Ra_=Ra(), pa_=pa();
+        auto Fa_=Fa(), Ga_=Ga(), Ha_=Ha(), Ra_=Ra();
         const int nr_=nr;
         const T dt_=dt, r0_=r0, dr_=dr, dz_=dz, dphi_=dphi;
-        const T dr2_=dr2;
 
         q.parallel_for(sycl::range<3>(
             (size_t)nphi, (size_t)nz, (size_t)nr_),
@@ -501,12 +500,12 @@ private:
                     +dt_*tendency_divergence;
 
                 if (j == 1) {
-                    Ra_(i,k,j) -= (r-T(0.5)*dr_)/r
-                        *pa_(i,k,0)/dr2_;
+                    Ra_(i,k,j) += (r-T(0.5)*dr_)/r
+                        *(ua_(i,k,0)+dt_*Fa_(i,k,0))/dr_;
                 }
                 if (j == nr_) {
                     Ra_(i,k,j) -= (r+T(0.5)*dr_)/r
-                        *pa_(i,k,nr_+1)/dr2_;
+                        *(ua_(i,k,nr_)+dt_*Fa_(i,k,nr_))/dr_;
                 }
             });
     }
@@ -550,23 +549,19 @@ private:
             });
     }
 
-    // ── Pressure boundary values at the cylinder walls ────────────────────────
-    // The corrected radial velocity has to stay zero on both walls:
-    //   0 = F_n - dt/dr * (p_outside - p_inside),
-    // so the ghost pressure must come from the *complete* intermediate radial
-    // momentum F, which only exists after kernel_FGH().  Deriving it from a
-    // single viscous term instead drops w^2/r and breaks the Taylor--Couette
-    // radial balance.
+    // Pressure ghosts at the new time level.  During the Poisson solve the
+    // unknown adjacent pressure is part of the boundary matrix diagonal;
+    // these values are reconstructed only after the interior solution exists.
     void kernel_pressure_bound() {
-        auto pa_=pa(), Fa_=Fa();
+        auto pa_=pa(), xa_=xa(), Fa_=Fa();
         const int nr_=nr;
         const T dt_=dt, dr_=dr;
 
         q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
             [=](sycl::id<2> id) {
                 int i=(int)id[0], k=(int)id[1];
-                pa_(i,k,0) = pa_(i,k,1)-dr_*Fa_(i,k,0)/dt_;
-                pa_(i,k,nr_+1) = pa_(i,k,nr_)+dr_*Fa_(i,k,nr_)/dt_;
+                pa_(i,k,0) = xa_(i,k,1)-dr_*Fa_(i,k,0)/dt_;
+                pa_(i,k,nr_+1) = xa_(i,k,nr_)+dr_*Fa_(i,k,nr_)/dt_;
             });
     }
 
@@ -657,10 +652,9 @@ private:
 
     // ── Poisson RHS ───────────────────────────────────────────────────────────
     void kernel_poisson_rhs() {
-        auto Fa_=Fa(), Ga_=Ga(), Ha_=Ha(), Ra_=Ra(), pa_=pa();
+        auto Fa_=Fa(), Ga_=Ga(), Ha_=Ha(), Ra_=Ra();
         const int nr_=nr;
         const T dt_=dt, r0_=r0, dr_=dr, dz_=dz, dphi_=dphi;
-        const T dr2_=dr2;
 
         q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)nr_),
             [=](sycl::id<3> id) {
@@ -672,11 +666,14 @@ private:
                                (Ga_(i,k,j) - Ga_(i,k-1,j))/dz_ +
                                (Ha_(i,k,j) - Ha_(i-1,k,j))/dphi_/r) / dt_;
 
-                // Neumann (pressure at inner/outer walls already in p ghost cells)
-                if (j <= 1)
-                    Ra_(i,k,j) -= (r - dr_*T(0.5))/r * pa_(i,k,j-1)/dr2_;
-                if (j >= nr_)
-                    Ra_(i,k,j) -= (r + dr_*T(0.5))/r * pa_(i,k,j+1)/dr2_;
+                if (j == 1) {
+                    Ra_(i,k,j) += (r-T(0.5)*dr_)/r
+                        *Fa_(i,k,0)/(dr_*dt_);
+                }
+                if (j == nr_) {
+                    Ra_(i,k,j) -= (r+T(0.5)*dr_)/r
+                        *Fa_(i,k,nr_)/(dr_*dt_);
+                }
             });
     }
 

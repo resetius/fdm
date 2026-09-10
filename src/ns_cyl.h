@@ -95,7 +95,8 @@ public:
 
         , lapl3_solver(dr, dz, r0-dr/2, R-r0+dr,
                        zflag==tensor_flag::none?h2-h1+dz:h2-h1,
-                       nr, nz, nphi)
+                       nr, nz, nphi,
+                       lapl_cyl_radial_boundary::neumann)
     {
         if (c.get("ns", "vrandom", 0) == 1) {
             std::default_random_engine generator;
@@ -142,6 +143,81 @@ public:
         const std::vector<T>& radial,
         const std::vector<T>& axial,
         const std::vector<T>& azimuthal) {
+        validate_outer_boundary_plane(radial, axial, azimuthal);
+        outer_radial_velocity_ = radial;
+        outer_axial_velocity_ = axial;
+        outer_azimuthal_velocity_ = azimuthal;
+        outer_boundary_velocity_enabled_ = true;
+        outer_boundary_step_data_enabled_ = false;
+        outer_radial_predictor_.clear();
+        outer_radial_velocity_next_.clear();
+    }
+
+    void set_outer_boundary_velocity(
+        const std::vector<T>& axial,
+        const std::vector<T>& azimuthal) {
+        set_outer_boundary_velocity(
+            std::vector<T>(static_cast<std::size_t>(nphi)*nz, T(0)),
+            axial, azimuthal);
+    }
+
+    // Supply the data of an artificial radial interface for one time step.
+    // The normal predictor is evaluated by the enclosing-domain stencil,
+    // and radial_next is the projected interface velocity after the step.
+    // The pressure trace is not prescribed: the same-time-level Neumann
+    // condition follows from radial_predictor and radial_next.
+    // After the step radial_next becomes the ordinary prescribed velocity;
+    // callers advancing a moving interface must supply fresh data each step.
+    void set_outer_boundary_step_data(
+        const std::vector<T>& radial,
+        const std::vector<T>& axial,
+        const std::vector<T>& azimuthal,
+        const std::vector<T>& radial_predictor,
+        const std::vector<T>& radial_next) {
+        validate_outer_boundary_plane(radial, axial, azimuthal);
+        const std::size_t expected =
+            static_cast<std::size_t>(nphi)*nz;
+        if (radial_predictor.size() != expected
+            || radial_next.size() != expected) {
+            throw std::invalid_argument(
+                "outer boundary step data has the wrong plane size");
+        }
+        outer_radial_velocity_ = radial;
+        outer_axial_velocity_ = axial;
+        outer_azimuthal_velocity_ = azimuthal;
+        outer_radial_predictor_ = radial_predictor;
+        outer_radial_velocity_next_ = radial_next;
+        outer_boundary_velocity_enabled_ = true;
+        outer_boundary_step_data_enabled_ = true;
+    }
+
+    void clear_outer_boundary_velocity() {
+        outer_boundary_velocity_enabled_ = false;
+        outer_radial_velocity_.clear();
+        outer_axial_velocity_.clear();
+        outer_azimuthal_velocity_.clear();
+        outer_boundary_step_data_enabled_ = false;
+        outer_radial_predictor_.clear();
+        outer_radial_velocity_next_.clear();
+    }
+
+    bool has_outer_boundary_velocity() const {
+        return outer_boundary_velocity_enabled_;
+    }
+
+private:
+    bool outer_boundary_velocity_enabled_ = false;
+    bool outer_boundary_step_data_enabled_ = false;
+    std::vector<T> outer_radial_velocity_;
+    std::vector<T> outer_axial_velocity_;
+    std::vector<T> outer_azimuthal_velocity_;
+    std::vector<T> outer_radial_predictor_;
+    std::vector<T> outer_radial_velocity_next_;
+
+    void validate_outer_boundary_plane(
+        const std::vector<T>& radial,
+        const std::vector<T>& axial,
+        const std::vector<T>& azimuthal) const {
         if constexpr(zflag != tensor_flag::periodic) {
             throw std::invalid_argument(
                 "spatially varying outer boundary requires periodic z");
@@ -153,36 +229,7 @@ public:
             throw std::invalid_argument(
                 "outer boundary velocity has the wrong plane size");
         }
-        outer_radial_velocity_ = radial;
-        outer_axial_velocity_ = axial;
-        outer_azimuthal_velocity_ = azimuthal;
-        outer_boundary_velocity_enabled_ = true;
     }
-
-    void set_outer_boundary_velocity(
-        const std::vector<T>& axial,
-        const std::vector<T>& azimuthal) {
-        set_outer_boundary_velocity(
-            std::vector<T>(static_cast<std::size_t>(nphi)*nz, T(0)),
-            axial, azimuthal);
-    }
-
-    void clear_outer_boundary_velocity() {
-        outer_boundary_velocity_enabled_ = false;
-        outer_radial_velocity_.clear();
-        outer_axial_velocity_.clear();
-        outer_azimuthal_velocity_.clear();
-    }
-
-    bool has_outer_boundary_velocity() const {
-        return outer_boundary_velocity_enabled_;
-    }
-
-private:
-    bool outer_boundary_velocity_enabled_ = false;
-    std::vector<T> outer_radial_velocity_;
-    std::vector<T> outer_axial_velocity_;
-    std::vector<T> outer_azimuthal_velocity_;
 
     std::size_t outer_boundary_index(int i, int k) const {
         return static_cast<std::size_t>(i)*nz+k;
@@ -191,6 +238,12 @@ private:
     T outer_radial_velocity(int i, int k) const {
         return outer_boundary_velocity_enabled_
             ? outer_radial_velocity_[outer_boundary_index(i, k)] : T(0);
+    }
+
+    T outer_radial_velocity_next(int i, int k) const {
+        return outer_boundary_step_data_enabled_
+            ? outer_radial_velocity_next_[outer_boundary_index(i, k)]
+            : outer_radial_velocity(i, k);
     }
 
     T outer_axial_velocity(int i, int k) const {
@@ -208,6 +261,8 @@ private:
     void FGH();
 
     void L_FGH();
+
+    void apply_outer_boundary_step_data();
 
     void poisson();
 

@@ -438,6 +438,16 @@ private:
                 poisson_upper_[upper++] = static_cast<T>((radius+0.5*dr)/(dr2*radius));
             }
         }
+        const double inner_radius = r0+0.5*dr;
+        const double outer_radius = r0+(nr-0.5)*dr;
+        poisson_diagonal_.front() += static_cast<T>(
+            (inner_radius-0.5*dr)/(dr2*inner_radius));
+        poisson_diagonal_.back() += static_cast<T>(
+            (outer_radius+0.5*dr)/(dr2*outer_radius));
+        if (pressure_gauge_fixed_) {
+            poisson_diagonal_.back() = T(1);
+            poisson_lower_[nr-2] = T(0);
+        }
         if (cyclic_reduction_) {
             for (int i = 0; i < nr; ++i) {
                 cr_diagonal_[i] = poisson_diagonal_[i];
@@ -559,11 +569,6 @@ private:
 
     void project() {
         for (int phase = 0; phase < phases_; ++phase) {
-            p_[phase][0] = p_[phase][1] - static_cast<T>(dr/dt) * F_[phase][0];
-            p_[phase][nr+1] = p_[phase][nr] + static_cast<T>(dr/dt) * F_[phase][nr];
-        }
-
-        for (int phase = 0; phase < phases_; ++phase) {
             for (int j = 1; j <= nr; ++j) {
                 const double radius = r0+(j-0.5)*dr;
                 double value = (
@@ -572,15 +577,19 @@ private:
                     +transformed(backward_z_, G_, phase, j)/dz
                     +transformed(backward_phi_, H_, phase, j)/(dphi*radius))/dt;
                 if (j == 1) {
-                    value -= (radius-0.5*dr)/radius
-                        *p_[phase][0]/dr2;
+                    value += (radius-0.5*dr)/radius
+                        *F_[phase][0]/(dr*dt);
                 }
                 if (j == nr) {
                     value -= (radius+0.5*dr)/radius
-                        *p_[phase][nr+1]/dr2;
+                        *F_[phase][nr]/(dr*dt);
                 }
                 rhs_[phase][j] = static_cast<T>(value);
             }
+        }
+
+        if (pressure_gauge_fixed_) {
+            rhs_[0][nr] = T(0);
         }
 
         for (int phase = 0; phase < phases_; ++phase) {

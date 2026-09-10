@@ -53,6 +53,10 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
 #pragma omp parallel for collapse(2)
     for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) {
+            if (radial_boundary == lapl_cyl_radial_boundary::neumann
+                && zflag == tensor_flag::periodic && i == 0 && k == 0) {
+                RHSm[i][k][nr] = T(0);
+            }
             if constexpr (use_cyclic_reduction) {
                 int li, di, ui; li = di = ui = 0;
                 T* L = &matrices[i][k][0*nr];
@@ -67,6 +71,19 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::solve(T* ans, T* rhs) {
                     }
                     if (j < nr) {
                         U[ui++] = (r+0.5*dr)/dr2/r;
+                    }
+                }
+                if (radial_boundary == lapl_cyl_radial_boundary::neumann) {
+                    const double inner_r = r0+dr;
+                    const double outer_r = r0+nr*dr;
+                    D[0] += (inner_r-0.5*dr)/(dr2*inner_r);
+                    D[nr-1] += (outer_r+0.5*dr)/(dr2*outer_r);
+                    if (zflag == tensor_flag::periodic
+                        && i == 0 && k == 0) {
+                        D[nr-1] = T(1);
+                        if (nr > 1) {
+                            L[nr-2] = T(0);
+                        }
                     }
                 }
 
@@ -156,6 +173,19 @@ void LaplCyl3FFT2<T,check,zflag,use_cyclic_reduction>::init_solver() {
                 }
                 if (j < nr) {
                     U[ui++] = (r+0.5*dr)/dr2/r;
+                }
+            }
+            if (radial_boundary == lapl_cyl_radial_boundary::neumann) {
+                const double inner_r = r0+dr;
+                const double outer_r = r0+nr*dr;
+                D[0] += (inner_r-0.5*dr)/(dr2*inner_r);
+                D[nr-1] += (outer_r+0.5*dr)/(dr2*outer_r);
+                if (zflag == tensor_flag::periodic
+                    && i == 0 && k == 0) {
+                    D[nr-1] = T(1);
+                    if (nr > 1) {
+                        L[nr-2] = T(0);
+                    }
                 }
             }
             verify(di == nr);

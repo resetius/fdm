@@ -12,6 +12,11 @@
 
 namespace fdm {
 
+enum class lapl_cyl_radial_boundary {
+    dirichlet,
+    neumann
+};
+
 namespace detail {
 
 inline int checked_radix2_fft_size(int size, const char* direction) {
@@ -212,6 +217,8 @@ public:
     FFTOmpSafe<T,FFT_t>& ft_z;
     std::vector<T> lm_phi, lm_z;
 
+    const lapl_cyl_radial_boundary radial_boundary;
+
     fdm::tensor<T,3,check> matrices;
     fdm::tensor<int,3,check> ipivs;
 
@@ -227,7 +234,9 @@ public:
      */
     LaplCyl3FFT2(double dr, double dz,
                  double r0, double lr, double lz,
-                 int nr, int nz, int nphi)
+                 int nr, int nz, int nphi,
+                 lapl_cyl_radial_boundary radial_boundary_ =
+                     lapl_cyl_radial_boundary::dirichlet)
         : LaplCyl3Data(dr, dz, r0, lr, lz, nr, nz, nphi, zflag)
         , indices({0, nphi-1, z1, zn, 1, nr})
         , RHS(indices), ANS(indices), RHSm(indices)
@@ -255,6 +264,7 @@ public:
         , ft_z(nphi == zpoints ? ft_phi : ft_z_)
 
         , lm_phi(nphi), lm_z(zpoints)
+        , radial_boundary(radial_boundary_)
         , matrices({0,nphi-1,z1,zn,0,4*nr-1})
         , ipivs({0,nphi-1,z1,zn,0,nr-1})
     {

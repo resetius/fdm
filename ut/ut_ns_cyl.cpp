@@ -25,12 +25,12 @@ namespace {
 
 Config make_config(int nr, int nz, int nphi, bool random_v = false,
                    double u0 = 1.0, double reynolds = 10.0,
-                   double dt = 1e-4) {
+                   double dt = 1e-4, double outer_radius = 2.0) {
     Config config;
     std::vector<std::string> arguments = {
         "ut_ns_cyl",
         "--ns:r=1.0",
-        "--ns:R=2.0",
+        "--ns:R=" + std::to_string(outer_radius),
         "--ns:h1=0.0",
         "--ns:h2=6.283185307179586",
         "--ns:nr=" + std::to_string(nr),
@@ -442,7 +442,6 @@ void test_z_bounds_match_flag(void**) {
     }
 }
 
-// Радиальные ячейки у стенки исключены из-за запаздывания давления.
 void test_periodic_z_projection_is_divergence_free(void**) {
     using Task = NSCyl<double, true, tensor_flag::periodic>;
     Config config = make_config(8, 8, 8, false, 1.0, 10.0, 1e-4);
@@ -453,15 +452,24 @@ void test_periodic_z_projection_is_divergence_free(void**) {
     ns.step();
 
     double max_divergence = 0;
+    double max_inner_divergence = 0;
+    double max_outer_divergence = 0;
     for (int i = 0; i < ns.nphi; ++i) {
         for (int k = 0; k < ns.nz; ++k) {
-            for (int j = 2; j < ns.nr; ++j) {
+            for (int j = 1; j <= ns.nr; ++j) {
                 max_divergence = std::max(
                     max_divergence, std::abs(cell_divergence(ns, i, k, j)));
             }
+            max_inner_divergence = std::max(
+                max_inner_divergence,
+                std::abs(cell_divergence(ns, i, k, 1)));
+            max_outer_divergence = std::max(
+                max_outer_divergence,
+                std::abs(cell_divergence(ns, i, k, ns.nr)));
         }
     }
-    printf("periodic z: max|div| = %e\n", max_divergence);
+    printf("periodic z: max|div| = %e (inner / outer = %e / %e)\n",
+           max_divergence, max_inner_divergence, max_outer_divergence);
     assert_true(max_divergence < 1e-10);
 }
 
@@ -634,6 +642,165 @@ void test_periodic_outer_boundary_velocity(void**) {
     }
 }
 
+template<typename T>
+void check_periodic_outer_interface_matches_restricted_step() {
+    using Task = NSCyl<T, true, tensor_flag::periodic>;
+    constexpr int original_nr = 4;
+    Config original_config = make_config(
+        original_nr, 8, 8, false, 1.0, 10.0, 1e-4, 2.0);
+    Config extended_config = make_config(
+        2*original_nr, 8, 8, false, 1.0, 10.0, 1e-4, 3.0);
+    Task extended(extended_config);
+    Task wall_trace_only(original_config);
+    Task exact_interface(original_config);
+    fill_smooth_state(extended);
+
+    auto restrict_state = [&](Task& destination) {
+        for (int i = 0; i < destination.nphi; ++i) {
+            for (int k = 0; k < destination.nz; ++k) {
+                for (int j = 1; j < destination.nr; ++j) {
+                    destination.u[i][k][j] = extended.u[i][k][j];
+                }
+                for (int j = 1; j <= destination.nr; ++j) {
+                    destination.v[i][k][j] = extended.v[i][k][j];
+                    destination.w[i][k][j] = extended.w[i][k][j];
+                    destination.p[i][k][j] = extended.p[i][k][j];
+                }
+            }
+        }
+    };
+    restrict_state(wall_trace_only);
+    restrict_state(exact_interface);
+
+    const std::size_t plane_size =
+        static_cast<std::size_t>(extended.nphi)*extended.nz;
+    std::vector<T> radial(plane_size);
+    std::vector<T> axial(plane_size);
+    std::vector<T> azimuthal(plane_size);
+    for (int i = 0; i < extended.nphi; ++i) {
+        for (int k = 0; k < extended.nz; ++k) {
+            const std::size_t index =
+                static_cast<std::size_t>(i)*extended.nz+k;
+            radial[index] = extended.u[i][k][original_nr];
+            axial[index] = 0.5*(extended.v[i][k][original_nr]
+                +extended.v[i][k][original_nr+1]);
+            azimuthal[index] = 0.5*(extended.w[i][k][original_nr]
+                +extended.w[i][k][original_nr+1]);
+        }
+    }
+
+    extended.step();
+    std::vector<T> radial_predictor(plane_size);
+    std::vector<T> radial_next(plane_size);
+    for (int i = 0; i < extended.nphi; ++i) {
+        for (int k = 0; k < extended.nz; ++k) {
+            const std::size_t index =
+                static_cast<std::size_t>(i)*extended.nz+k;
+            radial_predictor[index] = extended.F[i][k][original_nr];
+            radial_next[index] = extended.u[i][k][original_nr];
+        }
+    }
+
+    wall_trace_only.set_outer_boundary_velocity(radial, axial, azimuthal);
+    wall_trace_only.step();
+    exact_interface.set_outer_boundary_step_data(
+        radial, axial, azimuthal, radial_predictor, radial_next);
+    exact_interface.step();
+
+    auto velocity_error = [&](Task& candidate) {
+        double result = 0;
+        for (int i = 0; i < candidate.nphi; ++i) {
+            for (int k = 0; k < candidate.nz; ++k) {
+                for (int j = 1; j <= candidate.nr; ++j) {
+                    result = std::max({
+                        result,
+                        std::abs(static_cast<double>(candidate.u[i][k][j]
+                            -extended.u[i][k][j])),
+                        std::abs(static_cast<double>(candidate.v[i][k][j]
+                            -extended.v[i][k][j])),
+                        std::abs(static_cast<double>(candidate.w[i][k][j]
+                            -extended.w[i][k][j]))});
+                }
+            }
+        }
+        return result;
+    };
+    auto pressure_error_modulo_constant = [&](Task& candidate) {
+        double shift = 0;
+        int count = 0;
+        for (int i = 0; i < candidate.nphi; ++i) {
+            for (int k = 0; k < candidate.nz; ++k) {
+                for (int j = 1; j <= candidate.nr; ++j) {
+                    shift += candidate.p[i][k][j]-extended.p[i][k][j];
+                    ++count;
+                }
+            }
+        }
+        shift /= count;
+        double result = 0;
+        for (int i = 0; i < candidate.nphi; ++i) {
+            for (int k = 0; k < candidate.nz; ++k) {
+                for (int j = 1; j <= candidate.nr; ++j) {
+                    result = std::max(result, std::abs(static_cast<double>(
+                        candidate.p[i][k][j]-extended.p[i][k][j])-shift));
+                }
+            }
+        }
+        return result;
+    };
+    auto predictor_error = [&](Task& candidate) {
+        double result = 0;
+        for (int i = 0; i < candidate.nphi; ++i) {
+            for (int k = 0; k < candidate.nz; ++k) {
+                for (int j = 0; j <= candidate.nr; ++j) {
+                    result = std::max(result, std::abs(static_cast<double>(
+                        candidate.F[i][k][j]-extended.F[i][k][j])));
+                }
+                for (int j = 1; j <= candidate.nr; ++j) {
+                    result = std::max({
+                        result,
+                        std::abs(static_cast<double>(candidate.G[i][k][j]
+                            -extended.G[i][k][j])),
+                        std::abs(static_cast<double>(candidate.H[i][k][j]
+                            -extended.H[i][k][j]))});
+                }
+            }
+        }
+        return result;
+    };
+
+    const double wall_velocity_error = velocity_error(wall_trace_only);
+    const double interface_velocity_error = velocity_error(exact_interface);
+    const double interface_pressure_error =
+        pressure_error_modulo_constant(exact_interface);
+    const double interface_predictor_error = predictor_error(exact_interface);
+    printf("restricted step: wall trace velocity error = %e\n",
+           wall_velocity_error);
+    printf("restricted step: exact interface velocity / pressure / FGH "
+           "errors = %e / %e / %e\n",
+           interface_velocity_error, interface_pressure_error,
+           interface_predictor_error);
+
+    assert_true(wall_velocity_error > 1e-8);
+    const double predictor_tolerance =
+        std::is_same_v<T, double> ? 2e-11 : 2e-5;
+    const double pressure_tolerance =
+        std::is_same_v<T, double> ? 2e-10 : 2e-3;
+    const double velocity_tolerance =
+        std::is_same_v<T, double> ? 2e-11 : 2e-5;
+    assert_true(interface_predictor_error < predictor_tolerance);
+    assert_true(interface_pressure_error < pressure_tolerance);
+    assert_true(interface_velocity_error < velocity_tolerance);
+}
+
+void test_periodic_outer_interface_matches_restricted_step_double(void**) {
+    check_periodic_outer_interface_matches_restricted_step<double>();
+}
+
+void test_periodic_outer_interface_matches_restricted_step_float(void**) {
+    check_periodic_outer_interface_matches_restricted_step<float>();
+}
+
 void test_outer_boundary_velocity_rejects_wrong_shape(void**) {
     using Task = NSCyl<double, true, tensor_flag::periodic>;
     Config config = make_config(4, 4, 4);
@@ -666,6 +833,10 @@ int main() {
         cmocka_unit_test(test_nonperiodic_z_wall_divergence_matches_pressure_lag),
         cmocka_unit_test(test_periodic_z_uniform_state_stays_uniform),
         cmocka_unit_test(test_periodic_outer_boundary_velocity),
+        cmocka_unit_test(
+            test_periodic_outer_interface_matches_restricted_step_double),
+        cmocka_unit_test(
+            test_periodic_outer_interface_matches_restricted_step_float),
         cmocka_unit_test(test_outer_boundary_velocity_rejects_wrong_shape),
     };
     return cmocka_run_group_tests(tests, nullptr, nullptr);

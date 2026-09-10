@@ -417,6 +417,98 @@ void test_lapl_cyl_fft2_discrete_periodic_float(void** data) {
     test_lapl_cyl_fft2_discrete<float,tensor_flag::periodic>(data);
 }
 
+template<typename T>
+void test_lapl_cyl_fft2_radial_neumann(void** data) {
+    constexpr bool check = true;
+    constexpr tensor_flag zflag = tensor_flag::periodic;
+    using tensor_flags = fdm::tensor_flags<
+        tensor_flag::periodic, tensor_flag::periodic>;
+
+    Config* c = static_cast<Config*>(*data);
+    const int verbose = c->get("test", "verbose", 0);
+    const int nr = 9;
+    const int nz = 8;
+    const int nphi = 16;
+    const double inner_radius = 1.25;
+    const double outer_radius = 2.75;
+    const double lz = 2.0;
+    const double dr = (outer_radius-inner_radius)/nr;
+    const double dz = lz/nz;
+    const double dphi = 2*M_PI/nphi;
+
+    LaplCyl3FFT2<T, check, zflag> lapl(
+        dr, dz, inner_radius-dr/2, outer_radius-inner_radius+dr,
+        lz, nr, nz, nphi, lapl_cyl_radial_boundary::neumann);
+
+    std::array<int,6> indices = {0, nphi-1, 0, nz-1, 1, nr};
+    tensor<T,3,check,tensor_flags> rhs(indices);
+    tensor<T,3,check,tensor_flags> numerical(indices);
+
+    auto exact = [&](int i, int k, int j) {
+        // Homogeneous radial Neumann data are represented by copying the
+        // adjacent pressure value into each ghost cell.  The axisymmetric
+        // part is zero at j=nr, matching the gauge used for the (0,0) block.
+        const int jc = std::max(1, std::min(nr, j));
+        const double zero_mode =
+            1.0+cos(M_PI*(jc-1)/(nr-1));
+        const double radial = 0.7+0.03*jc+0.01*jc*jc;
+        const double phi = dphi*i;
+        const double z = 2*M_PI*k/nz;
+        const double phase =
+            0.20*cos(phi)+0.15*sin(2*phi)
+            +0.10*cos(z)+0.08*sin(2*z)
+            +0.05*cos(phi)*cos(z);
+        return zero_mode+radial*phase;
+    };
+
+    for (int i = 0; i < nphi; ++i) {
+        for (int k = 0; k < nz; ++k) {
+            for (int j = 1; j <= nr; ++j) {
+                const double r = inner_radius+dr*j-dr/2;
+                const double center = exact(i,k,j);
+                rhs[i][k][j] =
+                    ((r+dr/2)*exact(i,k,j+1)-2*r*center
+                     +(r-dr/2)*exact(i,k,j-1))/(r*dr*dr)
+                    +(exact(i,k+1,j)-2*center+exact(i,k-1,j))/(dz*dz)
+                    +(exact(i+1,k,j)-2*center+exact(i-1,k,j))
+                        /(r*r*dphi*dphi);
+            }
+        }
+    }
+
+    lapl.solve(&numerical[0][0][1], &rhs[0][0][1]);
+
+    double max_error = 0;
+    double max_exact = 0;
+    for (int i = 0; i < nphi; ++i) {
+        for (int k = 0; k < nz; ++k) {
+            for (int j = 1; j <= nr; ++j) {
+                max_error = std::max(
+                    max_error,
+                    std::abs(static_cast<double>(numerical[i][k][j])
+                             -exact(i,k,j)));
+                max_exact = std::max(max_exact, std::abs(exact(i,k,j)));
+            }
+        }
+    }
+    const double relative_error = max_error/max_exact;
+    if (verbose) {
+        printf("FFT2 radial Neumann inverse (%s): err = %e\n",
+               std::is_same_v<T,double> ? "double" : "float",
+               relative_error);
+    }
+    const double tolerance = std::is_same_v<T,double> ? 2e-11 : 3e-5;
+    assert_true(relative_error < tolerance);
+}
+
+void test_lapl_cyl_fft2_radial_neumann_double(void** data) {
+    test_lapl_cyl_fft2_radial_neumann<double>(data);
+}
+
+void test_lapl_cyl_fft2_radial_neumann_float(void** data) {
+    test_lapl_cyl_fft2_radial_neumann<float>(data);
+}
+
 void test_lapl_cyl_fft2_size_handling(void** data) {
 #ifdef HAVE_FFTW3
     // Размеры 10 и 6 допустимы для FFTW, но не для встроенного radix-2 FFT.
@@ -628,6 +720,8 @@ int main(int argc, char** argv) {
         cmocka_unit_test_prestate(test_lapl_cyl_fft2_discrete_dirichlet_float, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_fft2_discrete_periodic_double, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_fft2_discrete_periodic_float, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_fft2_radial_neumann_double, &c),
+        cmocka_unit_test_prestate(test_lapl_cyl_fft2_radial_neumann_float, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_fft2_size_handling, &c),
         cmocka_unit_test_prestate(test_lapl_cyl_fft1_fft2_cmp, &c),
     };

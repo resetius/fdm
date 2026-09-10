@@ -31,6 +31,7 @@ void NSCyl<T,check,zflag>::step() {
     start_time = end_time;
 
     FGH();
+    apply_outer_boundary_step_data();
     end_time = std::chrono::high_resolution_clock::now();
     fgh_time = std::chrono::duration<double, std::milli>(end_time - start_time).count();
     start_time = end_time;
@@ -66,6 +67,7 @@ template<typename T, bool check, tensor_flag zflag>
 void NSCyl<T,check,zflag>::L_step() {
     init_bound();
     L_FGH();
+    apply_outer_boundary_step_data();
     poisson();
     update_uvwp();
     time_index++;
@@ -386,19 +388,23 @@ void NSCyl<T,check,zflag>::L_FGH() {
 }
 
 template<typename T, bool check, tensor_flag zflag>
-void NSCyl<T,check,zflag>::poisson() {
-    // На стенке 0 = F_n - dt*dp/dn; F/G содержат все члены импульса.
-    // Значение p внутри области взято с прошлого шага, поэтому давление запаздывает.
-    for (int i = 0; i < nphi; i++) {
-        for (int k = z1; k <= zn; k++) {
-            p[i][k][0] = p[i][k][1] - dr*F[i][k][0]/dt;
-            // Choose dp/dr so that the projected normal velocity equals the
-            // prescribed value on r=R, rather than implicitly forcing it to
-            // zero.
-            p[i][k][nr+1] = p[i][k][nr]
-                +dr*(F[i][k][nr]-outer_radial_velocity(i, k))/dt;
+void NSCyl<T,check,zflag>::apply_outer_boundary_step_data() {
+    if (!outer_boundary_step_data_enabled_) {
+        return;
+    }
+    for (int i = 0; i < nphi; ++i) {
+        for (int k = z1; k <= zn; ++k) {
+            F[i][k][nr] =
+                outer_radial_predictor_[outer_boundary_index(i, k)];
         }
     }
+}
+
+template<typename T, bool check, tensor_flag zflag>
+void NSCyl<T,check,zflag>::poisson() {
+    // Radial pressure is Neumann data at the new time level.  Its unknown
+    // interior value is part of the first/last matrix diagonal; only the
+    // known flux contribution is added to RHS below.
     if constexpr(zflag==tensor_flag::none) {
         for (int i = 0; i < nphi; i++) {
             for (int j = 1; j <= nr; j++) {
@@ -424,12 +430,15 @@ void NSCyl<T,check,zflag>::poisson() {
                     }
                 }
                 if (j <= 1) {
-                    RHS[i][k][j] -= (r-dr/2)/r*p[i][k][j-1]/dr2;
+                    RHS[i][k][j] += (r-dr/2)/r
+                        *F[i][k][0]/(dr*dt);
                 }
 
 
                 if (j >= nr) {
-                    RHS[i][k][j] -= (r+dr/2)/r*p[i][k][j+1]/dr2;
+                    RHS[i][k][j] -= (r+dr/2)/r
+                        *(F[i][k][nr]-outer_radial_velocity_next(i, k))
+                        /(dr*dt);
                 }
                 if constexpr(zflag==tensor_flag::none) {
                     if (k >= nz) {
@@ -482,6 +491,26 @@ void NSCyl<T,check,zflag>::update_uvwp() {
 
     {
         p = x;
+    }
+
+    for (int i = 0; i < nphi; ++i) {
+        for (int k = z1; k <= zn; ++k) {
+            p[i][k][0] = p[i][k][1]-dr*F[i][k][0]/dt;
+            p[i][k][nr+1] = p[i][k][nr]
+                +dr*(F[i][k][nr]-outer_radial_velocity_next(i, k))/dt;
+        }
+    }
+
+    if (outer_boundary_step_data_enabled_) {
+        for (int i = 0; i < nphi; ++i) {
+            for (int k = z1; k <= zn; ++k) {
+                u[i][k][nr] = outer_radial_velocity_next(i, k);
+            }
+        }
+        outer_radial_velocity_.swap(outer_radial_velocity_next_);
+        outer_radial_predictor_.clear();
+        outer_radial_velocity_next_.clear();
+        outer_boundary_step_data_enabled_ = false;
     }
 }
 

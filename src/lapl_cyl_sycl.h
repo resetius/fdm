@@ -1,6 +1,6 @@
 #pragma once
 // LaplCylSycl — SYCL Poisson solver for cylindrical geometry.
-// phi (periodic), z (periodic), r (Dirichlet at both walls).
+// phi and z are periodic; radial Dirichlet and Neumann matrices are supported.
 // Direct O(N²) DFT in phi and z, GPU batched cyclic reduction in r.
 // Compatible with LaplCyl3FFT2<T,false,tensor_flag::periodic> interface.
 
@@ -18,6 +18,7 @@ public:
     const T   r0, dr, dz, dphi;
     const T   dr2, dz2, dphi2;
     const T   lz, slz;
+    const bool radial_neumann;
 
 private:
     sycl::queue& q;
@@ -188,6 +189,7 @@ private:
     void init_cr() {
         const int nphi_=nphi, nz_=nz, nr_=nr;
         const T r0_=r0, dr_=dr, dr2_=dr2;
+        const bool radial_neumann_=radial_neumann;
         const T* lp=lm_phi, *lz_=lm_z;
         const T* Lb=L_base,  *Ub=U_base;
         T* Dcr=D_cr, *Lcr=L_cr, *Ucr=U_cr;
@@ -199,6 +201,17 @@ private:
                 Dcr[idx] = -T(2)/dr2_ - lp[mi]/(r*r) - lz_[mk];
                 Lcr[idx] = Lb[j];
                 Ucr[idx] = Ub[j];
+                if (radial_neumann_ && j == 0) {
+                    Dcr[idx] += (r-T(0.5)*dr_)/(dr2_*r);
+                }
+                if (radial_neumann_ && j == nr_-1) {
+                    Dcr[idx] += (r+T(0.5)*dr_)/(dr2_*r);
+                }
+                if (radial_neumann_
+                    && mi == 0 && mk == 0 && j == nr_-1) {
+                    Dcr[idx] = T(1);
+                    Lcr[idx] = T(0);
+                }
             });
     }
 
@@ -272,12 +285,14 @@ private:
 public:
     LaplCylSycl(sycl::queue& q_,
                 int nr_, int nz_, int nphi_,
-                T r0_, T dr_, T dz_, T lz_)
+                T r0_, T dr_, T dz_, T lz_,
+                bool radial_neumann_ = false)
         : nr(nr_), nz(nz_), nphi(nphi_)
         , nrq((int)std::ceil(std::log2(double(nr_+1))))
         , r0(r0_), dr(dr_), dz(dz_), dphi(T(2*M_PI)/nphi_)
         , dr2(dr_*dr_), dz2(dz_*dz_), dphi2(dphi*dphi)
         , lz(lz_), slz(std::sqrt(T(2)/lz_))
+        , radial_neumann(radial_neumann_)
         , q(require_in_order(q_))
         , lm_phi (sha(q_, nphi_))
         , lm_z   (sha(q_, nz_))
@@ -317,6 +332,14 @@ public:
         dft_phi_fwd(tmp,   rhs);   // rhs → tmp (phi modes)
         dft_z_fwd  (b_cr,  tmp);   // tmp → b_cr (z modes)
 
+        if (radial_neumann) {
+            T* coefficients=b_cr;
+            const int nr_=nr;
+            q.single_task([=]() {
+                coefficients[nr_-1] = T(0);
+            });
+        }
+
         // Set up per-mode tridiagonal D, L, U and forward-sweep CR
         init_cr();
         for (int l = 1; l < nrq; l++) cr_fwd(l);
@@ -344,6 +367,8 @@ public:
         T* coefficients=b_cr;
         const T phi_forward_scale=sc_phi_f;
         const T z_forward_scale=sc_z_f;
+        const bool radial_neumann_=radial_neumann;
+        const bool zero_mode = radial_neumann_ && m == 0 && l == 0;
 
         q.parallel_for(sycl::range<3>(
             (size_t)phi_count, (size_t)nz_, (size_t)nr_),
@@ -392,12 +417,25 @@ public:
                 T r=r0_+dr_;
                 diagonal[base] = -T(2)/dr2_
                     -lambda_phi[pi]/(r*r)-lambda_z[zi];
+                if (radial_neumann_) {
+                    diagonal[base] +=
+                        (r-T(0.5)*dr_)/(dr2_*r);
+                }
                 for (int j = 1; j < nr_; ++j) {
+                    if (zero_mode && j == nr_-1) {
+                        diagonal[base+j] = T(1);
+                        coefficients[base+j] = T(0);
+                        continue;
+                    }
                     const T factor=lower[j]/diagonal[base+j-1];
                     r=r0_+T(j+1)*dr_;
                     diagonal[base+j] = -T(2)/dr2_
                         -lambda_phi[pi]/(r*r)-lambda_z[zi]
                         -factor*upper[j-1];
+                    if (radial_neumann_ && j == nr_-1) {
+                        diagonal[base+j] +=
+                            (r+T(0.5)*dr_)/(dr2_*r);
+                    }
                     coefficients[base+j] -=
                         factor*coefficients[base+j-1];
                 }

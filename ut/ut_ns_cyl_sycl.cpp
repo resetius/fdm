@@ -156,7 +156,8 @@ struct Difference {
 };
 
 void check_sycl_poisson_matches_cpu(
-    int nr, int nz, int nphi, float r0, float outer_r, float lz)
+    int nr, int nz, int nphi, float r0, float outer_r, float lz,
+    bool radial_neumann = false)
 {
     const float dr = (outer_r-r0)/nr;
     const float dz = lz/nz;
@@ -165,9 +166,13 @@ void check_sycl_poisson_matches_cpu(
     fdm::LaplCyl3FFT2<
         float, false, fdm::tensor_flag::periodic> cpu(
             dr, dz, pressure_r0, outer_r-r0+dr, lz,
-            nr, nz, nphi);
+            nr, nz, nphi,
+            radial_neumann
+                ? fdm::lapl_cyl_radial_boundary::neumann
+                : fdm::lapl_cyl_radial_boundary::dirichlet);
     fdm::LaplCylSycl<float> device(
-        queue(), nr, nz, nphi, pressure_r0, dr, dz, lz);
+        queue(), nr, nz, nphi, pressure_r0, dr, dz, lz,
+        radial_neumann);
 
     std::vector<float> rhs(size);
     std::vector<float> cpu_answer(size);
@@ -193,8 +198,9 @@ void check_sycl_poisson_matches_cpu(
     for (int index = 0; index < size; ++index) {
         difference.add(device_answer[index], cpu_answer[index]);
     }
-    printf("SYCL/CPU float Poisson %dx%dx%d relative error: %e\n",
-           nr, nz, nphi, difference.relative());
+    printf("SYCL/CPU float Poisson %dx%dx%d (%s r) relative error: %e\n",
+           nr, nz, nphi, radial_neumann ? "Neumann" : "Dirichlet",
+           difference.relative());
     sycl::free(device_answer, queue());
     sycl::free(device_rhs, queue());
     assert_true(difference.relative() < 2e-5);
@@ -205,6 +211,10 @@ void test_sycl_poisson_matches_cpu_float_reference(void**) {
     check_sycl_poisson_matches_cpu(9, 8, 8, 1.0f, 2.0f, kLz);
     check_sycl_poisson_matches_cpu(16, 16, 16, kR0, kR, 10.0f);
     check_sycl_poisson_matches_cpu(32, 32, 32, kR0, kR, 10.0f);
+    check_sycl_poisson_matches_cpu(
+        8, 8, 8, 1.0f, 2.0f, kLz, true);
+    check_sycl_poisson_matches_cpu(
+        9, 8, 8, 1.0f, 2.0f, kLz, true);
 }
 
 void check_sycl_fourier_block_poisson_matches_full(int n, int m, int l) {
@@ -214,7 +224,7 @@ void check_sycl_fourier_block_poisson_matches_full(int n, int m, int l) {
     const float dr = (outer_r-r0)/n;
     const int size = n*n*n;
     fdm::LaplCylSycl<float> solver(
-        queue(), n, n, n, r0-dr/2, dr, lz/n, lz);
+        queue(), n, n, n, r0-dr/2, dr, lz/n, lz, true);
     float* rhs = sycl::malloc_shared<float>(size, queue());
     float* full = sycl::malloc_shared<float>(size, queue());
     float* block = sycl::malloc_shared<float>(size, queue());
@@ -305,12 +315,12 @@ void test_sycl_step_matches_cpu_float_reference(void**) {
                      +(G(i,k,j)-G(i,k-1,j))/sycl.dz
                      +(H(i,k,j)-H(i-1,k,j))/(r*sycl.dphi))/sycl.dt;
                 if (j == 1) {
-                    reconstructed_rhs -= (r-sycl.dr*0.5f)/r
-                        *p(i,k,0)/sycl.dr2;
+                    reconstructed_rhs += (r-sycl.dr*0.5f)/r
+                        *F(i,k,0)/(sycl.dr*sycl.dt);
                 }
                 if (j == kNr) {
                     reconstructed_rhs -= (r+sycl.dr*0.5f)/r
-                        *p(i,k,kNr+1)/sycl.dr2;
+                        *F(i,k,kNr)/(sycl.dr*sycl.dt);
                 }
                 drhs_formula.add(rhs(i, k, j), reconstructed_rhs);
                 dx.add(x(i, k, j), cpu.x[i][k][j]);
@@ -338,7 +348,7 @@ void test_sycl_step_matches_cpu_float_reference(void**) {
     assert_true(dF.error < 2e-6);
     assert_true(dG.error < 1e-6);
     assert_true(dH.error < 2e-6);
-    assert_true(dp_boundary.error < 5e-8);
+    assert_true(dp_boundary.relative() < 2e-5);
     assert_true(drhs_formula.relative() < 1e-6);
     assert_true(drhs.relative() < 2e-2);
     assert_true(dx.relative() < 2e-2);
@@ -405,7 +415,6 @@ void check_sycl_linear_block_matches_cpu(int m, int l) {
     auto device_H = device_task.Ha();
     auto device_rhs = device_task.Ra();
     auto device_x = device_task.xa();
-    auto device_p = device_task.pa();
     Difference base, dF, dG, dH, drhs, drhs_formula, dx;
     for (int i = 0; i < kNphi; ++i) {
         for (int k = 0; k < kNz; ++k) {
@@ -450,12 +459,16 @@ void check_sycl_linear_block_matches_cpu(int m, int l) {
                 float reconstructed_rhs = velocity_divergence
                     +device_task.dt*tendency_divergence;
                 if (j == 1) {
-                    reconstructed_rhs -= (r-device_task.dr*0.5f)/r
-                        *device_p(i,k,0)/device_task.dr2;
+                    reconstructed_rhs += (r-device_task.dr*0.5f)/r
+                        *(u_before[u_index(i,k,0)]
+                          +device_task.dt*device_F(i,k,0))
+                        /device_task.dr;
                 }
                 if (j == kNr) {
                     reconstructed_rhs -= (r+device_task.dr*0.5f)/r
-                        *device_p(i,k,kNr+1)/device_task.dr2;
+                        *(u_before[u_index(i,k,kNr)]
+                          +device_task.dt*device_F(i,k,kNr))
+                        /device_task.dr;
                 }
                 drhs_formula.add(device_rhs(i,k,j), reconstructed_rhs);
                 dx.add(device_x(i,k,j)/kDt, cpu_task.x[i][k][j]);
@@ -737,7 +750,11 @@ void test_sycl_linear_block_dense_spectrum_matches_cpu(void**) {
 
 void test_sycl_critical_block_detects_instability(void**) {
     Config re100_config = make_re100_n16_config();
-    constexpr int screening_steps = 1;
+    // A one-step multiplier differs from one by only O(1e-5), which is too
+    // close to the float eigensolver noise floor.  A short power of the same
+    // operator leaves the invariant subspace unchanged and resolves the sign
+    // of the physical growth rate robustly.
+    constexpr int screening_steps = 4;
     fdm::NSCylFourierBlockReference<float, true> re100_cpu(
         re100_config, 2, 3, screening_steps);
     fdm::NSCylFourierBlockReference<double, true> re100_reference(
@@ -822,7 +839,7 @@ void test_sycl_projection_is_divergence_free(void**) {
     double worst_plane[kNz] = {};
     for (int i = 0; i < ns.nphi; ++i) {
         for (int k = 0; k < ns.nz; ++k) {
-            for (int j = 2; j < ns.nr; ++j) {
+            for (int j = 1; j <= ns.nr; ++j) {
                 const Divergence divergence = cell_divergence(ns, i, k, j);
                 max_divergence = std::max(max_divergence, std::abs(divergence.value));
                 max_scale = std::max(max_scale, divergence.scale);
@@ -839,15 +856,7 @@ void test_sycl_projection_is_divergence_free(void**) {
     assert_true(max_divergence < 1e-5*max_scale);
 }
 
-// The radial pressure ghost is built from the complete intermediate radial
-// momentum F and then handed to a Dirichlet solve, so it lags the solution by
-// one step.  As on the CPU the residual is not arbitrary:
-//
-//     div|wall cell = -((r -+ dr/2)/r) * (dt/dr^2) * (p_new - p_old)
-//
-// Pinning this identity down proves the ghost really is p(1) - dr*F(0)/dt:
-// the previous single-viscous-term formula does not satisfy it.
-void test_sycl_radial_wall_divergence_matches_pressure_lag(void**) {
+void test_sycl_radial_pressure_boundary_uses_new_time_level(void**) {
     NSCylSycl<float> ns(queue(), kNr, kNz, kNphi, kR0, kR, kLz, kU0, kRe, kDt);
     fill_smooth_state(ns);
 
@@ -855,44 +864,32 @@ void test_sycl_radial_wall_divergence_matches_pressure_lag(void**) {
     queue().wait();
 
     auto p = ns.pa();
-    std::vector<float> previous_p(ns.nphi*ns.nz*ns.nr);
-    for (int i = 0; i < ns.nphi; ++i) {
-        for (int k = 0; k < ns.nz; ++k) {
-            for (int j = 1; j <= ns.nr; ++j) {
-                previous_p[(i*ns.nz+k)*ns.nr+j-1] = p(i,k,j);
-            }
-        }
-    }
-
-    ns.step();
-    queue().wait();
-
-    double max_identity_error = 0;
-    double max_predicted = 0;
+    auto F = ns.Fa();
+    double max_boundary_error = 0;
+    double max_divergence = 0;
     double max_scale = 0;
     for (int i = 0; i < ns.nphi; ++i) {
         for (int k = 0; k < ns.nz; ++k) {
+            max_boundary_error = std::max({
+                max_boundary_error,
+                std::abs(double(p(i,k,0))-double(p(i,k,1))
+                         +double(ns.dr)*F(i,k,0)/double(ns.dt)),
+                std::abs(double(p(i,k,ns.nr+1))-double(p(i,k,ns.nr))
+                         -double(ns.dr)*F(i,k,ns.nr)/double(ns.dt))});
             for (int j : {1, ns.nr}) {
-                const double r = double(ns.r0)+double(ns.dr)*j-double(ns.dr)/2;
-                const double face = (j == 1) ? r-double(ns.dr)/2 : r+double(ns.dr)/2;
-                const double delta_p =
-                    double(p(i,k,j))-previous_p[(i*ns.nz+k)*ns.nr+j-1];
-                const double predicted =
-                    -(face/r)*(double(ns.dt)/(double(ns.dr)*ns.dr))*delta_p;
                 const Divergence divergence = cell_divergence(ns, i, k, j);
-                max_predicted = std::max(max_predicted, std::abs(predicted));
+                max_divergence = std::max(
+                    max_divergence, std::abs(divergence.value));
                 max_scale = std::max(max_scale, divergence.scale);
-                max_identity_error = std::max(
-                    max_identity_error, std::abs(divergence.value-predicted));
             }
         }
     }
 
-    printf("sycl float: radial lag identity residual = %e "
-           "(predicted magnitude %e, term scale %e)\n",
-           max_identity_error, max_predicted, max_scale);
-    assert_true(max_predicted > 1e-6);
-    assert_true(max_identity_error < 1e-5*max_scale);
+    printf("sycl float: new-level pressure boundary error = %e, "
+           "wall max|div| = %e (term scale %e)\n",
+           max_boundary_error, max_divergence, max_scale);
+    assert_true(max_boundary_error < 2e-5);
+    assert_true(max_divergence < 2e-5*max_scale);
 }
 
 } // namespace
@@ -910,7 +907,8 @@ int main() {
         cmocka_unit_test(test_sycl_linear_block_dense_spectrum_matches_cpu),
         cmocka_unit_test(test_sycl_critical_block_detects_instability),
         cmocka_unit_test(test_sycl_projection_is_divergence_free),
-        cmocka_unit_test(test_sycl_radial_wall_divergence_matches_pressure_lag),
+        cmocka_unit_test(
+            test_sycl_radial_pressure_boundary_uses_new_time_level),
     };
     return cmocka_run_group_tests(tests, nullptr, nullptr);
 }
