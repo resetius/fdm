@@ -17,6 +17,7 @@
 #include "ns_cyl_boundary_lqr.h"
 #include "ns_cyl_checkpoint_storage.h"
 #include "ns_cyl_extended_filter.h"
+#include "ns_cyl_fourier_energy.h"
 #include "ns_cyl_nonlinear_gluing.h"
 #include "ns_cyl_spectral_filter.h"
 #include "ns_cyl_spectral_storage.h"
@@ -161,6 +162,24 @@ void validate_domains(const Task& original,
     if (!nearly_equal(extended_dr, original.dr)) {
         throw std::runtime_error(
             "Omega and G must use the same radial mesh spacing");
+    }
+}
+
+void validate_physical_spectrum(
+    const Task& original, const fdm::NSCylSpectralMetadata& physical) {
+    if (physical.scalar_type != "float64"
+        || physical.nr != original.nr
+        || physical.nphi != original.nphi || physical.nz != original.nz
+        || !nearly_equal(physical.r, original.r0)
+        || !nearly_equal(physical.R, original.R)
+        || !nearly_equal(physical.base_outer_radius, original.R)
+        || !nearly_equal(physical.h1, original.h1)
+        || !nearly_equal(physical.h2, original.h2)
+        || !nearly_equal(physical.reynolds, original.Re)
+        || !nearly_equal(physical.dt, original.dt)
+        || !nearly_equal(physical.wall_speed, original.U0)) {
+        throw std::runtime_error(
+            "original checkpoint and physical spectrum are incompatible");
     }
 }
 
@@ -578,7 +597,8 @@ BoundaryEvolutionResult run_boundary_evolution(
     const std::vector<T>& reference, const std::vector<T>& initial,
     int initial_time_index, int steps, int log_interval,
     int feedback_interval, double maximum_velocity_norm,
-    const std::string& output_name) {
+    const std::string& output_name,
+    const std::string& fourier_output_name) {
     if (steps < 0 || log_interval <= 0 || feedback_interval <= 0
         || !(maximum_velocity_norm > 0) || output_name.empty()) {
         throw std::invalid_argument("invalid boundary evolution settings");
@@ -600,8 +620,25 @@ BoundaryEvolutionResult run_boundary_evolution(
               "predicted_lqr_cost_before,predicted_lqr_cost_after,velocity_norm,"
               "maximum_divergence,boundary_rms,boundary_maximum,"
               "supported_correction_norm,gluing_correction_velocity_norm,"
-              "nonlinear_S_applications\n";
+              "nonlinear_S_applications,controlled_block_velocity_norm,"
+              "other_block_velocity_norm\n";
     output << std::scientific << std::setprecision(16);
+
+    std::unique_ptr<std::ofstream> fourier_output;
+    std::unique_ptr<fdm::NSCylFourierVelocityEnergy<T>> fourier_energy;
+    if (!fourier_output_name.empty()) {
+        fourier_output = std::make_unique<std::ofstream>(fourier_output_name);
+        if (!*fourier_output) {
+            throw std::runtime_error(
+                "cannot create boundary Fourier-energy CSV: "
+                +fourier_output_name);
+        }
+        *fourier_output << "branch,step,time,m,l,velocity_norm\n"
+                        << std::scientific << std::setprecision(16);
+        fourier_energy = std::make_unique<
+            fdm::NSCylFourierVelocityEnergy<T>>(
+                controlled.nr, controlled.nz, controlled.nphi);
+    }
 
     const std::size_t boundary_size =
         static_cast<std::size_t>(controlled.nphi)*controlled.nz;
@@ -697,21 +734,65 @@ BoundaryEvolutionResult run_boundary_evolution(
                 filter.embed_original_perturbation(q_uncontrolled);
             const auto uncontrolled_modal = filter.apply(
                 extended_uncontrolled);
+            const double unorm = layout.velocity_norm(
+                uncontrolled, q_uncontrolled.data());
+            const double uncontrolled_block_norm = physical_lqr == nullptr
+                ? 0 : physical_lqr->controlled_block_velocity_norm(
+                    q_uncontrolled);
+            const double uncontrolled_other_norm = std::sqrt(std::max(
+                0.0, unorm*unorm
+                    -uncontrolled_block_norm*uncontrolled_block_norm));
+            if (fourier_output) {
+                const auto energies = fourier_energy->energies(
+                    uncontrolled, q_uncontrolled);
+                for (int m = 0; m < fourier_energy->m_count(); ++m) {
+                    for (int l = 0; l < fourier_energy->l_count(); ++l) {
+                        *fourier_output << "uncontrolled," << step << ','
+                            << (initial_time_index+step)*filter.geometry().dt
+                            << ',' << m << ',' << l << ',' << std::sqrt(
+                                std::max(0.0, energies[
+                                    fourier_energy->block_index(m, l)]))
+                            << '\n';
+                    }
+                }
+            }
             output << "uncontrolled," << step << ','
                    << (initial_time_index+step)*filter.geometry().dt
                    << ",0,"
                    << uncontrolled_modal.unstable_coordinate_norm_before
                    << ",0,0,0,0"
-                   << ',' << layout.velocity_norm(
-                       uncontrolled, q_uncontrolled.data())
+                   << ',' << unorm
                    << ',' << maximum_divergence(uncontrolled)
-                   << ",0,0,0,0,0\n";
+                   << ",0,0,0,0,0," << uncontrolled_block_norm << ','
+                   << uncontrolled_other_norm << '\n';
 
             auto q_controlled = perturbation(controlled, layout, reference);
             if (!feedback) {
                 auto extended_controlled =
                     filter.embed_original_perturbation(q_controlled);
                 controlled_modal = filter.apply(extended_controlled);
+            }
+            const double cnorm = layout.velocity_norm(
+                controlled, q_controlled.data());
+            const double controlled_block_norm = physical_lqr == nullptr
+                ? 0 : physical_lqr->controlled_block_velocity_norm(
+                    q_controlled);
+            const double controlled_other_norm = std::sqrt(std::max(
+                0.0, cnorm*cnorm
+                    -controlled_block_norm*controlled_block_norm));
+            if (fourier_output) {
+                const auto energies = fourier_energy->energies(
+                    controlled, q_controlled);
+                for (int m = 0; m < fourier_energy->m_count(); ++m) {
+                    for (int l = 0; l < fourier_energy->l_count(); ++l) {
+                        *fourier_output << "boundary," << step << ','
+                            << (initial_time_index+step)*filter.geometry().dt
+                            << ',' << m << ',' << l << ',' << std::sqrt(
+                                std::max(0.0, energies[
+                                    fourier_energy->block_index(m, l)]))
+                            << '\n';
+                    }
+                }
             }
             output << "boundary," << step << ','
                    << (initial_time_index+step)*filter.geometry().dt << ','
@@ -725,19 +806,17 @@ BoundaryEvolutionResult run_boundary_evolution(
                    << (feedback
                            ? controlled_modal.predicted_lqr_cost_after : 0)
                    << ','
-                   << layout.velocity_norm(controlled, q_controlled.data())
+                   << cnorm
                    << ',' << maximum_divergence(controlled) << ','
                    << control.rms_norm() << ',' << control.maximum_norm()
                    << ',' << supported_correction_norm << ','
                    << gluing_correction_velocity_norm << ','
                    << (nonlinear_method == nullptr
                            ? 0 : nonlinear_method->applications())
+                   << ',' << controlled_block_norm << ','
+                   << controlled_other_norm
                    << '\n';
 
-            const double unorm = layout.velocity_norm(
-                uncontrolled, q_uncontrolled.data());
-            const double cnorm = layout.velocity_norm(
-                controlled, q_controlled.data());
             if (!std::isfinite(unorm) || !std::isfinite(cnorm)
                 || unorm > maximum_velocity_norm
                 || cnorm > maximum_velocity_norm) {
@@ -1133,6 +1212,10 @@ int run(const Config& config) {
         "extended", "boundary_nonlinear_map_steps", 20000);
     const std::string boundary_evolution_output = config.get(
         "extended", "boundary_evolution_output", std::string());
+    const std::string boundary_fourier_output = config.get(
+        "extended", "boundary_fourier_output", std::string());
+    const std::string boundary_spectrum_input = config.get(
+        "extended", "boundary_spectrum_input", std::string());
     const std::string boundary_checkpoint_output = config.get(
         "extended", "boundary_checkpoint_output", std::string());
     if (checkpoint_input.empty() || spectrum_input.empty()
@@ -1314,7 +1397,7 @@ int run(const Config& config) {
                 original_perturbation, checkpoint_metadata.time_index,
                 boundary_evolution_steps, boundary_log_interval,
                 boundary_feedback_interval, maximum_velocity_norm,
-                boundary_evolution_output);
+                boundary_evolution_output, boundary_fourier_output);
         } else if (boundary_mode == "physical_lqr") {
             if (boundary_nonlinear_iterations >= 0) {
                 throw std::invalid_argument(
@@ -1325,16 +1408,34 @@ int run(const Config& config) {
             for (const auto& mode : modes.modes()) {
                 controlled_blocks.emplace_back(mode.m, mode.l);
             }
+            std::size_t physical_mode_count = 0;
+            if (!boundary_spectrum_input.empty()) {
+                fdm::NSCylSpectralModeSet<T> physical_modes;
+                fdm::NSCylSpectralMetadata physical_metadata;
+                fdm::NSCylSpectralStorage(boundary_spectrum_input).load(
+                    physical_modes, physical_metadata);
+                validate_physical_spectrum(original_task, physical_metadata);
+                physical_modes = select_control_modes(
+                    physical_modes, control_growth_min);
+                physical_mode_count = physical_modes.size();
+                for (const auto& mode : physical_modes.modes()) {
+                    controlled_blocks.emplace_back(mode.m, mode.l);
+                }
+            }
             fdm::NSCylBoundaryLQR<T> physical_lqr(
                 config, controlled_blocks, lqr_horizon_intervals,
                 boundary_feedback_interval, lqr_control_weight, lqr_ridge,
                 boundary_control_components);
+            std::printf("physical LQR block selection: G modes=%zu "
+                        "Omega modes=%zu union blocks=%zu\n",
+                        modes.size(), physical_mode_count,
+                        physical_lqr.block_count());
             boundary = run_boundary_evolution(
                 config, filter, &physical_lqr, nullptr, -1, reference,
                 original_perturbation, checkpoint_metadata.time_index,
                 boundary_evolution_steps, boundary_log_interval,
                 boundary_feedback_interval, maximum_velocity_norm,
-                boundary_evolution_output);
+                boundary_evolution_output, boundary_fourier_output);
         } else if (boundary_mode == "extended_trace") {
             boundary = run_extended_trace_evolution(
                 config, extended_config, filter, nonlinear_method.get(),

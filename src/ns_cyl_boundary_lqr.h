@@ -268,6 +268,12 @@ private:
 
     std::vector<T> build_phase_gram() const {
         const int phases = phase_count();
+        // PeriodicPackedFFT2 follows the Samarskii--Nikolaev convention:
+        // synthesis contributes one half of the stored coefficient at the
+        // zero and Nyquist endpoints in each transformed direction.
+        const long double packed_scale =
+            (m() == 0 || 2*m() == dynamics_.nphi ? 0.5L : 1.0L)
+            *(l() == 0 || 2*l() == dynamics_.nz ? 0.5L : 1.0L);
         std::vector<T> result(
             static_cast<std::size_t>(phases)*phases, T(0));
         for (int row = 0; row < phases; ++row) {
@@ -275,7 +281,8 @@ private:
                 long double entry = 0;
                 for (int i = 0; i < dynamics_.nphi; ++i) {
                     for (int k = 0; k < dynamics_.nz; ++k) {
-                        entry += static_cast<long double>(
+                        entry += packed_scale*packed_scale
+                            *static_cast<long double>(
                             dynamics_.phase_value(row, i, k))
                             *dynamics_.phase_value(column, i, k);
                     }
@@ -440,6 +447,24 @@ public:
     }
 
     std::size_t block_count() const { return controllers_.size(); }
+
+    // Cylindrical velocity norm carried by the complete Fourier blocks on
+    // which this controller acts. This includes stable directions in those
+    // blocks, not just the unstable modal coordinates used to select them.
+    double controlled_block_velocity_norm(const std::vector<T>& state) {
+        if (static_cast<int>(state.size()) != layout_.state_size) {
+            throw std::invalid_argument(
+                "physical boundary LQR state has the wrong size");
+        }
+        analyze_state(state);
+        long double norm2 = 0;
+        for (const auto& controller : controllers_) {
+            const auto block = gather_state(*controller);
+            norm2 += controller->velocity_inner_product(
+                block.data(), block.data());
+        }
+        return std::sqrt(std::max(0.0, static_cast<double>(norm2)));
+    }
 
     Result control(const std::vector<T>& state,
                    const std::vector<T>& current_radial,

@@ -13,6 +13,7 @@
 #include "ns_cyl_boundary_lqr.h"
 #include "ns_cyl_fourier_batch.h"
 #include "ns_cyl_fourier_block.h"
+#include "ns_cyl_fourier_energy.h"
 #include "ns_cyl_fourier_native.h"
 #include "ns_cyl_spectral_modes.h"
 #include "ns_cyl_spectral_projector.h"
@@ -451,6 +452,11 @@ void test_physical_boundary_lqr_global_packing_matches_block(void**) {
     }
     reference.lift(block_state.data());
     const auto physical_state = layout.pack(reference.task());
+    const double physical_norm = layout.velocity_norm(
+        reference.task(), physical_state.data());
+    assert_true(std::abs(
+        global_controller.controlled_block_velocity_norm(physical_state)
+            -physical_norm) < 2e-13);
 
     fdm::PeriodicPackedFFT2<double> fft(4, 4);
     std::vector<double> plane_coefficients(16, 0.0);
@@ -508,6 +514,46 @@ void test_physical_boundary_lqr_global_packing_matches_block(void**) {
             }
         }
     }
+}
+
+void test_fourier_velocity_energy_satisfies_parseval(void**) {
+    Config config = make_config(5, 8, 8);
+    using Task = fdm::NSCyl<double, true, fdm::tensor_flag::periodic>;
+    Task geometry(config);
+    fdm::NSCylStateLayout<double> layout(geometry);
+    fdm::NSCylFourierVelocityEnergy<double> spectrum(
+        geometry.nr, geometry.nz, geometry.nphi);
+    std::vector<double> state(layout.state_size);
+    std::mt19937 generator(4201);
+    std::uniform_real_distribution<double> distribution(-0.1, 0.1);
+    for (double& value : state) {
+        value = distribution(generator);
+    }
+    const auto energies = spectrum.energies(geometry, state);
+    long double fourier_energy = 0;
+    for (double energy : energies) {
+        assert_true(energy >= 0);
+        fourier_energy += energy;
+    }
+    const double physical_energy = layout.velocity_inner_product(
+        geometry, state.data(), state.data());
+    assert_true(std::abs(static_cast<double>(fourier_energy)-physical_energy)
+        < 2e-13*physical_energy);
+
+    const std::vector<std::pair<int, int>> selected = {
+        {0, 0}, {0, 1}, {1, 0}, {1, 1}, {2, 4}
+    };
+    fdm::NSCylBoundaryLQR<double> controller(
+        config, selected, 1, 1, 0.1, 0.0, "tangential");
+    long double selected_energy = 0;
+    for (const auto [m, l] : selected) {
+        selected_energy += energies[spectrum.block_index(m, l)];
+    }
+    const double selected_norm = controller.controlled_block_velocity_norm(
+        state);
+    assert_true(std::abs(selected_norm*selected_norm
+                         -static_cast<double>(selected_energy))
+        < 2e-13*physical_energy);
 }
 
 void test_physical_boundary_lqr_respects_component_selection(void**) {
@@ -1278,6 +1324,7 @@ int main() {
             test_physical_boundary_lqr_minimizes_one_interval_cost),
         cmocka_unit_test(
             test_physical_boundary_lqr_global_packing_matches_block),
+        cmocka_unit_test(test_fourier_velocity_energy_satisfies_parseval),
         cmocka_unit_test(
             test_physical_boundary_lqr_respects_component_selection),
         cmocka_unit_test(test_batched_blocks_match_individual_applications),
