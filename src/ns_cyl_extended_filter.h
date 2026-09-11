@@ -36,6 +36,11 @@ struct NSCylExtendedBlockFilterDiagnostics {
     double unstable_coordinate_norm_before = 0;
     double unstable_coordinate_norm_after = 0;
     double coefficient_norm = 0;
+    double correction_velocity_norm = 0;
+    double boundary_rms = 0;
+    double boundary_maximum = 0;
+    double coordinate_to_correction_gain = 0;
+    double coordinate_to_boundary_rms_gain = 0;
 };
 
 struct NSCylExtendedFilterDiagnostics {
@@ -235,7 +240,8 @@ public:
     }
 
     NSCylExtendedFilterDiagnostics apply(
-        std::vector<T>& extended_perturbation) {
+        std::vector<T>& extended_perturbation,
+        bool detailed_block_diagnostics = false) {
         if (static_cast<int>(extended_perturbation.size())
             != layout_.state_size) {
             throw std::invalid_argument(
@@ -260,6 +266,10 @@ public:
             std::vector<T> before(dimension, T(0));
             std::vector<T> after(dimension, T(0));
             std::vector<T> amplitudes(dimension, T(0));
+            std::vector<T> block_correction;
+            if (detailed_block_diagnostics) {
+                block_correction.assign(projector.block_size(), T(0));
+            }
             projector.coordinates(before.data(), block_.data());
             for (int row = 0; row < dimension; ++row) {
                 for (int column = 0; column < dimension; ++column) {
@@ -272,7 +282,11 @@ public:
                 const auto& basis = correction.basis[column];
                 for (int coordinate = 0;
                      coordinate < projector.block_size(); ++coordinate) {
-                    block_[coordinate] += amplitudes[column]*basis[coordinate];
+                    const T value = amplitudes[column]*basis[coordinate];
+                    block_[coordinate] += value;
+                    if (detailed_block_diagnostics) {
+                        block_correction[coordinate] += value;
+                    }
                 }
             }
             projector.coordinates(after.data(), block_.data());
@@ -301,6 +315,22 @@ public:
                 block_result.unstable_coordinate_norm_after);
             block_result.coefficient_norm = std::sqrt(
                 block_result.coefficient_norm);
+            if (detailed_block_diagnostics) {
+                const auto metrics = physical_block_metrics(
+                    projector, block_correction);
+                block_result.correction_velocity_norm =
+                    metrics.velocity_norm;
+                block_result.boundary_rms = metrics.boundary_rms;
+                block_result.boundary_maximum = metrics.boundary_maximum;
+                if (block_result.unstable_coordinate_norm_before > 0) {
+                    block_result.coordinate_to_correction_gain =
+                        metrics.velocity_norm
+                        /block_result.unstable_coordinate_norm_before;
+                    block_result.coordinate_to_boundary_rms_gain =
+                        metrics.boundary_rms
+                        /block_result.unstable_coordinate_norm_before;
+                }
+            }
             before2 += block_result.unstable_coordinate_norm_before
                 *block_result.unstable_coordinate_norm_before;
             after2 += block_result.unstable_coordinate_norm_after
@@ -325,6 +355,12 @@ public:
     }
 
 private:
+    struct BlockPhysicalMetrics {
+        double velocity_norm = 0;
+        double boundary_rms = 0;
+        double boundary_maximum = 0;
+    };
+
     struct CorrectionBlock {
         std::vector<std::vector<T>> basis;
         std::vector<T> inverse_response;
@@ -621,6 +657,102 @@ private:
             corrections_.push_back(build_correction(
                 stokes_config, block));
         }
+    }
+
+    BlockPhysicalMetrics physical_block_metrics(
+        const BlockProjector& projector,
+        const std::vector<T>& reduced_block) {
+        if (static_cast<int>(reduced_block.size()) != projector.block_size()) {
+            throw std::invalid_argument(
+                "block correction has the wrong packed size");
+        }
+
+        std::vector<T> expanded;
+        const T* block = reduced_block.data();
+        if (projector.pressure_gauge_fixed()) {
+            expanded.resize(
+                static_cast<std::size_t>(projector.phase_count())
+                *layout_.radial_size);
+            layout_.expand_zero_gauge_block(
+                geometry_, reduced_block.data(), expanded.data());
+            block = expanded.data();
+        }
+
+        std::vector<T> fourier(layout_.state_size, T(0));
+        const auto phi = packed_indices(projector.m(), layout_.nphi);
+        const auto z = packed_indices(projector.l(), layout_.nz);
+        int phase = 0;
+        for (int i : phi) {
+            for (int k : z) {
+                for (int j = 1; j < layout_.nr; ++j) {
+                    fourier[state_index(Component::u, i, k, j)] = block[
+                        static_cast<std::size_t>(phase)*layout_.radial_size
+                        +layout_.radial_index(Component::u, j)];
+                }
+                for (Component component : {Component::v, Component::w}) {
+                    for (int j = 1; j <= layout_.nr; ++j) {
+                        fourier[state_index(component, i, k, j)] = block[
+                            static_cast<std::size_t>(phase)
+                                *layout_.radial_size
+                            +layout_.radial_index(component, j)];
+                    }
+                }
+                ++phase;
+            }
+        }
+
+        std::vector<T> physical(layout_.state_size, T(0));
+        std::vector<T> plane_fourier(fft_.size(), T(0));
+        std::vector<T> plane_physical(fft_.size(), T(0));
+        for (Component component : {
+                 Component::u, Component::v, Component::w}) {
+            const int radial_end = component == Component::u
+                ? layout_.nr-1 : layout_.nr;
+            for (int j = 1; j <= radial_end; ++j) {
+                for (int i = 0; i < layout_.nphi; ++i) {
+                    for (int k = 0; k < layout_.nz; ++k) {
+                        plane_fourier[plane_index(i, k)] =
+                            fourier[state_index(component, i, k, j)];
+                    }
+                }
+                fft_.synthesis(plane_fourier.data(), plane_physical.data());
+                for (int i = 0; i < layout_.nphi; ++i) {
+                    for (int k = 0; k < layout_.nz; ++k) {
+                        physical[state_index(component, i, k, j)] =
+                            plane_physical[plane_index(i, k)];
+                    }
+                }
+            }
+        }
+
+        BlockPhysicalMetrics result;
+        result.velocity_norm = layout_.velocity_norm(
+            geometry_, physical.data());
+        long double boundary_sum = 0;
+        for (int i = 0; i < layout_.nphi; ++i) {
+            for (int k = 0; k < layout_.nz; ++k) {
+                const long double radial = physical[state_index(
+                    Component::u, i, k, original_nr_)];
+                const long double axial = T(0.5)*(
+                    physical[state_index(
+                        Component::v, i, k, original_nr_)]
+                    +physical[state_index(
+                        Component::v, i, k, original_nr_+1)]);
+                const long double azimuthal = T(0.5)*(
+                    physical[state_index(
+                        Component::w, i, k, original_nr_)]
+                    +physical[state_index(
+                        Component::w, i, k, original_nr_+1)]);
+                const double magnitude2 = static_cast<double>(
+                    radial*radial+axial*axial+azimuthal*azimuthal);
+                boundary_sum += magnitude2;
+                result.boundary_maximum = std::max(
+                    result.boundary_maximum, std::sqrt(magnitude2));
+            }
+        }
+        result.boundary_rms = std::sqrt(static_cast<double>(
+            boundary_sum/(layout_.nphi*layout_.nz)));
+        return result;
     }
 
     static double infinity_norm(const std::vector<T>& matrix, int size) {

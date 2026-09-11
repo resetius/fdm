@@ -337,7 +337,10 @@ void write_diagnostics(
     }
     output << "m,l,response_norm,inverse_response_norm,response_condition,"
               "coordinate_norm_before,"
-              "coordinate_norm_after,coefficient_norm\n";
+              "coordinate_norm_after,coefficient_norm,"
+              "correction_velocity_norm,boundary_rms,boundary_maximum,"
+              "coordinate_to_correction_gain,"
+              "coordinate_to_boundary_rms_gain\n";
     output << std::scientific << std::setprecision(16);
     for (const auto& block : diagnostics.blocks) {
         output << block.m << ',' << block.l << ','
@@ -346,7 +349,12 @@ void write_diagnostics(
                << block.response_condition << ','
                << block.unstable_coordinate_norm_before << ','
                << block.unstable_coordinate_norm_after << ','
-               << block.coefficient_norm << '\n';
+               << block.coefficient_norm << ','
+               << block.correction_velocity_norm << ','
+               << block.boundary_rms << ','
+               << block.boundary_maximum << ','
+               << block.coordinate_to_correction_gain << ','
+               << block.coordinate_to_boundary_rms_gain << '\n';
     }
 }
 
@@ -1073,7 +1081,7 @@ int run(const Config& config) {
     const auto unfiltered_perturbation = extended_perturbation;
     const double divergence_before = maximum_divergence(
         extended_perturbation, filter.geometry());
-    const auto diagnostics = filter.apply(extended_perturbation);
+    const auto diagnostics = filter.apply(extended_perturbation, true);
     const double divergence_after = maximum_divergence(
         extended_perturbation, filter.geometry());
     std::vector<T> correction(extended_perturbation.size());

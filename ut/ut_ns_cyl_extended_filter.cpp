@@ -152,7 +152,7 @@ void test_biorthogonal_auxiliary_correction(void**) {
         }
     }
     const auto before = state;
-    const auto diagnostics = filter.apply(state);
+    const auto diagnostics = filter.apply(state, true);
     const auto boundary = filter.correction_boundary_velocity();
 
     std::vector<T> correction(state.size());
@@ -164,6 +164,23 @@ void test_biorthogonal_auxiliary_correction(void**) {
                 < 1e-12*diagnostics.unstable_coordinate_norm_before);
     assert_true(diagnostics.correction_velocity_norm > 0);
     assert_true(diagnostics.original_domain_change_norm < 1e-13);
+    assert_int_equal(diagnostics.blocks.size(), 1);
+    const auto& block = diagnostics.blocks.front();
+    assert_true(std::abs(block.correction_velocity_norm
+                         -diagnostics.correction_velocity_norm)
+                < 1e-12*diagnostics.correction_velocity_norm);
+    assert_true(std::abs(block.boundary_rms-boundary.rms_norm())
+                < 1e-12*boundary.rms_norm());
+    assert_true(std::abs(block.boundary_maximum-boundary.maximum_norm())
+                < 1e-12*boundary.maximum_norm());
+    assert_true(std::abs(block.coordinate_to_correction_gain
+                         -block.correction_velocity_norm
+                             /block.unstable_coordinate_norm_before)
+                < 1e-12*block.coordinate_to_correction_gain);
+    assert_true(std::abs(block.coordinate_to_boundary_rms_gain
+                         -block.boundary_rms
+                             /block.unstable_coordinate_norm_before)
+                < 1e-12*block.coordinate_to_boundary_rms_gain);
     assert_true(maximum_divergence(config, correction) < 1e-11);
     assert_int_equal(boundary.nphi, layout.nphi);
     assert_int_equal(boundary.nz, layout.nz);
