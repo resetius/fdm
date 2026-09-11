@@ -88,7 +88,7 @@ bool nearly_equal(double first, double second) {
 
 Config make_extended_config(
     const fdm::NSCylSpectralMetadata& metadata,
-    double response_condition_limit) {
+    double response_condition_limit, double response_regularization) {
     Config result;
     std::vector<std::string> arguments = {
         "fdm_ns_cyl_extended_filter",
@@ -105,7 +105,9 @@ Config make_extended_config(
         "--ns:verbose=0",
         "--spectral:base_outer_radius="+number(metadata.base_outer_radius),
         "--extended:response_condition_limit="
-            +number(response_condition_limit)
+            +number(response_condition_limit),
+        "--extended:response_regularization="
+            +number(response_regularization)
     };
     std::vector<char*> argv;
     for (auto& argument : arguments) {
@@ -980,6 +982,8 @@ int run(const Config& config) {
         "extended", "trace_output", std::string());
     const double response_condition_limit = config.get(
         "extended", "response_condition_limit", 1e12);
+    const double response_regularization = config.get(
+        "extended", "response_regularization", 0.0);
     const double control_growth_min = config.get(
         "extended", "control_growth_min", 0.0);
     const double coordinate_tolerance = config.get(
@@ -1070,7 +1074,8 @@ int run(const Config& config) {
     }
 
     Config extended_config = make_extended_config(
-        spectral_metadata, response_condition_limit);
+        spectral_metadata, response_condition_limit,
+        response_regularization);
     fdm::NSCylSpectralProjector<T> projector(
         modes, spectral_metadata.condition_limit);
     ExtendedFilter filter(extended_config, std::move(projector));
@@ -1228,6 +1233,8 @@ int run(const Config& config) {
                 "real_dimension=%d\n",
                 control_growth_min, available_mode_count,
                 available_real_dimension);
+    std::printf("response regularization: alpha=%.9e\n",
+                response_regularization);
     std::printf("initial perturbation scale: %.9e\n",
                 initial_perturbation_scale);
     std::printf("coordinates: before=%.9e after=%.9e ratio=%.9e\n",
@@ -1243,7 +1250,12 @@ int run(const Config& config) {
                 checkpoint_output.c_str(), trace_output.c_str(),
                 diagnostics_output.c_str());
 
-    const bool passed = coordinate_ratio <= coordinate_tolerance
+    const bool coordinate_ok = response_regularization == 0
+        ? coordinate_ratio <= coordinate_tolerance
+        : diagnostics.unstable_coordinate_norm_after
+            <= diagnostics.unstable_coordinate_norm_before
+                *(1+coordinate_tolerance);
+    const bool passed = coordinate_ok
         && diagnostics.original_domain_change_norm <= preservation_tolerance
         && correction_divergence <= divergence_tolerance
         && divergence_after <= divergence_before+divergence_tolerance;

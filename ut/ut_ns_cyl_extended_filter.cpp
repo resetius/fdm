@@ -26,7 +26,8 @@ using Layout = fdm::NSCylStateLayout<T>;
 using Component = Layout::Component;
 using Filter = fdm::NSCylExtendedSpectralFilter<T>;
 
-Config make_config(double base_outer_radius=2.0) {
+Config make_config(double base_outer_radius=2.0,
+                   double response_regularization=0.0) {
     Config config;
     std::vector<std::string> arguments = {
         "ut_ns_cyl_extended_filter",
@@ -42,7 +43,9 @@ Config make_config(double base_outer_radius=2.0) {
         "--ns:dt=0.001",
         "--ns:verbose=0",
         "--spectral:base_outer_radius="+std::to_string(base_outer_radius),
-        "--extended:response_condition_limit=1e12"
+        "--extended:response_condition_limit=1e12",
+        "--extended:response_regularization="
+            +std::to_string(response_regularization)
     };
     std::vector<char*> argv;
     for (auto& argument : arguments) {
@@ -253,6 +256,59 @@ void test_supported_correction_can_target_nonzero_coordinates(void**) {
     assert_true(filter.correction_boundary_velocity().rms_norm() > 0);
 }
 
+void test_regularization_trades_residual_for_boundary_energy(void**) {
+    const double regularization = 0.1;
+    const Layout layout(8, 4, 4);
+    fdm::PeriodicPackedFFT2<T> fft(layout.nphi, layout.nz);
+    std::vector<T> input(layout.state_size, T(0));
+    std::vector<T> values(fft.size());
+    std::vector<T> plane(fft.size(), T(0));
+    plane[1] = T(1);
+    fft.synthesis(plane.data(), values.data());
+    for (int i = 0; i < layout.nphi; ++i) {
+        for (int k = 0; k < layout.nz; ++k) {
+            input[packed_index(layout, Component::v, i, k, 2)] =
+                values[static_cast<std::size_t>(i)*layout.nz+k];
+        }
+    }
+
+    auto exact_state = input;
+    Filter exact_filter(make_config(), make_projector(make_config()));
+    const auto exact = exact_filter.apply(exact_state, true);
+
+    Config regularized_config = make_config(2.0, regularization);
+    auto regularized_state = input;
+    Filter regularized_filter(
+        regularized_config, make_projector(regularized_config));
+    const auto regularized_result = regularized_filter.apply(
+        regularized_state, true);
+
+    const auto& exact_block = exact.blocks.front();
+    const auto& regularized_block = regularized_result.blocks.front();
+    const double boundary_gain = exact_block.boundary_rms
+        /exact_block.unstable_coordinate_norm_before;
+    const double expected_scale = 1/(1+regularization
+        *boundary_gain*boundary_gain);
+    const double observed_scale = regularized_block.boundary_rms
+        /exact_block.boundary_rms;
+    const double residual_ratio =
+        regularized_block.unstable_coordinate_norm_after
+        /regularized_block.unstable_coordinate_norm_before;
+
+    assert_float_equal(observed_scale, expected_scale, 1e-12);
+    assert_float_equal(residual_ratio, 1-expected_scale, 1e-12);
+    assert_true(regularized_result.correction_velocity_norm
+                < exact.correction_velocity_norm);
+    assert_true(regularized_filter.correction_boundary_velocity().rms_norm()
+                < exact_filter.correction_boundary_velocity().rms_norm());
+    assert_true(regularized_result.original_domain_change_norm < 1e-13);
+    std::vector<T> correction(regularized_state.size());
+    for (std::size_t index = 0; index < correction.size(); ++index) {
+        correction[index] = regularized_state[index]-input[index];
+    }
+    assert_true(maximum_divergence(regularized_config, correction) < 1e-11);
+}
+
 void test_zero_order_nonlinear_target_matches_linear_correction(void**) {
     Config config = make_config();
     const Layout layout(8, 4, 4);
@@ -325,6 +381,7 @@ int main() {
     const CMUnitTest tests[] = {
         cmocka_unit_test(test_biorthogonal_auxiliary_correction),
         cmocka_unit_test(test_supported_correction_can_target_nonzero_coordinates),
+        cmocka_unit_test(test_regularization_trades_residual_for_boundary_energy),
         cmocka_unit_test(test_zero_order_nonlinear_target_matches_linear_correction),
         cmocka_unit_test(test_auxiliary_interface_must_be_grid_aligned)
     };

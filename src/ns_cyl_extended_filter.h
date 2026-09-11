@@ -138,9 +138,17 @@ public:
         }
         response_condition_limit_ = config.get(
             "extended", "response_condition_limit", 1e12);
+        response_regularization_ = config.get(
+            "extended", "response_regularization", 0.0);
         if (!(response_condition_limit_ >= 1)) {
             throw std::invalid_argument(
                 "extended response condition limit must be at least one");
+        }
+        if (!(response_regularization_ >= 0)
+            || !std::isfinite(response_regularization_)) {
+            throw std::invalid_argument(
+                "extended response regularization must be finite and "
+                "nonnegative");
         }
         validate_projector();
         build_corrections();
@@ -271,13 +279,7 @@ public:
                 block_correction.assign(projector.block_size(), T(0));
             }
             projector.coordinates(before.data(), block_.data());
-            for (int row = 0; row < dimension; ++row) {
-                for (int column = 0; column < dimension; ++column) {
-                    amplitudes[row] -= correction.inverse_response[
-                        static_cast<std::size_t>(row)*dimension+column]
-                        *before[column];
-                }
-            }
+            compute_amplitudes(correction, before, amplitudes);
             for (int column = 0; column < dimension; ++column) {
                 const auto& basis = correction.basis[column];
                 for (int coordinate = 0;
@@ -363,7 +365,9 @@ private:
 
     struct CorrectionBlock {
         std::vector<std::vector<T>> basis;
+        std::vector<T> response;
         std::vector<T> inverse_response;
+        std::vector<T> boundary_gram;
         double response_norm = 0;
         double inverse_response_norm = 0;
         double response_condition = 0;
@@ -377,6 +381,7 @@ private:
     PeriodicPackedFFT2<T> fft_;
     Projector projector_;
     double response_condition_limit_ = 0;
+    double response_regularization_ = 0;
     std::vector<CorrectionBlock> corrections_;
     std::vector<T> physical_;
     std::vector<T> original_physical_;
@@ -539,7 +544,7 @@ private:
     }
 
     CorrectionBlock build_correction(const Config& stokes_config,
-                                     const BlockProjector& projector) const {
+                                     const BlockProjector& projector) {
         NSCylFourierBlockNative<T> stokes(
             stokes_config, projector.m(), projector.l(), 1);
         const auto local_indices = local_velocity_indices(
@@ -625,6 +630,7 @@ private:
                     response_column[row];
             }
         }
+        result.response = response;
         result.inverse_response.resize(response.size());
         const T pivot = inverse_general_matrix(
             result.inverse_response.data(), response.data(), dimension);
@@ -647,6 +653,38 @@ private:
                 +std::to_string(projector.l())+"): condition="
                 +std::to_string(result.response_condition));
         }
+
+        result.boundary_gram.assign(
+            static_cast<std::size_t>(dimension)*dimension, T(0));
+        std::vector<double> diagonal(dimension);
+        for (int column = 0; column < dimension; ++column) {
+            const auto metrics = physical_block_metrics(
+                projector, result.basis[column]);
+            diagonal[column] = metrics.boundary_rms*metrics.boundary_rms;
+            result.boundary_gram[
+                static_cast<std::size_t>(column)*dimension+column] =
+                    static_cast<T>(diagonal[column]);
+        }
+        for (int row = 0; row < dimension; ++row) {
+            for (int column = row+1; column < dimension; ++column) {
+                std::vector<T> sum(projector.block_size());
+                for (int coordinate = 0;
+                     coordinate < projector.block_size(); ++coordinate) {
+                    sum[coordinate] = result.basis[row][coordinate]
+                        +result.basis[column][coordinate];
+                }
+                const auto metrics = physical_block_metrics(projector, sum);
+                const double entry = 0.5*(
+                    metrics.boundary_rms*metrics.boundary_rms
+                    -diagonal[row]-diagonal[column]);
+                result.boundary_gram[
+                    static_cast<std::size_t>(row)*dimension+column] =
+                        static_cast<T>(entry);
+                result.boundary_gram[
+                    static_cast<std::size_t>(column)*dimension+row] =
+                        static_cast<T>(entry);
+            }
+        }
         return result;
     }
 
@@ -656,6 +694,65 @@ private:
         for (const auto& block : projector_.blocks()) {
             corrections_.push_back(build_correction(
                 stokes_config, block));
+        }
+    }
+
+    void compute_amplitudes(
+        const CorrectionBlock& correction, const std::vector<T>& coordinates,
+        std::vector<T>& amplitudes) const {
+        const int dimension = static_cast<int>(coordinates.size());
+        if (response_regularization_ == 0) {
+            for (int row = 0; row < dimension; ++row) {
+                for (int column = 0; column < dimension; ++column) {
+                    amplitudes[row] -= correction.inverse_response[
+                        static_cast<std::size_t>(row)*dimension+column]
+                        *coordinates[column];
+                }
+            }
+            return;
+        }
+
+        std::vector<T> normal(
+            static_cast<std::size_t>(dimension)*dimension, T(0));
+        std::vector<T> right_hand_side(dimension, T(0));
+        for (int row = 0; row < dimension; ++row) {
+            for (int coordinate = 0;
+                 coordinate < dimension; ++coordinate) {
+                right_hand_side[row] -= correction.response[
+                    static_cast<std::size_t>(coordinate)*dimension+row]
+                    *coordinates[coordinate];
+            }
+            for (int column = 0; column < dimension; ++column) {
+                for (int coordinate = 0;
+                     coordinate < dimension; ++coordinate) {
+                    normal[static_cast<std::size_t>(row)*dimension+column] +=
+                        correction.response[
+                            static_cast<std::size_t>(coordinate)
+                                *dimension+row]
+                        *correction.response[
+                            static_cast<std::size_t>(coordinate)
+                                *dimension+column];
+                }
+                normal[static_cast<std::size_t>(row)*dimension+column] +=
+                    static_cast<T>(response_regularization_)
+                    *correction.boundary_gram[
+                        static_cast<std::size_t>(row)*dimension+column];
+            }
+        }
+
+        std::vector<T> inverse(normal.size());
+        const T pivot = inverse_general_matrix(
+            inverse.data(), normal.data(), dimension);
+        if (!(pivot > T(0))) {
+            throw std::runtime_error(
+                "regularized auxiliary response solve failed");
+        }
+        for (int row = 0; row < dimension; ++row) {
+            for (int column = 0; column < dimension; ++column) {
+                amplitudes[row] += inverse[
+                    static_cast<std::size_t>(row)*dimension+column]
+                    *right_hand_side[column];
+            }
         }
     }
 
