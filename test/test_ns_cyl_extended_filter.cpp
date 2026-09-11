@@ -14,6 +14,7 @@
 
 #include "config.h"
 #include "ns_cyl.h"
+#include "ns_cyl_boundary_lqr.h"
 #include "ns_cyl_checkpoint_storage.h"
 #include "ns_cyl_extended_filter.h"
 #include "ns_cyl_nonlinear_gluing.h"
@@ -572,6 +573,7 @@ private:
 
 BoundaryEvolutionResult run_boundary_evolution(
     const Config& original_config, ExtendedFilter& filter,
+    fdm::NSCylBoundaryLQR<T>* physical_lqr,
     ExtendedNonlinearMethod* nonlinear_method, int nonlinear_iterations,
     const std::vector<T>& reference, const std::vector<T>& initial,
     int initial_time_index, int steps, int log_interval,
@@ -601,7 +603,15 @@ BoundaryEvolutionResult run_boundary_evolution(
               "nonlinear_S_applications\n";
     output << std::scientific << std::setprecision(16);
 
-    fdm::NSCylOuterBoundaryVelocity<T> control;
+    const std::size_t boundary_size =
+        static_cast<std::size_t>(controlled.nphi)*controlled.nz;
+    fdm::NSCylOuterBoundaryVelocity<T> applied_control;
+    applied_control.nphi = controlled.nphi;
+    applied_control.nz = controlled.nz;
+    applied_control.radial.assign(boundary_size, T(0));
+    applied_control.axial.assign(boundary_size, T(0));
+    applied_control.azimuthal.assign(boundary_size, T(0));
+    auto control = applied_control;
     fdm::NSCylExtendedFilterDiagnostics controlled_modal;
     double target_coordinate_norm = 0;
     double response_residual_norm = 0;
@@ -622,7 +632,24 @@ BoundaryEvolutionResult run_boundary_evolution(
         if (feedback) {
             auto q = perturbation(controlled, layout, reference);
             auto extended = filter.embed_original_perturbation(q);
-            if (nonlinear_method == nullptr) {
+            if (physical_lqr != nullptr) {
+                controlled_modal = filter.apply(extended);
+                const auto physical = physical_lqr->control(
+                    q, applied_control.radial, applied_control.axial,
+                    applied_control.azimuthal);
+                control.radial = physical.radial;
+                control.axial = physical.axial;
+                control.azimuthal = physical.azimuthal;
+                controlled_modal.predicted_lqr_cost_before =
+                    physical.predicted_cost_before;
+                controlled_modal.predicted_lqr_cost_after =
+                    physical.predicted_cost_after;
+                target_coordinate_norm = 0;
+                response_residual_norm =
+                    controlled_modal.unstable_coordinate_norm_before;
+                supported_correction_norm = 0;
+                gluing_correction_velocity_norm = 0;
+            } else if (nonlinear_method == nullptr) {
                 controlled_modal = filter.apply(extended);
                 target_coordinate_norm = 0;
                 response_residual_norm =
@@ -649,14 +676,16 @@ BoundaryEvolutionResult run_boundary_evolution(
                 supported_correction_norm =
                     response.correction_velocity_norm;
             }
-            if (nonlinear_method == nullptr) {
+            if (physical_lqr == nullptr && nonlinear_method == nullptr) {
                 supported_correction_norm =
                     controlled_modal.correction_velocity_norm;
             }
-            control = filter.correction_boundary_velocity();
-            controlled.set_outer_boundary_velocity(
-                control.radial, control.axial, control.azimuthal);
-            controlled.apply_boundary_conditions();
+            if (physical_lqr == nullptr) {
+                control = filter.correction_boundary_velocity();
+                controlled.set_outer_boundary_velocity(
+                    control.radial, control.axial, control.azimuthal);
+                controlled.apply_boundary_conditions();
+            }
         }
 
         const bool log = step == 0 || step == steps
@@ -720,7 +749,16 @@ BoundaryEvolutionResult run_boundary_evolution(
 
         if (step != steps) {
             uncontrolled.step();
-            controlled.step();
+            if (physical_lqr != nullptr && feedback) {
+                controlled.set_outer_boundary_step_data(
+                    applied_control.radial, applied_control.axial,
+                    applied_control.azimuthal, control.radial,
+                    control.axial, control.azimuthal);
+                controlled.step();
+                applied_control = control;
+            } else {
+                controlled.step();
+            }
         }
     }
 
@@ -1057,6 +1095,8 @@ int run(const Config& config) {
         "extended", "lqr_control_weight", 0.0);
     const double lqr_ridge = config.get(
         "extended", "lqr_ridge", 0.0);
+    const std::string boundary_control_components = config.get(
+        "extended", "boundary_control_components", std::string("all"));
     const double control_growth_min = config.get(
         "extended", "control_growth_min", 0.0);
     const double coordinate_tolerance = config.get(
@@ -1112,6 +1152,12 @@ int run(const Config& config) {
         throw std::invalid_argument(
             "finite-horizon LQR boundary evolution requires the linear "
             "target");
+    }
+    if (boundary_mode == "physical_lqr"
+        && (lqr_horizon_intervals <= 0 || boundary_feedback_interval <= 0)) {
+        throw std::invalid_argument(
+            "physical boundary LQR requires a positive horizon and "
+            "feedback interval");
     }
 
     Task original_task(config);
@@ -1263,8 +1309,28 @@ int run(const Config& config) {
         BoundaryEvolutionResult boundary;
         if (boundary_mode == "feedback") {
             boundary = run_boundary_evolution(
-                config, filter, nonlinear_method.get(),
+                config, filter, nullptr, nonlinear_method.get(),
                 boundary_nonlinear_iterations, reference,
+                original_perturbation, checkpoint_metadata.time_index,
+                boundary_evolution_steps, boundary_log_interval,
+                boundary_feedback_interval, maximum_velocity_norm,
+                boundary_evolution_output);
+        } else if (boundary_mode == "physical_lqr") {
+            if (boundary_nonlinear_iterations >= 0) {
+                throw std::invalid_argument(
+                    "physical boundary LQR does not use nonlinear gluing");
+            }
+            std::vector<std::pair<int, int>> controlled_blocks;
+            controlled_blocks.reserve(modes.size());
+            for (const auto& mode : modes.modes()) {
+                controlled_blocks.emplace_back(mode.m, mode.l);
+            }
+            fdm::NSCylBoundaryLQR<T> physical_lqr(
+                config, controlled_blocks, lqr_horizon_intervals,
+                boundary_feedback_interval, lqr_control_weight, lqr_ridge,
+                boundary_control_components);
+            boundary = run_boundary_evolution(
+                config, filter, &physical_lqr, nullptr, -1, reference,
                 original_perturbation, checkpoint_metadata.time_index,
                 boundary_evolution_steps, boundary_log_interval,
                 boundary_feedback_interval, maximum_velocity_norm,
@@ -1279,8 +1345,8 @@ int run(const Config& config) {
                 maximum_velocity_norm, boundary_evolution_output);
         } else {
             throw std::invalid_argument(
-                "extended boundary_mode must be 'feedback' or "
-                "'extended_trace'");
+                "extended boundary_mode must be 'feedback', "
+                "'physical_lqr', or 'extended_trace'");
         }
         if (!boundary_checkpoint_output.empty()) {
             original_layout.normalize_packed_pressure(
@@ -1332,6 +1398,10 @@ int run(const Config& config) {
                     "control_weight=%.9e ridge=%.9e",
                     lqr_horizon_intervals, boundary_feedback_interval,
                     lqr_control_weight, lqr_ridge);
+    }
+    if (boundary_mode == "physical_lqr") {
+        std::printf(" physical_boundary_components=%s",
+                    boundary_control_components.c_str());
     }
     std::printf("\n");
     std::printf("initial perturbation scale: %.9e\n",

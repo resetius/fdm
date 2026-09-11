@@ -131,6 +131,7 @@ public:
     int phase_count() const { return phases_; }
     int size() const { return size_; }
     int full_size() const { return full_size_; }
+    int outer_boundary_size() const { return 3*phases_; }
     int operator_steps() const { return operator_steps_; }
     int m() const { return m_; }
     int l() const { return l_; }
@@ -256,6 +257,28 @@ public:
     }
 
     void apply(T* output, const T* input) {
+        apply_impl(output, input, nullptr, nullptr);
+    }
+
+    // Advance one sampled interval while the perturbation velocity at the
+    // outer wall changes from boundary_current to boundary_next during its
+    // first fine step.  Subsequent fine steps hold boundary_next fixed.  The
+    // vectors are component-major (u_r,u_z,u_phi), with one coefficient per
+    // real packed phase of this Fourier block.
+    void apply_with_outer_boundary(T* output, const T* input,
+                                   const T* boundary_current,
+                                   const T* boundary_next) {
+        if (!boundary_current || !boundary_next) {
+            throw std::invalid_argument(
+                "null native Fourier outer boundary vector");
+        }
+        apply_impl(output, input, boundary_current, boundary_next);
+    }
+
+private:
+    void apply_impl(T* output, const T* input,
+                    const T* boundary_current,
+                    const T* boundary_next) {
         if (!output || !input) {
             throw std::invalid_argument("null native Fourier block vector");
         }
@@ -266,9 +289,11 @@ public:
         }
         unpack();
         for (int step = 0; step < operator_steps_; ++step) {
-            apply_boundary_conditions();
+            const T* boundary = step == 0
+                ? boundary_current : boundary_next;
+            apply_boundary_conditions(boundary);
             compute_fgh();
-            project();
+            project(boundary_next);
             update();
         }
         pack();
@@ -280,7 +305,6 @@ public:
         }
     }
 
-private:
     using Matrix = std::vector<T>;
 
     StateLayout layout_;
@@ -500,16 +524,35 @@ private:
         }
     }
 
-    void apply_boundary_conditions() {
+    T boundary_value(const T* boundary, Component component,
+                     int phase) const {
+        if (!boundary) {
+            return T(0);
+        }
+        int component_index = 0;
+        switch (component) {
+        case Component::u: component_index = 0; break;
+        case Component::v: component_index = 1; break;
+        case Component::w: component_index = 2; break;
+        case Component::p:
+            throw std::invalid_argument("pressure is not boundary velocity");
+        }
+        return boundary[component_index*phases_+phase];
+    }
+
+    void apply_boundary_conditions(const T* boundary) {
         for (int phase = 0; phase < phases_; ++phase) {
             u_[phase][0] = T(0);
-            u_[phase][nr] = T(0);
+            u_[phase][nr] = boundary_value(
+                boundary, Component::u, phase);
             u_[phase][-1] = u_[phase][1];
             u_[phase][nr+1] = u_[phase][nr-1];
             v_[phase][0] = -v_[phase][1];
-            v_[phase][nr+1] = -v_[phase][nr];
+            v_[phase][nr+1] = T(2)*boundary_value(
+                boundary, Component::v, phase)-v_[phase][nr];
             w_[phase][0] = -w_[phase][1];
-            w_[phase][nr+1] = -w_[phase][nr];
+            w_[phase][nr+1] = T(2)*boundary_value(
+                boundary, Component::w, phase)-w_[phase][nr];
         }
     }
 
@@ -567,7 +610,7 @@ private:
         }
     }
 
-    void project() {
+    void project(const T* boundary_next) {
         for (int phase = 0; phase < phases_; ++phase) {
             for (int j = 1; j <= nr; ++j) {
                 const double radius = r0+(j-0.5)*dr;
@@ -582,7 +625,8 @@ private:
                 }
                 if (j == nr) {
                     value -= (radius+0.5*dr)/radius
-                        *F_[phase][nr]/(dr*dt);
+                        *(F_[phase][nr]-boundary_value(
+                            boundary_next, Component::u, phase))/(dr*dt);
                 }
                 rhs_[phase][j] = static_cast<T>(value);
             }

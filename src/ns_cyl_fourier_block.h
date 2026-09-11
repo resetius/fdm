@@ -181,6 +181,10 @@ public:
         return operator_steps_;
     }
 
+    int outer_boundary_size() const {
+        return 3*phase_count();
+    }
+
     int m() const {
         return m_;
     }
@@ -254,7 +258,38 @@ public:
 
     void apply(T* y, const T* x) {
         lift(x);
+        ns_.clear_outer_boundary_velocity();
         for (int step = 0; step < operator_steps_; ++step) {
+            ns_.L_step();
+        }
+        extract(y);
+    }
+
+    // Advance a Fourier block while the physical outer-wall velocity changes
+    // from boundary_current to boundary_next during the first step and is then
+    // held fixed.  Each boundary vector is component-major (u_r,u_z,u_phi),
+    // with phase_count real packed coefficients per component.  Keeping both
+    // time levels is required by the same-time radial pressure condition.
+    void apply_with_outer_boundary(T* y, const T* x,
+                                   const T* boundary_current,
+                                   const T* boundary_next) {
+        lift(x);
+        std::vector<T> radial_current;
+        std::vector<T> axial_current;
+        std::vector<T> azimuthal_current;
+        std::vector<T> radial_next;
+        std::vector<T> axial_next;
+        std::vector<T> azimuthal_next;
+        synthesize_outer_boundary(
+            boundary_current, radial_current, axial_current,
+            azimuthal_current);
+        synthesize_outer_boundary(
+            boundary_next, radial_next, axial_next, azimuthal_next);
+        ns_.set_outer_boundary_step_data(
+            radial_current, axial_current, azimuthal_current,
+            radial_next, axial_next, azimuthal_next);
+        ns_.L_step();
+        for (int step = 1; step < operator_steps_; ++step) {
             ns_.L_step();
         }
         extract(y);
@@ -367,6 +402,28 @@ private:
                     other_norm2 += square;
                 }
             }
+        }
+    }
+
+    void synthesize_outer_boundary(
+        const T* boundary, std::vector<T>& radial,
+        std::vector<T>& axial, std::vector<T>& azimuthal) {
+        const std::size_t plane_size = fft_.size();
+        radial.resize(plane_size);
+        axial.resize(plane_size);
+        azimuthal.resize(plane_size);
+        std::vector<T>* physical[] = {&radial, &axial, &azimuthal};
+        for (int component = 0; component < 3; ++component) {
+            std::fill(coefficients_.begin(), coefficients_.end(), T(0));
+            int phase = 0;
+            for (int i : phi_indices_) {
+                for (int k : z_indices_) {
+                    coefficients_[plane_index(i, k)] = boundary[
+                        component*phase_count()+phase];
+                    ++phase;
+                }
+            }
+            fft_.synthesis(coefficients_.data(), physical[component]->data());
         }
     }
 };
