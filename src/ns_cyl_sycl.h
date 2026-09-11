@@ -6,8 +6,10 @@
 #include <sycl/sycl.hpp>
 #include "lapl_cyl_sycl.h"
 #include "ns_cyl_state.h"
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <vector>
 
 namespace fdm {
 
@@ -56,6 +58,11 @@ private:
     T *u_mem, *v_mem, *w_mem, *p_mem;
     T *u0_mem, *v0_mem, *w0_mem;
     T *x_mem, *F_mem, *G_mem, *H_mem, *RHS_mem;
+    T *outer_radial_mem, *outer_axial_mem, *outer_azimuthal_mem;
+    T *outer_radial_next_mem, *outer_axial_next_mem;
+    T *outer_azimuthal_next_mem;
+    bool outer_boundary_velocity_enabled = false;
+    bool outer_boundary_step_data_enabled = false;
 
     LaplCylSycl<T> lapl_solver;
 
@@ -110,6 +117,12 @@ public:
         , G_mem  (shalloc(q_, nphi_*nz_*nr_))
         , H_mem  (shalloc(q_, nphi_*nz_*nr_))
         , RHS_mem(shalloc(q_, nphi_*nz_*nr_))
+        , outer_radial_mem(shalloc(q_, nphi_*nz_))
+        , outer_axial_mem(shalloc(q_, nphi_*nz_))
+        , outer_azimuthal_mem(shalloc(q_, nphi_*nz_))
+        , outer_radial_next_mem(shalloc(q_, nphi_*nz_))
+        , outer_axial_next_mem(shalloc(q_, nphi_*nz_))
+        , outer_azimuthal_next_mem(shalloc(q_, nphi_*nz_))
         , lapl_solver(q_, nr_, nz_, nphi_, r0_-dr/T(2), dr, dz, lz_, true)
     {
         q.memset(u_mem,   0, nphi_*nz_*(nr_+3)*sizeof(T));
@@ -124,6 +137,12 @@ public:
         q.memset(G_mem,   0, nphi_*nz_*nr_    *sizeof(T));
         q.memset(H_mem,   0, nphi_*nz_*nr_    *sizeof(T));
         q.memset(RHS_mem, 0, nphi_*nz_*nr_    *sizeof(T));
+        q.memset(outer_radial_mem, 0, nphi_*nz_*sizeof(T));
+        q.memset(outer_axial_mem, 0, nphi_*nz_*sizeof(T));
+        q.memset(outer_azimuthal_mem, 0, nphi_*nz_*sizeof(T));
+        q.memset(outer_radial_next_mem, 0, nphi_*nz_*sizeof(T));
+        q.memset(outer_axial_next_mem, 0, nphi_*nz_*sizeof(T));
+        q.memset(outer_azimuthal_next_mem, 0, nphi_*nz_*sizeof(T));
         q.wait();
     }
 
@@ -135,6 +154,71 @@ public:
         sycl::free(x_mem,   q);  sycl::free(F_mem, q);
         sycl::free(G_mem,   q);  sycl::free(H_mem, q);
         sycl::free(RHS_mem, q);
+        sycl::free(outer_radial_mem, q);
+        sycl::free(outer_axial_mem, q);
+        sycl::free(outer_azimuthal_mem, q);
+        sycl::free(outer_radial_next_mem, q);
+        sycl::free(outer_axial_next_mem, q);
+        sycl::free(outer_azimuthal_next_mem, q);
+    }
+
+    void set_outer_boundary_velocity(
+        const std::vector<T>& radial,
+        const std::vector<T>& axial,
+        const std::vector<T>& azimuthal) {
+        validate_outer_boundary_plane(radial, axial, azimuthal);
+        q.wait();
+        std::copy(radial.begin(), radial.end(), outer_radial_mem);
+        std::copy(axial.begin(), axial.end(), outer_axial_mem);
+        std::copy(azimuthal.begin(), azimuthal.end(),
+                  outer_azimuthal_mem);
+        outer_boundary_velocity_enabled = true;
+        outer_boundary_step_data_enabled = false;
+    }
+
+    void set_outer_boundary_velocity(
+        const std::vector<T>& axial,
+        const std::vector<T>& azimuthal) {
+        set_outer_boundary_velocity(
+            std::vector<T>(static_cast<std::size_t>(nphi)*nz, T(0)),
+            axial, azimuthal);
+    }
+
+    // The old wall value is used in the momentum stencil, while radial_next
+    // supplies the new-time normal flux in the pressure Neumann condition.
+    void set_outer_boundary_step_data(
+        const std::vector<T>& radial,
+        const std::vector<T>& axial,
+        const std::vector<T>& azimuthal,
+        const std::vector<T>& radial_next,
+        const std::vector<T>& axial_next,
+        const std::vector<T>& azimuthal_next) {
+        validate_outer_boundary_plane(radial, axial, azimuthal);
+        validate_outer_boundary_plane(
+            radial_next, axial_next, azimuthal_next);
+        q.wait();
+        std::copy(radial.begin(), radial.end(), outer_radial_mem);
+        std::copy(axial.begin(), axial.end(), outer_axial_mem);
+        std::copy(azimuthal.begin(), azimuthal.end(),
+                  outer_azimuthal_mem);
+        std::copy(radial_next.begin(), radial_next.end(),
+                  outer_radial_next_mem);
+        std::copy(axial_next.begin(), axial_next.end(),
+                  outer_axial_next_mem);
+        std::copy(azimuthal_next.begin(), azimuthal_next.end(),
+                  outer_azimuthal_next_mem);
+        outer_boundary_velocity_enabled = true;
+        outer_boundary_step_data_enabled = true;
+    }
+
+    void clear_outer_boundary_velocity() {
+        q.wait();
+        outer_boundary_velocity_enabled = false;
+        outer_boundary_step_data_enabled = false;
+    }
+
+    bool has_outer_boundary_velocity() const {
+        return outer_boundary_velocity_enabled;
     }
 
     void step() {
@@ -144,6 +228,7 @@ public:
         lapl_solver.solve(x_mem, RHS_mem);
         kernel_update_uvwp();
         kernel_pressure_bound();
+        commit_outer_boundary_step_data();
     }
 
     void apply_boundary_conditions() {
@@ -297,23 +382,67 @@ public:
     }
 
 private:
+    void validate_outer_boundary_plane(
+        const std::vector<T>& radial,
+        const std::vector<T>& axial,
+        const std::vector<T>& azimuthal) const {
+        const std::size_t expected = static_cast<std::size_t>(nphi)*nz;
+        if (radial.size() != expected || axial.size() != expected
+            || azimuthal.size() != expected) {
+            throw std::invalid_argument(
+                "outer boundary velocity has the wrong plane size");
+        }
+    }
+
     // ── Boundary conditions ───────────────────────────────────────────────────
     void kernel_init_bound(T wall_speed) {
         auto ua_=ua(), va_=va(), wa_=wa();
         const int nr_=nr;
         const T wall_speed_=wall_speed;
+        const bool outer_enabled = outer_boundary_velocity_enabled;
+        const T* outer_radial = outer_radial_mem;
+        const T* outer_axial = outer_axial_mem;
+        const T* outer_azimuthal = outer_azimuthal_mem;
+        const int nz_=nz;
 
         // w, v at inner/outer walls; u ghost cells
         q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
             [=](sycl::id<2> id) {
                 int i=(int)id[0], k=(int)id[1];
+                const int boundary_index = i*nz_+k;
+                const T radial = outer_enabled
+                    ? outer_radial[boundary_index] : T(0);
+                const T axial = outer_enabled
+                    ? outer_axial[boundary_index] : T(0);
+                const T azimuthal = outer_enabled
+                    ? outer_azimuthal[boundary_index] : T(0);
                 wa_(i,k,0)    = T(2)*wall_speed_ - wa_(i,k,1);
-                wa_(i,k,nr_+1) = -wa_(i,k,nr_);           // outer no-slip
+                wa_(i,k,nr_+1) = T(2)*azimuthal-wa_(i,k,nr_);
                 va_(i,k,0)    = -va_(i,k,1);              // inner no-slip
-                va_(i,k,nr_+1) = -va_(i,k,nr_);           // outer no-slip
+                va_(i,k,nr_+1) = T(2)*axial-va_(i,k,nr_);
+                ua_(i,k,nr_)  = radial;
                 ua_(i,k,-1)   = ua_(i,k,1);               // ghost (div-free)
                 ua_(i,k,nr_+1) = ua_(i,k,nr_-1);
             });
+    }
+
+    void commit_outer_boundary_step_data() {
+        if (!outer_boundary_step_data_enabled) {
+            return;
+        }
+        auto ua_=ua();
+        const int nr_=nr;
+        const int nz_=nz;
+        const T* radial_next = outer_radial_next_mem;
+        q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
+            [=](sycl::id<2> id) {
+                const int i=(int)id[0], k=(int)id[1];
+                ua_(i,k,nr_) = radial_next[i*nz_+k];
+            });
+        std::swap(outer_radial_mem, outer_radial_next_mem);
+        std::swap(outer_axial_mem, outer_axial_next_mem);
+        std::swap(outer_azimuthal_mem, outer_azimuthal_next_mem);
+        outer_boundary_step_data_enabled = false;
     }
 
     void kernel_L_FGH() {
@@ -556,12 +685,22 @@ private:
         auto pa_=pa(), xa_=xa(), Fa_=Fa();
         const int nr_=nr;
         const T dt_=dt, dr_=dr;
+        const bool outer_enabled = outer_boundary_velocity_enabled;
+        const bool step_data = outer_boundary_step_data_enabled;
+        const T* outer_radial = outer_radial_mem;
+        const T* outer_radial_next = outer_radial_next_mem;
+        const int nz_=nz;
 
         q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
             [=](sycl::id<2> id) {
                 int i=(int)id[0], k=(int)id[1];
+                const int boundary_index = i*nz_+k;
+                const T radial_next = !outer_enabled ? T(0)
+                    : step_data ? outer_radial_next[boundary_index]
+                    : outer_radial[boundary_index];
                 pa_(i,k,0) = xa_(i,k,1)-dr_*Fa_(i,k,0)/dt_;
-                pa_(i,k,nr_+1) = xa_(i,k,nr_)+dr_*Fa_(i,k,nr_)/dt_;
+                pa_(i,k,nr_+1) = xa_(i,k,nr_)
+                    +dr_*(Fa_(i,k,nr_)-radial_next)/dt_;
             });
     }
 
@@ -655,11 +794,20 @@ private:
         auto Fa_=Fa(), Ga_=Ga(), Ha_=Ha(), Ra_=Ra();
         const int nr_=nr;
         const T dt_=dt, r0_=r0, dr_=dr, dz_=dz, dphi_=dphi;
+        const bool outer_enabled = outer_boundary_velocity_enabled;
+        const bool step_data = outer_boundary_step_data_enabled;
+        const T* outer_radial = outer_radial_mem;
+        const T* outer_radial_next = outer_radial_next_mem;
+        const int nz_=nz;
 
         q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)nr_),
             [=](sycl::id<3> id) {
                 int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
                 T r  = r0_ + dr_*T(j) - dr_*T(0.5);
+                const int boundary_index = i*nz_+k;
+                const T radial_next = !outer_enabled ? T(0)
+                    : step_data ? outer_radial_next[boundary_index]
+                    : outer_radial[boundary_index];
 
                 Ra_(i,k,j) = (((r + T(0.5)*dr_)*Fa_(i,k,j) -
                                 (r - T(0.5)*dr_)*Fa_(i,k,j-1))/r/dr_ +
@@ -672,7 +820,7 @@ private:
                 }
                 if (j == nr_) {
                     Ra_(i,k,j) -= (r+T(0.5)*dr_)/r
-                        *Fa_(i,k,nr_)/(dr_*dt_);
+                        *(Fa_(i,k,nr_)-radial_next)/(dr_*dt_);
                 }
             });
     }

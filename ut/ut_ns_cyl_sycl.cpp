@@ -358,6 +358,88 @@ void test_sycl_step_matches_cpu_float_reference(void**) {
     assert_true(dp.relative() < 2e-2);
 }
 
+void test_sycl_time_dependent_outer_boundary_matches_cpu(void**) {
+    using CpuNS = fdm::NSCyl<float, false, fdm::tensor_flag::periodic>;
+    CpuNS cpu(make_cpu_config());
+    NSCylSycl<float> device(
+        queue(), kNr, kNz, kNphi, kR0, kR, kLz, kU0, kRe, kDt);
+    fill_smooth_state(device);
+    copy_state_to_cpu(device, cpu);
+
+    const int plane_size = kNphi*kNz;
+    std::vector<float> radial(plane_size);
+    std::vector<float> axial(plane_size);
+    std::vector<float> azimuthal(plane_size);
+    std::vector<float> radial_next(plane_size);
+    std::vector<float> axial_next(plane_size);
+    std::vector<float> azimuthal_next(plane_size);
+    for (int i = 0; i < kNphi; ++i) {
+        for (int k = 0; k < kNz; ++k) {
+            const int index = i*kNz+k;
+            const double phi = 2*M_PI*i/kNphi;
+            const double z = 2*M_PI*k/kNz;
+            radial[index] = 8e-4f*std::sin(phi)*std::cos(2*z);
+            axial[index] = 1.1e-3f*std::cos(2*phi)*std::sin(z);
+            azimuthal[index] = 9e-4f*std::sin(phi+z);
+            radial_next[index] = -6e-4f*std::cos(phi)*std::sin(2*z);
+            axial_next[index] = 7e-4f*std::sin(2*phi-z);
+            azimuthal_next[index] = -1.2e-3f*std::cos(phi+2*z);
+        }
+    }
+    cpu.set_outer_boundary_step_data(
+        radial, axial, azimuthal,
+        radial_next, axial_next, azimuthal_next);
+    device.set_outer_boundary_step_data(
+        radial, axial, azimuthal,
+        radial_next, axial_next, azimuthal_next);
+
+    auto compare = [&]() {
+        queue().wait();
+        auto u = device.ua();
+        auto v = device.va();
+        auto w = device.wa();
+        auto p = device.pa();
+        Difference du, dv, dw, dp;
+        for (int i = 0; i < kNphi; ++i) {
+            for (int k = 0; k < kNz; ++k) {
+                for (int j = 0; j <= kNr; ++j) {
+                    du.add(u(i,k,j), cpu.u[i][k][j]);
+                }
+                for (int j = 1; j <= kNr; ++j) {
+                    dv.add(v(i,k,j), cpu.v[i][k][j]);
+                    dw.add(w(i,k,j), cpu.w[i][k][j]);
+                    dp.add(p(i,k,j), cpu.p[i][k][j]);
+                }
+                dp.add(p(i,k,0), cpu.p[i][k][0]);
+                dp.add(p(i,k,kNr+1), cpu.p[i][k][kNr+1]);
+            }
+        }
+        std::printf("SYCL/CPU moving wall: u=%e v=%e w=%e p(rel)=%e\n",
+                    du.error, dv.error, dw.error, dp.relative());
+        assert_true(du.error < 5e-4);
+        assert_true(dv.error < 5e-4);
+        assert_true(dw.error < 2e-4);
+        assert_true(dp.relative() < 3e-2);
+    };
+
+    cpu.step();
+    device.step();
+    compare();
+    auto u = device.ua();
+    for (int i = 0; i < kNphi; ++i) {
+        for (int k = 0; k < kNz; ++k) {
+            assert_true(std::abs(
+                u(i,k,kNr)-radial_next[i*kNz+k]) < 2e-7f);
+        }
+    }
+
+    // The next wall data must persist after the transition without another
+    // setter call, just as in the CPU solver.
+    cpu.step();
+    device.step();
+    compare();
+}
+
 std::vector<float> make_block_input(int size) {
     std::vector<float> input(size);
     for (int index = 0; index < size; ++index) {
@@ -899,6 +981,8 @@ int main() {
         cmocka_unit_test(test_sycl_poisson_matches_cpu_float_reference),
         cmocka_unit_test(test_sycl_fourier_block_poisson_matches_full),
         cmocka_unit_test(test_sycl_step_matches_cpu_float_reference),
+        cmocka_unit_test(
+            test_sycl_time_dependent_outer_boundary_matches_cpu),
         cmocka_unit_test(test_sycl_linear_fourier_blocks_match_cpu),
         cmocka_unit_test(
             test_sycl_batched_blocks_match_individual_applications),
