@@ -627,6 +627,39 @@ void test_dense_spectrum_groups_complex_pair_in_real_columns(void**) {
     assert_true(rejected);
 }
 
+void test_dense_spectrum_negative_threshold_selects_slow_stable_modes(void**) {
+    const double duration = 0.5;
+    const double matrix[] = {
+        std::exp(0.10*duration), 0.0, 0.0,
+        0.0, std::exp(-0.015*duration), 0.0,
+        0.0, 0.0, std::exp(-0.030*duration)
+    };
+    auto spectrum = fdm::analyze_ns_cyl_dense_matrix(
+        matrix, 3, duration, -0.02, 1e-12);
+
+    int selected = 0;
+    bool found_unstable = false;
+    bool found_slow_stable = false;
+    bool found_fast_stable = false;
+    for (const auto& mode : spectrum.modes) {
+        if (mode.filterable_unstable()) {
+            ++selected;
+        }
+        if (std::abs(mode.growth_rate-0.10) < 1e-13) {
+            found_unstable = mode.filterable_unstable();
+        } else if (std::abs(mode.growth_rate+0.015) < 1e-13) {
+            found_slow_stable = mode.filterable_unstable();
+        } else if (std::abs(mode.growth_rate+0.030) < 1e-13) {
+            found_fast_stable = !mode.growing;
+        }
+    }
+
+    assert_int_equal(selected, 2);
+    assert_true(found_unstable);
+    assert_true(found_slow_stable);
+    assert_true(found_fast_stable);
+}
+
 void test_dense_spectrum_of_real_ns_cyl_block(void**) {
     Config config = make_couette_config();
     fdm::NSCylFourierBlockReference<double, true> block(config, 0, 3);
@@ -935,6 +968,8 @@ int main() {
         cmocka_unit_test(test_zero_extended_base_matches_nonlinear_central_difference),
         cmocka_unit_test(test_axisymmetric_block_is_independent_of_nphi),
         cmocka_unit_test(test_dense_spectrum_groups_complex_pair_in_real_columns),
+        cmocka_unit_test(
+            test_dense_spectrum_negative_threshold_selects_slow_stable_modes),
         cmocka_unit_test(test_dense_spectrum_of_real_ns_cyl_block),
         cmocka_unit_test(test_complex_ns_cyl_mode_has_expected_phase_speed),
         cmocka_unit_test(test_spectral_projector_on_block),

@@ -2161,11 +2161,13 @@ void run(const Config& config) {
                 if (!mode.growing) {
                     continue;
                 }
+                const char* accepted_label = growth_tolerance < 0
+                    ? "DENSE_SELECTED" : "DENSE_UNSTABLE";
                 printf("%s m=%d l=%d index=%d columns=%d abs=%.16e "
                        "real=%.16e imag=%+.16e growth=%+.9e "
                        "frequency=%+.9e right_res=%.3e left_res=%.3e\n",
                        mode.residual_accepted
-                           ? "DENSE_UNSTABLE" : "DENSE_REJECTED",
+                           ? accepted_label : "DENSE_REJECTED",
                        result.block.m, result.block.l, unstable_position++,
                        mode.column_count, std::abs(mode.multiplier),
                        static_cast<double>(mode.multiplier.real()),
@@ -2228,10 +2230,12 @@ void run(const Config& config) {
     printf("probe candidate blocks: %d / %zu\n",
            probe_candidate_count, results.size());
     if (dense_block_count > 0) {
-        printf("dense unstable blocks: %d / %d computed (%zu scanned)\n",
+        printf("dense %s blocks: %d / %d computed (%zu scanned)\n",
+               growth_tolerance < 0 ? "selected" : "unstable",
                dense_candidate_count, dense_block_count, results.size());
-        printf("filterable unstable modes: groups=%d real_columns=%d "
+        printf("filterable %s modes: groups=%d real_columns=%d "
                "rejected_columns=%d\n",
+               growth_tolerance < 0 ? "selected" : "unstable",
                dense_unstable_group_count, dense_unstable_count,
                dense_rejected_count);
         printf("mode set: groups=%zu real_dimension=%d\n",

@@ -32,6 +32,9 @@ struct NSCylSpectralMode {
     double left_residual = std::numeric_limits<double>::infinity();
     double block_condition_number =
         std::numeric_limits<double>::quiet_NaN();
+    // Historical name: this flag means growth_rate is above the configured
+    // selection threshold. The threshold may be negative when a controller
+    // also needs weakly stable directions to enforce a target decay rate.
     bool growing = false;
     bool residual_accepted = false;
 
