@@ -27,7 +27,11 @@ using Component = Layout::Component;
 using Filter = fdm::NSCylExtendedSpectralFilter<T>;
 
 Config make_config(double base_outer_radius=2.0,
-                   double response_regularization=0.0) {
+                   double response_regularization=0.0,
+                   int response_basis_count=1,
+                   int response_trace_horizon_steps=0,
+                   int response_trace_sample_stride=1,
+                   double response_cost_ridge=0.0) {
     Config config;
     std::vector<std::string> arguments = {
         "ut_ns_cyl_extended_filter",
@@ -45,7 +49,15 @@ Config make_config(double base_outer_radius=2.0,
         "--spectral:base_outer_radius="+std::to_string(base_outer_radius),
         "--extended:response_condition_limit=1e12",
         "--extended:response_regularization="
-            +std::to_string(response_regularization)
+            +std::to_string(response_regularization),
+        "--extended:response_basis_count="
+            +std::to_string(response_basis_count),
+        "--extended:response_trace_horizon_steps="
+            +std::to_string(response_trace_horizon_steps),
+        "--extended:response_trace_sample_stride="
+            +std::to_string(response_trace_sample_stride),
+        "--extended:response_cost_ridge="
+            +std::to_string(response_cost_ridge)
     };
     std::vector<char*> argv;
     for (auto& argument : arguments) {
@@ -55,12 +67,15 @@ Config make_config(double base_outer_radius=2.0,
     return config;
 }
 
-fdm::NSCylSpectralProjector<T> make_projector(const Config& config) {
+fdm::NSCylSpectralProjector<T> make_projector(
+    const Config& config, bool extended_radial_profile=false) {
     fdm::NSCylFourierBlockReference<T, true> block(config, 0, 1);
     const Layout layout(8, 4, 4);
     const int phase = 0;
     const int omega_coordinate = phase*layout.radial_size
         +layout.radial_index(Component::v, 5);
+    const int second_omega_coordinate = phase*layout.radial_size
+        +layout.radial_index(Component::v, 6);
     const int original_coordinate = phase*layout.radial_size
         +layout.radial_index(Component::v, 2);
 
@@ -82,6 +97,9 @@ fdm::NSCylSpectralProjector<T> make_projector(const Config& config) {
     mode.right_columns.assign(block.size(), T(0));
     mode.left_columns.assign(block.size(), T(0));
     mode.right_columns[omega_coordinate] = T(1);
+    if (extended_radial_profile) {
+        mode.right_columns[second_omega_coordinate] = T(0.5);
+    }
     mode.left_columns[omega_coordinate] = T(1);
     mode.left_columns[original_coordinate] = T(1);
 
@@ -309,6 +327,63 @@ void test_regularization_trades_residual_for_boundary_energy(void**) {
     assert_true(maximum_divergence(regularized_config, correction) < 1e-11);
 }
 
+void test_expanded_continuation_minimizes_boundary_trace(void**) {
+    const Layout layout(8, 4, 4);
+    fdm::PeriodicPackedFFT2<T> fft(layout.nphi, layout.nz);
+    std::vector<T> input(layout.state_size, T(0));
+    std::vector<T> values(fft.size());
+    std::vector<T> plane(fft.size(), T(0));
+    plane[1] = T(1);
+    fft.synthesis(plane.data(), values.data());
+    for (int i = 0; i < layout.nphi; ++i) {
+        for (int k = 0; k < layout.nz; ++k) {
+            input[packed_index(layout, Component::v, i, k, 2)] =
+                values[static_cast<std::size_t>(i)*layout.nz+k];
+        }
+    }
+
+    Config exact_config = make_config();
+    auto exact_state = input;
+    Filter exact_filter(
+        exact_config, make_projector(exact_config, true));
+    const auto exact = exact_filter.apply(exact_state, true);
+
+    Config expanded_config = make_config(2.0, 0.0, 2, 0, 1, 1e-12);
+    auto expanded_state = input;
+    Filter expanded_filter(
+        expanded_config, make_projector(expanded_config, true));
+    const auto expanded = expanded_filter.apply(expanded_state, true);
+
+    assert_int_equal(exact.blocks.front().continuation_dimension, 1);
+    assert_int_equal(expanded.blocks.front().continuation_dimension, 2);
+    assert_true(expanded.unstable_coordinate_norm_after
+                < 1e-11*expanded.unstable_coordinate_norm_before);
+    assert_true(expanded.original_domain_change_norm < 1e-13);
+    assert_true(expanded.blocks.front().boundary_rms
+                <= exact.blocks.front().boundary_rms*(1+1e-9));
+    std::vector<T> correction(expanded_state.size());
+    for (std::size_t index = 0; index < correction.size(); ++index) {
+        correction[index] = expanded_state[index]-input[index];
+    }
+    assert_true(maximum_divergence(expanded_config, correction) < 1e-11);
+
+    // Exercise the time-averaged trace path as well.  Its optimum need not
+    // minimize the initial trace, but it must retain the exact modal
+    // constraint and support restriction.
+    Config horizon_config = make_config(2.0, 0.0, 2, 4, 2, 1e-10);
+    auto horizon_state = input;
+    Filter horizon_filter(
+        horizon_config, make_projector(horizon_config, true));
+    const auto horizon = horizon_filter.apply(horizon_state, true);
+    assert_true(horizon.unstable_coordinate_norm_after
+                < 1e-10*horizon.unstable_coordinate_norm_before);
+    assert_true(horizon.original_domain_change_norm < 1e-13);
+    for (std::size_t index = 0; index < correction.size(); ++index) {
+        correction[index] = horizon_state[index]-input[index];
+    }
+    assert_true(maximum_divergence(horizon_config, correction) < 1e-11);
+}
+
 void test_zero_order_nonlinear_target_matches_linear_correction(void**) {
     Config config = make_config();
     const Layout layout(8, 4, 4);
@@ -382,6 +457,7 @@ int main() {
         cmocka_unit_test(test_biorthogonal_auxiliary_correction),
         cmocka_unit_test(test_supported_correction_can_target_nonzero_coordinates),
         cmocka_unit_test(test_regularization_trades_residual_for_boundary_energy),
+        cmocka_unit_test(test_expanded_continuation_minimizes_boundary_trace),
         cmocka_unit_test(test_zero_order_nonlinear_target_matches_linear_correction),
         cmocka_unit_test(test_auxiliary_interface_must_be_grid_aligned)
     };

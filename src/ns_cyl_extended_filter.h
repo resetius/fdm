@@ -30,6 +30,7 @@ namespace fdm {
 struct NSCylExtendedBlockFilterDiagnostics {
     int m = -1;
     int l = -1;
+    int continuation_dimension = 0;
     double response_norm = 0;
     double inverse_response_norm = 0;
     double response_condition = 0;
@@ -85,13 +86,14 @@ struct NSCylOuterBoundaryVelocity {
     }
 };
 
-// Builds the continuation correction only in the auxiliary annulus. For each
-// unstable real Fourier block, restricted right modes are passed through a
-// discrete stationary Stokes inverse in omega. If
-// C=(L^T R)^{-1}L^T are the biorthogonal unstable-coordinate functionals, the
-// small system C*W*c=-C*q defines the support-restricted oblique projector
-// W(CW)^{-1}C. Every velocity degree of freedom in the original cylinder is
-// unchanged.
+// Builds corrections supported in the auxiliary annulus.  Each restricted
+// right mode is multiplied by a small radial polynomial basis and passed
+// through a stationary discrete Stokes inverse.  If C denotes the unstable
+// coordinate functionals and W the resulting continuations, M=CW.  The
+// default uses the square response M^{-1}; an expanded basis uses the
+// minimum-trace right inverse H^{-1}M^T(MH^{-1}M^T)^{-1}.  Thus C(q+Wa)=0
+// remains exact while every velocity degree of freedom in the original
+// cylinder is unchanged.
 template<typename T>
 class NSCylExtendedSpectralFilter {
 public:
@@ -140,6 +142,14 @@ public:
             "extended", "response_condition_limit", 1e12);
         response_regularization_ = config.get(
             "extended", "response_regularization", 0.0);
+        response_basis_count_ = config.get(
+            "extended", "response_basis_count", 1);
+        response_trace_horizon_steps_ = config.get(
+            "extended", "response_trace_horizon_steps", 0);
+        response_trace_sample_stride_ = config.get(
+            "extended", "response_trace_sample_stride", 1);
+        response_cost_ridge_ = config.get(
+            "extended", "response_cost_ridge", 0.0);
         if (!(response_condition_limit_ >= 1)) {
             throw std::invalid_argument(
                 "extended response condition limit must be at least one");
@@ -149,6 +159,14 @@ public:
             throw std::invalid_argument(
                 "extended response regularization must be finite and "
                 "nonnegative");
+        }
+        if (response_basis_count_ <= 0 || response_basis_count_ > 4
+            || response_trace_horizon_steps_ < 0
+            || response_trace_sample_stride_ <= 0
+            || !(response_cost_ridge_ >= 0)
+            || !std::isfinite(response_cost_ridge_)) {
+            throw std::invalid_argument(
+                "invalid extended response basis or trace-cost settings");
         }
         validate_projector();
         build_corrections();
@@ -273,14 +291,16 @@ public:
             const int dimension = projector.dimension();
             std::vector<T> before(dimension, T(0));
             std::vector<T> after(dimension, T(0));
-            std::vector<T> amplitudes(dimension, T(0));
+            std::vector<T> amplitudes(correction.basis.size(), T(0));
             std::vector<T> block_correction;
             if (detailed_block_diagnostics) {
                 block_correction.assign(projector.block_size(), T(0));
             }
             projector.coordinates(before.data(), block_.data());
             compute_amplitudes(correction, before, amplitudes);
-            for (int column = 0; column < dimension; ++column) {
+            for (int column = 0;
+                 column < static_cast<int>(correction.basis.size());
+                 ++column) {
                 const auto& basis = correction.basis[column];
                 for (int coordinate = 0;
                      coordinate < projector.block_size(); ++coordinate) {
@@ -297,6 +317,8 @@ public:
             NSCylExtendedBlockFilterDiagnostics block_result;
             block_result.m = projector.m();
             block_result.l = projector.l();
+            block_result.continuation_dimension =
+                static_cast<int>(correction.basis.size());
             block_result.response_norm = correction.response_norm;
             block_result.inverse_response_norm =
                 correction.inverse_response_norm;
@@ -304,12 +326,15 @@ public:
             for (int coordinate = 0; coordinate < dimension; ++coordinate) {
                 const long double b = before[coordinate];
                 const long double a = after[coordinate];
-                const long double c = amplitudes[coordinate];
                 block_result.unstable_coordinate_norm_before +=
                     static_cast<double>(b*b);
                 block_result.unstable_coordinate_norm_after +=
                     static_cast<double>(a*a);
-                block_result.coefficient_norm += static_cast<double>(c*c);
+            }
+            for (T amplitude : amplitudes) {
+                const long double value = amplitude;
+                block_result.coefficient_norm +=
+                    static_cast<double>(value*value);
             }
             block_result.unstable_coordinate_norm_before = std::sqrt(
                 block_result.unstable_coordinate_norm_before);
@@ -367,7 +392,7 @@ private:
         std::vector<std::vector<T>> basis;
         std::vector<T> response;
         std::vector<T> inverse_response;
-        std::vector<T> boundary_gram;
+        std::vector<T> trace_gram;
         double response_norm = 0;
         double inverse_response_norm = 0;
         double response_condition = 0;
@@ -382,6 +407,10 @@ private:
     Projector projector_;
     double response_condition_limit_ = 0;
     double response_regularization_ = 0;
+    int response_basis_count_ = 1;
+    int response_trace_horizon_steps_ = 0;
+    int response_trace_sample_stride_ = 1;
+    double response_cost_ridge_ = 0;
     std::vector<CorrectionBlock> corrections_;
     std::vector<T> physical_;
     std::vector<T> original_physical_;
@@ -451,6 +480,32 @@ private:
             "--ns:nphi="+std::to_string(geometry_.nphi),
             "--ns:nz="+std::to_string(geometry_.nz),
             "--ns:verbose=0"
+        };
+        std::vector<char*> argv;
+        argv.reserve(arguments.size());
+        for (auto& argument : arguments) {
+            argv.push_back(argument.data());
+        }
+        result.rewrite(static_cast<int>(argv.size()), argv.data());
+        return result;
+    }
+
+    Config extended_dynamics_config() const {
+        Config result;
+        std::vector<std::string> arguments = {
+            "ns_cyl_extended_filter",
+            "--ns:r="+number(geometry_.r0),
+            "--ns:R="+number(geometry_.R),
+            "--ns:h1="+number(geometry_.h1),
+            "--ns:h2="+number(geometry_.h2),
+            "--ns:u0="+number(geometry_.U0),
+            "--ns:Re="+number(geometry_.Re),
+            "--ns:dt="+number(geometry_.dt),
+            "--ns:nr="+std::to_string(geometry_.nr),
+            "--ns:nphi="+std::to_string(geometry_.nphi),
+            "--ns:nz="+std::to_string(geometry_.nz),
+            "--ns:verbose=0",
+            "--spectral:base_outer_radius="+number(base_outer_radius_)
         };
         std::vector<char*> argv;
         argv.reserve(arguments.size());
@@ -543,6 +598,306 @@ private:
         return result;
     }
 
+    static T shifted_legendre(int degree, double coordinate) {
+        const T x = static_cast<T>(2*coordinate-1);
+        if (degree == 0) {
+            return T(1);
+        }
+        T previous = T(1);
+        T value = x;
+        for (int order = 2; order <= degree; ++order) {
+            const T next = (static_cast<T>(2*order-1)*x*value
+                            -static_cast<T>(order-1)*previous)
+                /static_cast<T>(order);
+            previous = value;
+            value = next;
+        }
+        return value;
+    }
+
+    std::vector<T> local_velocity_weights(
+        int phase_count, int degree) const {
+        std::vector<T> result;
+        result.reserve(static_cast<std::size_t>(phase_count)
+                       *(3*auxiliary_nr_-1));
+        for (int phase = 0; phase < phase_count; ++phase) {
+            for (int j = 1; j < auxiliary_nr_; ++j) {
+                result.push_back(shifted_legendre(
+                    degree, static_cast<double>(j)/auxiliary_nr_));
+            }
+            for (Component component : {Component::v, Component::w}) {
+                (void)component;
+                for (int j = 1; j <= auxiliary_nr_; ++j) {
+                    result.push_back(shifted_legendre(
+                        degree, (static_cast<double>(j)-0.5)/auxiliary_nr_));
+                }
+            }
+        }
+        return result;
+    }
+
+    std::vector<T> physical_boundary_trace(
+        const BlockProjector& projector,
+        const std::vector<T>& reduced_block) {
+        if (static_cast<int>(reduced_block.size()) != projector.block_size()) {
+            throw std::invalid_argument(
+                "boundary trace block has the wrong packed size");
+        }
+
+        std::vector<T> expanded;
+        const T* block = reduced_block.data();
+        if (projector.pressure_gauge_fixed()) {
+            expanded.resize(
+                static_cast<std::size_t>(projector.phase_count())
+                *layout_.radial_size);
+            layout_.expand_zero_gauge_block(
+                geometry_, reduced_block.data(), expanded.data());
+            block = expanded.data();
+        }
+
+        const auto phi = packed_indices(projector.m(), layout_.nphi);
+        const auto z = packed_indices(projector.l(), layout_.nz);
+        std::vector<T> trace(3*fft_.size(), T(0));
+        std::vector<T> plane_fourier(fft_.size(), T(0));
+        std::vector<T> plane_physical(fft_.size(), T(0));
+        int component_number = 0;
+        for (Component component : {
+                 Component::u, Component::v, Component::w}) {
+            std::fill(plane_fourier.begin(), plane_fourier.end(), T(0));
+            int phase = 0;
+            for (int i : phi) {
+                for (int k : z) {
+                    const std::size_t offset =
+                        static_cast<std::size_t>(phase)*layout_.radial_size;
+                    if (component == Component::u) {
+                        plane_fourier[plane_index(i, k)] = block[
+                            offset+layout_.radial_index(
+                                component, original_nr_)];
+                    } else {
+                        plane_fourier[plane_index(i, k)] = T(0.5)*(
+                            block[offset+layout_.radial_index(
+                                component, original_nr_)]
+                            +block[offset+layout_.radial_index(
+                                component, original_nr_+1)]);
+                    }
+                    ++phase;
+                }
+            }
+            fft_.synthesis(plane_fourier.data(), plane_physical.data());
+            std::copy(plane_physical.begin(), plane_physical.end(),
+                      trace.begin()+component_number*fft_.size());
+            ++component_number;
+        }
+        return trace;
+    }
+
+    void add_trace_cost_ridge(std::vector<T>& gram, int size) const {
+        if (response_cost_ridge_ == 0) {
+            return;
+        }
+        long double diagonal_sum = 0;
+        for (int row = 0; row < size; ++row) {
+            diagonal_sum += std::abs(static_cast<long double>(
+                gram[static_cast<std::size_t>(row)*size+row]));
+        }
+        const long double scale = diagonal_sum > 0
+            ? diagonal_sum/size : 1;
+        for (int row = 0; row < size; ++row) {
+            gram[static_cast<std::size_t>(row)*size+row] +=
+                static_cast<T>(response_cost_ridge_*scale);
+        }
+    }
+
+    std::vector<T> build_trace_gram(
+        const BlockProjector& projector,
+        const std::vector<std::vector<T>>& basis) {
+        const int size = static_cast<int>(basis.size());
+        std::vector<T> result(
+            static_cast<std::size_t>(size)*size, T(0));
+
+        // Keep the original zero-horizon calculation unchanged.  Apart from
+        // avoiding unnecessary time stepping, this preserves the default
+        // one-continuation path down to its floating-point operation order.
+        if (response_trace_horizon_steps_ == 0) {
+            std::vector<double> diagonal(size);
+            for (int column = 0; column < size; ++column) {
+                const auto metrics = physical_block_metrics(
+                    projector, basis[column]);
+                diagonal[column] =
+                    metrics.boundary_rms*metrics.boundary_rms;
+                result[static_cast<std::size_t>(column)*size+column] =
+                    static_cast<T>(diagonal[column]);
+            }
+            for (int row = 0; row < size; ++row) {
+                for (int column = row+1; column < size; ++column) {
+                    std::vector<T> sum(projector.block_size());
+                    for (int coordinate = 0;
+                         coordinate < projector.block_size(); ++coordinate) {
+                        sum[coordinate] = basis[row][coordinate]
+                            +basis[column][coordinate];
+                    }
+                    const auto metrics = physical_block_metrics(
+                        projector, sum);
+                    const T entry = static_cast<T>(0.5*(
+                        metrics.boundary_rms*metrics.boundary_rms
+                        -diagonal[row]-diagonal[column]));
+                    result[static_cast<std::size_t>(row)*size+column] = entry;
+                    result[static_cast<std::size_t>(column)*size+row] = entry;
+                }
+            }
+            add_trace_cost_ridge(result, size);
+            return result;
+        }
+
+        NSCylFourierBlockNative<T> dynamics(
+            extended_dynamics_config(), projector.m(), projector.l(), 1);
+        if (dynamics.size() != projector.block_size()) {
+            throw std::logic_error(
+                "trace dynamics layout does not match spectral block");
+        }
+        std::vector<std::vector<T>> states = basis;
+        std::vector<std::vector<T>> next(
+            size, std::vector<T>(projector.block_size(), T(0)));
+        int sample_count = 0;
+        for (int step = 0; step <= response_trace_horizon_steps_; ++step) {
+            if (step%response_trace_sample_stride_ == 0
+                || step == response_trace_horizon_steps_) {
+                std::vector<std::vector<T>> traces;
+                traces.reserve(size);
+                for (const auto& state : states) {
+                    traces.push_back(physical_boundary_trace(
+                        projector, state));
+                }
+                const long double normalization =
+                    static_cast<long double>(layout_.nphi)*layout_.nz;
+                for (int row = 0; row < size; ++row) {
+                    for (int column = row; column < size; ++column) {
+                        long double entry = 0;
+                        for (std::size_t coordinate = 0;
+                             coordinate < traces[row].size(); ++coordinate) {
+                            entry += static_cast<long double>(
+                                traces[row][coordinate])
+                                *traces[column][coordinate];
+                        }
+                        result[static_cast<std::size_t>(row)*size+column] +=
+                            static_cast<T>(entry/normalization);
+                        if (row != column) {
+                            result[static_cast<std::size_t>(column)*size+row]
+                                += static_cast<T>(entry/normalization);
+                        }
+                    }
+                }
+                ++sample_count;
+            }
+            if (step != response_trace_horizon_steps_) {
+                for (int column = 0; column < size; ++column) {
+                    dynamics.apply(next[column].data(),
+                                   states[column].data());
+                }
+                states.swap(next);
+            }
+        }
+        for (T& entry : result) {
+            entry /= static_cast<T>(sample_count);
+        }
+        add_trace_cost_ridge(result, size);
+        return result;
+    }
+
+    std::vector<T> minimum_trace_right_inverse(
+        const BlockProjector& projector, const std::vector<T>& response,
+        const std::vector<T>& trace_gram, int dimension,
+        int continuation_dimension) const {
+        if (continuation_dimension == dimension) {
+            std::vector<T> result(response.size());
+            const T pivot = inverse_general_matrix(
+                result.data(), response.data(), dimension);
+            if (!(pivot > T(0))) {
+                throw std::runtime_error(
+                    "singular auxiliary response in Fourier block (m="
+                    +std::to_string(projector.m())+",l="
+                    +std::to_string(projector.l())+")");
+            }
+            return result;
+        }
+
+        std::vector<T> inverse_cost(trace_gram.size());
+        const T cost_pivot = inverse_general_matrix(
+            inverse_cost.data(), trace_gram.data(),
+            continuation_dimension);
+        if (!(cost_pivot > T(0))) {
+            throw std::runtime_error(
+                "singular continuation trace cost in Fourier block (m="
+                +std::to_string(projector.m())+",l="
+                +std::to_string(projector.l())
+                +"); set extended:response_cost_ridge");
+        }
+
+        // X=H^{-1}M^T, S=M X, K=X S^{-1}.  Then M K=I and Kb is the
+        // minimum-H-norm continuation among all solutions of Ma=b.
+        std::vector<T> x(
+            static_cast<std::size_t>(continuation_dimension)*dimension,
+            T(0));
+        for (int row = 0; row < continuation_dimension; ++row) {
+            for (int column = 0; column < dimension; ++column) {
+                for (int inner = 0;
+                     inner < continuation_dimension; ++inner) {
+                    x[static_cast<std::size_t>(row)*dimension+column] +=
+                        inverse_cost[static_cast<std::size_t>(row)
+                                     *continuation_dimension+inner]
+                        *response[static_cast<std::size_t>(column)
+                                  *continuation_dimension+inner];
+                }
+            }
+        }
+        std::vector<T> schur(
+            static_cast<std::size_t>(dimension)*dimension, T(0));
+        for (int row = 0; row < dimension; ++row) {
+            for (int column = 0; column < dimension; ++column) {
+                for (int inner = 0;
+                     inner < continuation_dimension; ++inner) {
+                    schur[static_cast<std::size_t>(row)*dimension+column] +=
+                        response[static_cast<std::size_t>(row)
+                                 *continuation_dimension+inner]
+                        *x[static_cast<std::size_t>(inner)*dimension+column];
+                }
+            }
+        }
+        std::vector<T> inverse_schur(schur.size());
+        const T response_pivot = inverse_general_matrix(
+            inverse_schur.data(), schur.data(), dimension);
+        if (!(response_pivot > T(0))) {
+            throw std::runtime_error(
+                "rank-deficient expanded auxiliary response in Fourier "
+                "block (m="+std::to_string(projector.m())+",l="
+                +std::to_string(projector.l())+")");
+        }
+        std::vector<T> result(x.size(), T(0));
+        for (int row = 0; row < continuation_dimension; ++row) {
+            for (int column = 0; column < dimension; ++column) {
+                for (int inner = 0; inner < dimension; ++inner) {
+                    result[static_cast<std::size_t>(row)*dimension+column] +=
+                        x[static_cast<std::size_t>(row)*dimension+inner]
+                        *inverse_schur[
+                            static_cast<std::size_t>(inner)*dimension+column];
+                }
+            }
+        }
+        return result;
+    }
+
+    void validate_response_condition(
+        const BlockProjector& projector, double condition) const {
+        if (!std::isfinite(condition)
+            || condition > response_condition_limit_) {
+            throw std::runtime_error(
+                "ill-conditioned auxiliary response in Fourier block (m="
+                +std::to_string(projector.m())+",l="
+                +std::to_string(projector.l())+"): condition="
+                +std::to_string(condition));
+        }
+    }
+
     CorrectionBlock build_correction(const Config& stokes_config,
                                      const BlockProjector& projector) {
         NSCylFourierBlockNative<T> stokes(
@@ -553,6 +908,8 @@ private:
             full_auxiliary_velocity_indices(projector.phase_count());
         const int velocity_size = static_cast<int>(local_indices.size());
         const int dimension = projector.dimension();
+        const int continuation_dimension =
+            dimension*response_basis_count_;
         if (velocity_size != stokes.velocity_block_size()) {
             throw std::logic_error(
                 "auxiliary velocity layout does not match native block");
@@ -597,21 +954,29 @@ private:
         }
 
         std::vector<T> right_hand_sides(
-            static_cast<std::size_t>(saddle_size)*dimension, T(0));
-        for (int column = 0; column < dimension; ++column) {
-            const auto& right = projector.right_basis()[column];
-            for (int row = 0; row < velocity_size; ++row) {
-                right_hand_sides[
-                    static_cast<std::size_t>(column)*saddle_size+row] =
-                    right[full_auxiliary_indices[row]];
+            static_cast<std::size_t>(saddle_size)*continuation_dimension,
+            T(0));
+        for (int degree = 0; degree < response_basis_count_; ++degree) {
+            const auto weights = local_velocity_weights(
+                projector.phase_count(), degree);
+            for (int mode = 0; mode < dimension; ++mode) {
+                const int column = degree*dimension+mode;
+                const auto& right = projector.right_basis()[mode];
+                for (int row = 0; row < velocity_size; ++row) {
+                    right_hand_sides[
+                        static_cast<std::size_t>(column)*saddle_size+row] =
+                        right[full_auxiliary_indices[row]]*weights[row];
+                }
             }
         }
-        solve_dense(saddle, right_hand_sides, saddle_size, dimension);
+        solve_dense(saddle, right_hand_sides, saddle_size,
+                    continuation_dimension);
 
         CorrectionBlock result;
         result.basis.assign(
-            dimension, std::vector<T>(projector.block_size(), T(0)));
-        for (int column = 0; column < dimension; ++column) {
+            continuation_dimension,
+            std::vector<T>(projector.block_size(), T(0)));
+        for (int column = 0; column < continuation_dimension; ++column) {
             for (int row = 0; row < velocity_size; ++row) {
                 result.basis[column][full_auxiliary_indices[row]] =
                     right_hand_sides[
@@ -620,71 +985,30 @@ private:
         }
 
         std::vector<T> response(
-            static_cast<std::size_t>(dimension)*dimension, T(0));
+            static_cast<std::size_t>(dimension)*continuation_dimension,
+            T(0));
         std::vector<T> response_column(dimension);
-        for (int column = 0; column < dimension; ++column) {
+        for (int column = 0; column < continuation_dimension; ++column) {
             projector.coordinates(
                 response_column.data(), result.basis[column].data());
             for (int row = 0; row < dimension; ++row) {
-                response[static_cast<std::size_t>(row)*dimension+column] =
+                response[static_cast<std::size_t>(row)
+                         *continuation_dimension+column] =
                     response_column[row];
             }
         }
         result.response = response;
-        result.inverse_response.resize(response.size());
-        const T pivot = inverse_general_matrix(
-            result.inverse_response.data(), response.data(), dimension);
-        if (!(pivot > T(0))) {
-            throw std::runtime_error(
-                "singular auxiliary response in Fourier block (m="
-                +std::to_string(projector.m())+",l="
-                +std::to_string(projector.l())+")");
-        }
-        result.response_norm = infinity_norm(response, dimension);
+        result.trace_gram = build_trace_gram(projector, result.basis);
+        result.inverse_response = minimum_trace_right_inverse(
+            projector, result.response, result.trace_gram,
+            dimension, continuation_dimension);
+        result.response_norm = infinity_norm(
+            response, dimension, continuation_dimension);
         result.inverse_response_norm = infinity_norm(
-            result.inverse_response, dimension);
-        result.response_condition =
-            result.response_norm*result.inverse_response_norm;
-        if (!std::isfinite(result.response_condition)
-            || result.response_condition > response_condition_limit_) {
-            throw std::runtime_error(
-                "ill-conditioned auxiliary response in Fourier block (m="
-                +std::to_string(projector.m())+",l="
-                +std::to_string(projector.l())+"): condition="
-                +std::to_string(result.response_condition));
-        }
-
-        result.boundary_gram.assign(
-            static_cast<std::size_t>(dimension)*dimension, T(0));
-        std::vector<double> diagonal(dimension);
-        for (int column = 0; column < dimension; ++column) {
-            const auto metrics = physical_block_metrics(
-                projector, result.basis[column]);
-            diagonal[column] = metrics.boundary_rms*metrics.boundary_rms;
-            result.boundary_gram[
-                static_cast<std::size_t>(column)*dimension+column] =
-                    static_cast<T>(diagonal[column]);
-        }
-        for (int row = 0; row < dimension; ++row) {
-            for (int column = row+1; column < dimension; ++column) {
-                std::vector<T> sum(projector.block_size());
-                for (int coordinate = 0;
-                     coordinate < projector.block_size(); ++coordinate) {
-                    sum[coordinate] = result.basis[row][coordinate]
-                        +result.basis[column][coordinate];
-                }
-                const auto metrics = physical_block_metrics(projector, sum);
-                const double entry = 0.5*(
-                    metrics.boundary_rms*metrics.boundary_rms
-                    -diagonal[row]-diagonal[column]);
-                result.boundary_gram[
-                    static_cast<std::size_t>(row)*dimension+column] =
-                        static_cast<T>(entry);
-                result.boundary_gram[
-                    static_cast<std::size_t>(column)*dimension+row] =
-                        static_cast<T>(entry);
-            }
-        }
+            result.inverse_response, continuation_dimension, dimension);
+        result.response_condition = result.response_norm
+            *result.inverse_response_norm;
+        validate_response_condition(projector, result.response_condition);
         return result;
     }
 
@@ -701,8 +1025,14 @@ private:
         const CorrectionBlock& correction, const std::vector<T>& coordinates,
         std::vector<T>& amplitudes) const {
         const int dimension = static_cast<int>(coordinates.size());
+        const int continuation_dimension =
+            static_cast<int>(correction.basis.size());
+        if (static_cast<int>(amplitudes.size()) != continuation_dimension) {
+            throw std::invalid_argument(
+                "auxiliary amplitude vector has the wrong size");
+        }
         if (response_regularization_ == 0) {
-            for (int row = 0; row < dimension; ++row) {
+            for (int row = 0; row < continuation_dimension; ++row) {
                 for (int column = 0; column < dimension; ++column) {
                     amplitudes[row] -= correction.inverse_response[
                         static_cast<std::size_t>(row)*dimension+column]
@@ -713,44 +1043,53 @@ private:
         }
 
         std::vector<T> normal(
-            static_cast<std::size_t>(dimension)*dimension, T(0));
-        std::vector<T> right_hand_side(dimension, T(0));
-        for (int row = 0; row < dimension; ++row) {
+            static_cast<std::size_t>(continuation_dimension)
+                *continuation_dimension,
+            T(0));
+        std::vector<T> right_hand_side(continuation_dimension, T(0));
+        for (int row = 0; row < continuation_dimension; ++row) {
             for (int coordinate = 0;
                  coordinate < dimension; ++coordinate) {
                 right_hand_side[row] -= correction.response[
-                    static_cast<std::size_t>(coordinate)*dimension+row]
+                    static_cast<std::size_t>(coordinate)
+                        *continuation_dimension+row]
                     *coordinates[coordinate];
             }
-            for (int column = 0; column < dimension; ++column) {
+            for (int column = 0;
+                 column < continuation_dimension; ++column) {
                 for (int coordinate = 0;
                      coordinate < dimension; ++coordinate) {
-                    normal[static_cast<std::size_t>(row)*dimension+column] +=
+                    normal[static_cast<std::size_t>(row)
+                           *continuation_dimension+column] +=
                         correction.response[
                             static_cast<std::size_t>(coordinate)
-                                *dimension+row]
+                                *continuation_dimension+row]
                         *correction.response[
                             static_cast<std::size_t>(coordinate)
-                                *dimension+column];
+                                *continuation_dimension+column];
                 }
-                normal[static_cast<std::size_t>(row)*dimension+column] +=
+                normal[static_cast<std::size_t>(row)
+                       *continuation_dimension+column] +=
                     static_cast<T>(response_regularization_)
-                    *correction.boundary_gram[
-                        static_cast<std::size_t>(row)*dimension+column];
+                    *correction.trace_gram[
+                        static_cast<std::size_t>(row)
+                            *continuation_dimension+column];
             }
         }
 
         std::vector<T> inverse(normal.size());
         const T pivot = inverse_general_matrix(
-            inverse.data(), normal.data(), dimension);
+            inverse.data(), normal.data(), continuation_dimension);
         if (!(pivot > T(0))) {
             throw std::runtime_error(
                 "regularized auxiliary response solve failed");
         }
-        for (int row = 0; row < dimension; ++row) {
-            for (int column = 0; column < dimension; ++column) {
+        for (int row = 0; row < continuation_dimension; ++row) {
+            for (int column = 0;
+                 column < continuation_dimension; ++column) {
                 amplitudes[row] += inverse[
-                    static_cast<std::size_t>(row)*dimension+column]
+                    static_cast<std::size_t>(row)
+                        *continuation_dimension+column]
                     *right_hand_side[column];
             }
         }
@@ -852,13 +1191,14 @@ private:
         return result;
     }
 
-    static double infinity_norm(const std::vector<T>& matrix, int size) {
+    static double infinity_norm(const std::vector<T>& matrix,
+                                int rows, int columns) {
         double result = 0;
-        for (int row = 0; row < size; ++row) {
+        for (int row = 0; row < rows; ++row) {
             double sum = 0;
-            for (int column = 0; column < size; ++column) {
+            for (int column = 0; column < columns; ++column) {
                 sum += std::abs(static_cast<double>(matrix[
-                    static_cast<std::size_t>(row)*size+column]));
+                    static_cast<std::size_t>(row)*columns+column]));
             }
             result = std::max(result, sum);
         }

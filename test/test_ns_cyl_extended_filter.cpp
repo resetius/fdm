@@ -88,7 +88,9 @@ bool nearly_equal(double first, double second) {
 
 Config make_extended_config(
     const fdm::NSCylSpectralMetadata& metadata,
-    double response_condition_limit, double response_regularization) {
+    double response_condition_limit, double response_regularization,
+    int response_basis_count, int response_trace_horizon_steps,
+    int response_trace_sample_stride, double response_cost_ridge) {
     Config result;
     std::vector<std::string> arguments = {
         "fdm_ns_cyl_extended_filter",
@@ -107,7 +109,14 @@ Config make_extended_config(
         "--extended:response_condition_limit="
             +number(response_condition_limit),
         "--extended:response_regularization="
-            +number(response_regularization)
+            +number(response_regularization),
+        "--extended:response_basis_count="
+            +std::to_string(response_basis_count),
+        "--extended:response_trace_horizon_steps="
+            +std::to_string(response_trace_horizon_steps),
+        "--extended:response_trace_sample_stride="
+            +std::to_string(response_trace_sample_stride),
+        "--extended:response_cost_ridge="+number(response_cost_ridge)
     };
     std::vector<char*> argv;
     for (auto& argument : arguments) {
@@ -337,7 +346,8 @@ void write_diagnostics(
     if (!output) {
         throw std::runtime_error("cannot create diagnostics CSV: "+filename);
     }
-    output << "m,l,response_norm,inverse_response_norm,response_condition,"
+    output << "m,l,continuation_dimension,response_norm,"
+              "inverse_response_norm,response_condition,"
               "coordinate_norm_before,"
               "coordinate_norm_after,coefficient_norm,"
               "correction_velocity_norm,boundary_rms,boundary_maximum,"
@@ -346,6 +356,7 @@ void write_diagnostics(
     output << std::scientific << std::setprecision(16);
     for (const auto& block : diagnostics.blocks) {
         output << block.m << ',' << block.l << ','
+               << block.continuation_dimension << ','
                << block.response_norm << ','
                << block.inverse_response_norm << ','
                << block.response_condition << ','
@@ -984,6 +995,14 @@ int run(const Config& config) {
         "extended", "response_condition_limit", 1e12);
     const double response_regularization = config.get(
         "extended", "response_regularization", 0.0);
+    const int response_basis_count = config.get(
+        "extended", "response_basis_count", 1);
+    const int response_trace_horizon_steps = config.get(
+        "extended", "response_trace_horizon_steps", 0);
+    const int response_trace_sample_stride = config.get(
+        "extended", "response_trace_sample_stride", 1);
+    const double response_cost_ridge = config.get(
+        "extended", "response_cost_ridge", 0.0);
     const double control_growth_min = config.get(
         "extended", "control_growth_min", 0.0);
     const double coordinate_tolerance = config.get(
@@ -1075,7 +1094,9 @@ int run(const Config& config) {
 
     Config extended_config = make_extended_config(
         spectral_metadata, response_condition_limit,
-        response_regularization);
+        response_regularization, response_basis_count,
+        response_trace_horizon_steps, response_trace_sample_stride,
+        response_cost_ridge);
     fdm::NSCylSpectralProjector<T> projector(
         modes, spectral_metadata.condition_limit);
     ExtendedFilter filter(extended_config, std::move(projector));
@@ -1235,6 +1256,10 @@ int run(const Config& config) {
                 available_real_dimension);
     std::printf("response regularization: alpha=%.9e\n",
                 response_regularization);
+    std::printf("response basis: count=%d trace_horizon=%d "
+                "sample_stride=%d cost_ridge=%.9e\n",
+                response_basis_count, response_trace_horizon_steps,
+                response_trace_sample_stride, response_cost_ridge);
     std::printf("initial perturbation scale: %.9e\n",
                 initial_perturbation_scale);
     std::printf("coordinates: before=%.9e after=%.9e ratio=%.9e\n",
