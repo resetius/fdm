@@ -34,7 +34,12 @@ Config make_config(double base_outer_radius=2.0,
                    double response_cost_ridge=0.0,
                    const std::string& response_cost="boundary_trace",
                    bool response_include_state=false,
-                   const std::string& state_extension="zero") {
+                   const std::string& state_extension="zero",
+                   const std::string& control_law="exact_projection",
+                   int lqr_horizon_intervals=0,
+                   int lqr_interval_steps=0,
+                   double lqr_control_weight=0.0,
+                   double lqr_ridge=0.0) {
     Config config;
     std::vector<std::string> arguments = {
         "ut_ns_cyl_extended_filter",
@@ -64,6 +69,14 @@ Config make_config(double base_outer_radius=2.0,
         "--extended:response_cost="+response_cost,
         "--extended:response_include_state="
             +std::to_string(response_include_state ? 1 : 0),
+        "--extended:control_law="+control_law,
+        "--extended:lqr_horizon_intervals="
+            +std::to_string(lqr_horizon_intervals),
+        "--extended:lqr_interval_steps="
+            +std::to_string(lqr_interval_steps),
+        "--extended:lqr_control_weight="
+            +std::to_string(lqr_control_weight),
+        "--extended:lqr_ridge="+std::to_string(lqr_ridge),
         "--extended:state_extension="+state_extension
     };
     std::vector<char*> argv;
@@ -506,6 +519,53 @@ void test_expanded_continuation_costs(void**) {
     assert_true(state_dependent_energy < state_independent_energy);
 }
 
+void test_finite_horizon_lqr_minimizes_next_sample_energy(void**) {
+    const int interval_steps = 8;
+    Config config = make_config(
+        2.0, 0.0, 1, 0, 1, 0.0, "boundary_trace", false, "zero",
+        "finite_horizon_lqr", 1, interval_steps, 0.0, 0.0);
+    const Layout layout(8, 4, 4);
+    fdm::PeriodicPackedFFT2<T> fft(layout.nphi, layout.nz);
+    std::vector<T> input(layout.state_size, T(0));
+    std::vector<T> values(fft.size());
+    std::vector<T> plane(fft.size(), T(0));
+    plane[1] = T(1);
+    fft.synthesis(plane.data(), values.data());
+    for (int i = 0; i < layout.nphi; ++i) {
+        for (int k = 0; k < layout.nz; ++k) {
+            input[packed_index(layout, Component::v, i, k, 2)] =
+                values[static_cast<std::size_t>(i)*layout.nz+k];
+        }
+    }
+
+    auto controlled = input;
+    Filter filter(config, make_projector(config, true));
+    const auto diagnostic = filter.apply(controlled, true);
+    assert_true(diagnostic.predicted_lqr_cost_before > 0);
+    assert_true(diagnostic.predicted_lqr_cost_after
+                < diagnostic.predicted_lqr_cost_before);
+    assert_true(diagnostic.original_domain_change_norm < 1e-13);
+
+    std::vector<T> correction(input.size());
+    for (std::size_t index = 0; index < input.size(); ++index) {
+        correction[index] = controlled[index]-input[index];
+    }
+    assert_true(maximum_divergence(config, correction) < 1e-11);
+
+    auto objective = [&](double scale) {
+        std::vector<T> candidate(input.size());
+        for (std::size_t index = 0; index < input.size(); ++index) {
+            candidate[index] = input[index]+scale*correction[index];
+        }
+        return finite_horizon_original_energy(
+            config, candidate, interval_steps, interval_steps);
+    };
+    const double optimum = objective(1.0);
+    assert_true(optimum < objective(0.0));
+    assert_true(optimum <= objective(0.9)*(1+1e-11));
+    assert_true(optimum <= objective(1.1)*(1+1e-11));
+}
+
 void test_zero_order_nonlinear_target_matches_linear_correction(void**) {
     Config config = make_config();
     const Layout layout(8, 4, 4);
@@ -675,6 +735,7 @@ int main() {
         cmocka_unit_test(test_supported_correction_can_target_nonzero_coordinates),
         cmocka_unit_test(test_regularization_trades_residual_for_boundary_energy),
         cmocka_unit_test(test_expanded_continuation_costs),
+        cmocka_unit_test(test_finite_horizon_lqr_minimizes_next_sample_energy),
         cmocka_unit_test(test_zero_order_nonlinear_target_matches_linear_correction),
         cmocka_unit_test(test_stokes_state_extension_matches_interface_and_divergence),
         cmocka_unit_test(test_auxiliary_interface_must_be_grid_aligned)

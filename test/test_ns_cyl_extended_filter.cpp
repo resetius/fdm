@@ -92,7 +92,9 @@ Config make_extended_config(
     int response_basis_count, int response_cost_horizon_steps,
     int response_cost_sample_stride, double response_cost_ridge,
     const std::string& response_cost, bool response_include_state,
-    const std::string& state_extension) {
+    const std::string& state_extension, const std::string& control_law,
+    int lqr_horizon_intervals, int lqr_interval_steps,
+    double lqr_control_weight, double lqr_ridge) {
     Config result;
     std::vector<std::string> arguments = {
         "fdm_ns_cyl_extended_filter",
@@ -122,6 +124,13 @@ Config make_extended_config(
         "--extended:response_cost="+response_cost,
         "--extended:response_include_state="
             +std::to_string(response_include_state ? 1 : 0),
+        "--extended:control_law="+control_law,
+        "--extended:lqr_horizon_intervals="
+            +std::to_string(lqr_horizon_intervals),
+        "--extended:lqr_interval_steps="
+            +std::to_string(lqr_interval_steps),
+        "--extended:lqr_control_weight="+number(lqr_control_weight),
+        "--extended:lqr_ridge="+number(lqr_ridge),
         "--extended:state_extension="+state_extension
     };
     std::vector<char*> argv;
@@ -358,7 +367,8 @@ void write_diagnostics(
               "coordinate_norm_after,coefficient_norm,"
               "correction_velocity_norm,boundary_rms,boundary_maximum,"
               "coordinate_to_correction_gain,"
-              "coordinate_to_boundary_rms_gain\n";
+              "coordinate_to_boundary_rms_gain,predicted_lqr_cost_before,"
+              "predicted_lqr_cost_after\n";
     output << std::scientific << std::setprecision(16);
     for (const auto& block : diagnostics.blocks) {
         output << block.m << ',' << block.l << ','
@@ -373,7 +383,9 @@ void write_diagnostics(
                << block.boundary_rms << ','
                << block.boundary_maximum << ','
                << block.coordinate_to_correction_gain << ','
-               << block.coordinate_to_boundary_rms_gain << '\n';
+               << block.coordinate_to_boundary_rms_gain << ','
+               << block.predicted_lqr_cost_before << ','
+               << block.predicted_lqr_cost_after << '\n';
     }
 }
 
@@ -582,7 +594,8 @@ BoundaryEvolutionResult run_boundary_evolution(
             "cannot create boundary evolution CSV: "+output_name);
     }
     output << "branch,step,time,feedback_applied,coordinate_norm,"
-              "target_coordinate_norm,response_residual_norm,velocity_norm,"
+              "target_coordinate_norm,response_residual_norm,"
+              "predicted_lqr_cost_before,predicted_lqr_cost_after,velocity_norm,"
               "maximum_divergence,boundary_rms,boundary_maximum,"
               "supported_correction_norm,gluing_correction_velocity_norm,"
               "nonlinear_S_applications\n";
@@ -659,7 +672,7 @@ BoundaryEvolutionResult run_boundary_evolution(
                    << (initial_time_index+step)*filter.geometry().dt
                    << ",0,"
                    << uncontrolled_modal.unstable_coordinate_norm_before
-                   << ",0,0"
+                   << ",0,0,0,0"
                    << ',' << layout.velocity_norm(
                        uncontrolled, q_uncontrolled.data())
                    << ',' << maximum_divergence(uncontrolled)
@@ -677,6 +690,12 @@ BoundaryEvolutionResult run_boundary_evolution(
                    << controlled_modal.unstable_coordinate_norm_before << ','
                    << target_coordinate_norm << ','
                    << response_residual_norm << ','
+                   << (feedback
+                           ? controlled_modal.predicted_lqr_cost_before : 0)
+                   << ','
+                   << (feedback
+                           ? controlled_modal.predicted_lqr_cost_after : 0)
+                   << ','
                    << layout.velocity_norm(controlled, q_controlled.data())
                    << ',' << maximum_divergence(controlled) << ','
                    << control.rms_norm() << ',' << control.maximum_norm()
@@ -749,7 +768,8 @@ BoundaryEvolutionResult run_extended_trace_evolution(
               "maximum_divergence,boundary_rms,boundary_maximum,"
               "extended_coordinate_norm,extended_delta_velocity_norm,"
               "extended_delta_Omega_velocity_norm,target_coordinate_norm,"
-              "response_residual_norm,gluing_correction_velocity_norm,"
+              "response_residual_norm,predicted_lqr_cost_before,"
+              "predicted_lqr_cost_after,gluing_correction_velocity_norm,"
               "nonlinear_S_applications\n";
     output << std::scientific << std::setprecision(16);
 
@@ -766,6 +786,8 @@ BoundaryEvolutionResult run_extended_trace_evolution(
 
     double target_coordinate_norm = 0;
     double response_residual_norm = 0;
+    double predicted_lqr_cost_before = 0;
+    double predicted_lqr_cost_after = 0;
     double gluing_correction_velocity_norm = 0;
     for (int step = 0; step <= steps; ++step) {
         const bool apply = step%reorthogonalization_interval == 0;
@@ -775,6 +797,10 @@ BoundaryEvolutionResult run_extended_trace_evolution(
                 target_coordinate_norm = 0;
                 response_residual_norm =
                     response.unstable_coordinate_norm_after;
+                predicted_lqr_cost_before =
+                    response.predicted_lqr_cost_before;
+                predicted_lqr_cost_after =
+                    response.predicted_lqr_cost_after;
                 gluing_correction_velocity_norm = 0;
             } else {
                 const auto stable =
@@ -794,6 +820,10 @@ BoundaryEvolutionResult run_extended_trace_evolution(
                     extended_controlled, target);
                 response_residual_norm =
                     response.unstable_coordinate_norm_after;
+                predicted_lqr_cost_before =
+                    response.predicted_lqr_cost_before;
+                predicted_lqr_cost_after =
+                    response.predicted_lqr_cost_after;
             }
         }
 
@@ -853,6 +883,10 @@ BoundaryEvolutionResult run_extended_trace_evolution(
                        << extended_delta_omega_norm << ','
                        << target_coordinate_norm << ','
                        << response_residual_norm << ','
+                       << (controlled_branch
+                               ? predicted_lqr_cost_before : 0) << ','
+                       << (controlled_branch
+                               ? predicted_lqr_cost_after : 0) << ','
                        << gluing_correction_velocity_norm << ','
                        << (nonlinear_method == nullptr
                                ? 0 : nonlinear_method->applications())
@@ -1015,6 +1049,14 @@ int run(const Config& config) {
         "extended", "response_include_state", 0) != 0;
     const std::string state_extension = config.get(
         "extended", "state_extension", std::string("zero"));
+    const std::string control_law = config.get(
+        "extended", "control_law", std::string("exact_projection"));
+    const int lqr_horizon_intervals = config.get(
+        "extended", "lqr_horizon_intervals", 0);
+    const double lqr_control_weight = config.get(
+        "extended", "lqr_control_weight", 0.0);
+    const double lqr_ridge = config.get(
+        "extended", "lqr_ridge", 0.0);
     const double control_growth_min = config.get(
         "extended", "control_growth_min", 0.0);
     const double coordinate_tolerance = config.get(
@@ -1064,6 +1106,13 @@ int run(const Config& config) {
         throw std::invalid_argument(
             "extended initial_perturbation_scale must be positive");
     }
+    if (control_law == "finite_horizon_lqr"
+        && boundary_evolution_steps > 0
+        && boundary_nonlinear_iterations >= 0) {
+        throw std::invalid_argument(
+            "finite-horizon LQR boundary evolution requires the linear "
+            "target");
+    }
 
     Task original_task(config);
     const Layout original_layout(original_task);
@@ -1109,7 +1158,8 @@ int run(const Config& config) {
         response_regularization, response_basis_count,
         response_cost_horizon_steps, response_cost_sample_stride,
         response_cost_ridge, response_cost, response_include_state,
-        state_extension);
+        state_extension, control_law, lqr_horizon_intervals,
+        boundary_feedback_interval, lqr_control_weight, lqr_ridge);
     fdm::NSCylSpectralProjector<T> projector(
         modes, spectral_metadata.condition_limit);
     ExtendedFilter filter(extended_config, std::move(projector));
@@ -1276,6 +1326,14 @@ int run(const Config& config) {
                 response_cost_horizon_steps,
                 response_cost_sample_stride, response_cost_ridge);
     std::printf("state extension: %s\n", state_extension.c_str());
+    std::printf("control law: %s", control_law.c_str());
+    if (control_law == "finite_horizon_lqr") {
+        std::printf(" horizon_intervals=%d interval_steps=%d "
+                    "control_weight=%.9e ridge=%.9e",
+                    lqr_horizon_intervals, boundary_feedback_interval,
+                    lqr_control_weight, lqr_ridge);
+    }
+    std::printf("\n");
     std::printf("initial perturbation scale: %.9e\n",
                 initial_perturbation_scale);
     std::printf("coordinates: before=%.9e after=%.9e ratio=%.9e\n",
@@ -1287,15 +1345,27 @@ int run(const Config& config) {
                 diagnostics.original_domain_change_norm);
     std::printf("divergence: before=%.9e after=%.9e correction=%.9e\n",
                 divergence_before, divergence_after, correction_divergence);
+    if (control_law == "finite_horizon_lqr") {
+        std::printf("predicted LQR cost: before=%.9e after=%.9e ratio=%.9e\n",
+                    diagnostics.predicted_lqr_cost_before,
+                    diagnostics.predicted_lqr_cost_after,
+                    diagnostics.predicted_lqr_cost_after
+                        /std::max(diagnostics.predicted_lqr_cost_before,
+                                  std::numeric_limits<double>::min()));
+    }
     std::printf("checkpoint: %s\ntrace: %s\ndiagnostics: %s\n",
                 checkpoint_output.c_str(), trace_output.c_str(),
                 diagnostics_output.c_str());
 
-    const bool coordinate_ok = response_regularization == 0
-        ? coordinate_ratio <= coordinate_tolerance
-        : diagnostics.unstable_coordinate_norm_after
-            <= diagnostics.unstable_coordinate_norm_before
-                *(1+coordinate_tolerance);
+    const bool coordinate_ok = control_law == "finite_horizon_lqr"
+        ? diagnostics.predicted_lqr_cost_after
+            <= diagnostics.predicted_lqr_cost_before
+                *(1+coordinate_tolerance)
+        : response_regularization == 0
+            ? coordinate_ratio <= coordinate_tolerance
+            : diagnostics.unstable_coordinate_norm_after
+                <= diagnostics.unstable_coordinate_norm_before
+                    *(1+coordinate_tolerance);
     const bool passed = coordinate_ok
         && diagnostics.original_domain_change_norm <= preservation_tolerance
         && correction_divergence <= divergence_tolerance

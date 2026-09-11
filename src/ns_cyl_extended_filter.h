@@ -42,6 +42,8 @@ struct NSCylExtendedBlockFilterDiagnostics {
     double boundary_maximum = 0;
     double coordinate_to_correction_gain = 0;
     double coordinate_to_boundary_rms_gain = 0;
+    double predicted_lqr_cost_before = 0;
+    double predicted_lqr_cost_after = 0;
 };
 
 struct NSCylExtendedFilterDiagnostics {
@@ -49,6 +51,8 @@ struct NSCylExtendedFilterDiagnostics {
     double unstable_coordinate_norm_after = 0;
     double correction_velocity_norm = 0;
     double original_domain_change_norm = 0;
+    double predicted_lqr_cost_before = 0;
+    double predicted_lqr_cost_after = 0;
     std::vector<NSCylExtendedBlockFilterDiagnostics> blocks;
 };
 
@@ -157,6 +161,16 @@ public:
             "extended", "response_cost", std::string("boundary_trace"));
         response_include_state_ = config.get(
             "extended", "response_include_state", 0) != 0;
+        control_law_ = config.get(
+            "extended", "control_law", std::string("exact_projection"));
+        lqr_horizon_intervals_ = config.get(
+            "extended", "lqr_horizon_intervals", 0);
+        lqr_interval_steps_ = config.get(
+            "extended", "lqr_interval_steps", 0);
+        lqr_control_weight_ = config.get(
+            "extended", "lqr_control_weight", 0.0);
+        lqr_ridge_ = config.get(
+            "extended", "lqr_ridge", 0.0);
         state_extension_ = config.get(
             "extended", "state_extension", std::string("zero"));
         if (!(response_condition_limit_ >= 1)) {
@@ -182,6 +196,15 @@ public:
                 "invalid extended response basis, cost, or state extension "
                 "settings");
         }
+        if ((control_law_ != "exact_projection"
+             && control_law_ != "finite_horizon_lqr")
+            || lqr_horizon_intervals_ < 0 || lqr_interval_steps_ < 0
+            || !(lqr_control_weight_ >= 0)
+            || !std::isfinite(lqr_control_weight_)
+            || !(lqr_ridge_ >= 0) || !std::isfinite(lqr_ridge_)) {
+            throw std::invalid_argument(
+                "invalid extended finite-horizon LQR settings");
+        }
         if (response_include_state_
             && (response_cost_ != "omega_velocity"
                 || response_cost_horizon_steps_ == 0
@@ -189,6 +212,14 @@ public:
             throw std::invalid_argument(
                 "state-dependent response cost requires omega_velocity, "
                 "a positive horizon, and exact response");
+        }
+        if (control_law_ == "finite_horizon_lqr"
+            && (lqr_horizon_intervals_ == 0 || lqr_interval_steps_ == 0
+                || response_regularization_ != 0
+                || response_include_state_)) {
+            throw std::invalid_argument(
+                "finite-horizon LQR requires positive horizon and interval, "
+                "zero response regularization, and no legacy state cost");
         }
         validate_projector();
         build_corrections();
@@ -318,13 +349,16 @@ public:
             std::vector<T> before(dimension, T(0));
             std::vector<T> after(dimension, T(0));
             std::vector<T> amplitudes(correction.basis.size(), T(0));
+            double predicted_lqr_cost_before = 0;
+            double predicted_lqr_cost_after = 0;
             std::vector<T> block_correction;
             if (detailed_block_diagnostics) {
                 block_correction.assign(projector.block_size(), T(0));
             }
             projector.coordinates(before.data(), block_.data());
             compute_amplitudes(
-                projector, correction, block_, before, amplitudes);
+                projector, correction, block_, before, amplitudes,
+                predicted_lqr_cost_before, predicted_lqr_cost_after);
             for (int column = 0;
                  column < static_cast<int>(correction.basis.size());
                  ++column) {
@@ -350,6 +384,10 @@ public:
             block_result.inverse_response_norm =
                 correction.inverse_response_norm;
             block_result.response_condition = correction.response_condition;
+            block_result.predicted_lqr_cost_before =
+                predicted_lqr_cost_before;
+            block_result.predicted_lqr_cost_after =
+                predicted_lqr_cost_after;
             for (int coordinate = 0; coordinate < dimension; ++coordinate) {
                 const long double b = before[coordinate];
                 const long double a = after[coordinate];
@@ -389,6 +427,8 @@ public:
                 *block_result.unstable_coordinate_norm_before;
             after2 += block_result.unstable_coordinate_norm_after
                 *block_result.unstable_coordinate_norm_after;
+            result.predicted_lqr_cost_before += predicted_lqr_cost_before;
+            result.predicted_lqr_cost_after += predicted_lqr_cost_after;
             result.blocks.push_back(block_result);
         }
 
@@ -445,6 +485,9 @@ private:
         std::vector<T> cost_gram;
         std::vector<T> inverse_cost;
         std::vector<std::vector<T>> sampled_basis;
+        std::vector<std::vector<T>> lqr_responses;
+        std::vector<T> inverse_lqr_hessian;
+        std::vector<T> lqr_phase_gram;
         double response_norm = 0;
         double inverse_response_norm = 0;
         double response_condition = 0;
@@ -472,6 +515,11 @@ private:
     double response_cost_ridge_ = 0;
     std::string response_cost_;
     bool response_include_state_ = false;
+    std::string control_law_;
+    int lqr_horizon_intervals_ = 0;
+    int lqr_interval_steps_ = 0;
+    double lqr_control_weight_ = 0;
+    double lqr_ridge_ = 0;
     std::string state_extension_;
     std::vector<CorrectionBlock> corrections_;
     std::vector<ExtensionBlock> extension_blocks_;
@@ -1217,6 +1265,155 @@ private:
         return result;
     }
 
+    std::vector<T> boundary_trace_gram(
+        const BlockProjector& projector,
+        const std::vector<std::vector<T>>& basis) {
+        const int size = static_cast<int>(basis.size());
+        std::vector<std::vector<T>> traces;
+        traces.reserve(size);
+        for (const auto& state : basis) {
+            traces.push_back(physical_boundary_trace(projector, state));
+        }
+        const long double normalization =
+            static_cast<long double>(layout_.nphi)*layout_.nz;
+        std::vector<T> result(
+            static_cast<std::size_t>(size)*size, T(0));
+        for (int row = 0; row < size; ++row) {
+            for (int column = row; column < size; ++column) {
+                long double entry = 0;
+                for (std::size_t coordinate = 0;
+                     coordinate < traces[row].size(); ++coordinate) {
+                    entry += static_cast<long double>(traces[row][coordinate])
+                        *traces[column][coordinate];
+                }
+                const T value = static_cast<T>(entry/normalization);
+                result[static_cast<std::size_t>(row)*size+column] = value;
+                result[static_cast<std::size_t>(column)*size+row] = value;
+            }
+        }
+        return result;
+    }
+
+    // Condense the finite-horizon problem at feedback instants.  With
+    // A=L_G^interval and a supported impulse W u_j, the sampled dynamics are
+    // x_{j+1}=A(x_j+W u_j).  lqr_responses stores A^lag W.  Eliminating the
+    // states gives one small quadratic problem for all horizon inputs; only
+    // its first input is applied before the horizon is shifted and solved
+    // again.
+    void build_lqr_response(const BlockProjector& projector,
+                            CorrectionBlock& correction) {
+        if (control_law_ != "finite_horizon_lqr") {
+            return;
+        }
+        const int input_size = static_cast<int>(correction.basis.size());
+        const int horizon = lqr_horizon_intervals_;
+        const int problem_size = horizon*input_size;
+        NSCylFourierBlockNative<T> dynamics(
+            extended_dynamics_config(), projector.m(), projector.l(), 1);
+        if (dynamics.size() != projector.block_size()) {
+            throw std::logic_error(
+                "LQR dynamics layout does not match spectral block");
+        }
+
+        correction.lqr_phase_gram = phase_spatial_gram(projector);
+        correction.lqr_responses.reserve(problem_size);
+        std::vector<std::vector<T>> states = correction.basis;
+        std::vector<std::vector<T>> next(
+            input_size,
+            std::vector<T>(projector.block_size(), T(0)));
+        for (int lag = 1; lag <= horizon; ++lag) {
+            for (int step = 0; step < lqr_interval_steps_; ++step) {
+                for (int input = 0; input < input_size; ++input) {
+                    dynamics.apply(next[input].data(), states[input].data());
+                }
+                states.swap(next);
+            }
+            correction.lqr_responses.insert(
+                correction.lqr_responses.end(),
+                states.begin(), states.end());
+        }
+
+        std::vector<T> hessian(
+            static_cast<std::size_t>(problem_size)*problem_size, T(0));
+        for (int first_stage = 0; first_stage < horizon; ++first_stage) {
+            for (int second_stage = first_stage;
+                 second_stage < horizon; ++second_stage) {
+                for (int first_input = 0;
+                     first_input < input_size; ++first_input) {
+                    for (int second_input = 0;
+                         second_input < input_size; ++second_input) {
+                        long double entry = 0;
+                        for (int sample = second_stage+1;
+                             sample <= horizon; ++sample) {
+                            const auto& first = correction.lqr_responses[
+                                static_cast<std::size_t>(
+                                    sample-first_stage-1)*input_size
+                                +first_input];
+                            const auto& second = correction.lqr_responses[
+                                static_cast<std::size_t>(
+                                    sample-second_stage-1)*input_size
+                                +second_input];
+                            entry += original_velocity_inner_product(
+                                projector, first, second,
+                                correction.lqr_phase_gram);
+                        }
+                        const int row = first_stage*input_size+first_input;
+                        const int column =
+                            second_stage*input_size+second_input;
+                        const T value = static_cast<T>(entry);
+                        hessian[static_cast<std::size_t>(row)*problem_size
+                                +column] = value;
+                        hessian[static_cast<std::size_t>(column)*problem_size
+                                +row] = value;
+                    }
+                }
+            }
+        }
+
+        if (lqr_control_weight_ != 0) {
+            const auto effort = boundary_trace_gram(
+                projector, correction.basis);
+            for (int stage = 0; stage < horizon; ++stage) {
+                for (int row = 0; row < input_size; ++row) {
+                    for (int column = 0; column < input_size; ++column) {
+                        const int full_row = stage*input_size+row;
+                        const int full_column = stage*input_size+column;
+                        hessian[static_cast<std::size_t>(full_row)
+                                    *problem_size+full_column] +=
+                            static_cast<T>(lqr_control_weight_)
+                            *effort[static_cast<std::size_t>(row)*input_size
+                                    +column];
+                    }
+                }
+            }
+        }
+
+        if (lqr_ridge_ != 0) {
+            long double diagonal_sum = 0;
+            for (int row = 0; row < problem_size; ++row) {
+                diagonal_sum += std::abs(static_cast<long double>(
+                    hessian[static_cast<std::size_t>(row)*problem_size+row]));
+            }
+            const long double scale = diagonal_sum > 0
+                ? diagonal_sum/problem_size : 1;
+            for (int row = 0; row < problem_size; ++row) {
+                hessian[static_cast<std::size_t>(row)*problem_size+row] +=
+                    static_cast<T>(lqr_ridge_*scale);
+            }
+        }
+
+        correction.inverse_lqr_hessian.resize(hessian.size());
+        const T pivot = inverse_general_matrix(
+            correction.inverse_lqr_hessian.data(), hessian.data(),
+            problem_size);
+        if (!(pivot > T(0))) {
+            throw std::runtime_error(
+                "singular finite-horizon LQR problem in Fourier block (m="
+                +std::to_string(projector.m())+",l="
+                +std::to_string(projector.l())+")");
+        }
+    }
+
     std::vector<T> minimum_cost_right_inverse(
         const BlockProjector& projector, const std::vector<T>& response,
         const std::vector<T>& cost_gram, int dimension,
@@ -1416,6 +1613,7 @@ private:
         result.inverse_response = minimum_cost_right_inverse(
             projector, result.response, result.cost_gram,
             dimension, continuation_dimension, result.inverse_cost);
+        build_lqr_response(projector, result);
         result.response_norm = infinity_norm(
             response, dimension, continuation_dimension);
         result.inverse_response_norm = infinity_norm(
@@ -1488,18 +1686,101 @@ private:
         return result;
     }
 
+    void compute_lqr_amplitudes(
+        const BlockProjector& projector,
+        const CorrectionBlock& correction,
+        const std::vector<T>& current_block,
+        std::vector<T>& amplitudes,
+        double& predicted_cost_before,
+        double& predicted_cost_after) {
+        const int input_size = static_cast<int>(correction.basis.size());
+        const int horizon = lqr_horizon_intervals_;
+        const int problem_size = horizon*input_size;
+        if (static_cast<int>(correction.lqr_responses.size()) != problem_size
+            || static_cast<int>(correction.inverse_lqr_hessian.size())
+                != problem_size*problem_size) {
+            throw std::logic_error("incomplete finite-horizon LQR response");
+        }
+
+        NSCylFourierBlockNative<T> dynamics(
+            extended_dynamics_config(), projector.m(), projector.l(), 1);
+        std::vector<T> free_state = current_block;
+        std::vector<T> next(free_state.size(), T(0));
+        std::vector<T> linear(problem_size, T(0));
+        long double free_cost = 0;
+        for (int sample = 1; sample <= horizon; ++sample) {
+            for (int step = 0; step < lqr_interval_steps_; ++step) {
+                dynamics.apply(next.data(), free_state.data());
+                free_state.swap(next);
+            }
+            free_cost += original_velocity_inner_product(
+                projector, free_state, free_state,
+                correction.lqr_phase_gram);
+            for (int stage = 0; stage < sample; ++stage) {
+                const int lag = sample-stage;
+                for (int input = 0; input < input_size; ++input) {
+                    linear[stage*input_size+input] += static_cast<T>(
+                        original_velocity_inner_product(
+                            projector,
+                            correction.lqr_responses[
+                                static_cast<std::size_t>(lag-1)*input_size
+                                +input],
+                            free_state, correction.lqr_phase_gram));
+                }
+            }
+        }
+
+        std::vector<T> plan(problem_size, T(0));
+        for (int row = 0; row < problem_size; ++row) {
+            for (int column = 0; column < problem_size; ++column) {
+                plan[row] -= correction.inverse_lqr_hessian[
+                    static_cast<std::size_t>(row)*problem_size+column]
+                    *linear[column];
+            }
+        }
+        std::copy(plan.begin(), plan.begin()+input_size,
+                  amplitudes.begin());
+
+        long double reduction = 0;
+        for (int coordinate = 0; coordinate < problem_size; ++coordinate) {
+            reduction += static_cast<long double>(plan[coordinate])
+                *linear[coordinate];
+        }
+        predicted_cost_before = static_cast<double>(free_cost);
+        predicted_cost_after = static_cast<double>(free_cost+reduction);
+        const double tolerance = 256*std::numeric_limits<T>::epsilon()
+            *std::max(1.0, predicted_cost_before);
+        if (!std::isfinite(predicted_cost_after)
+            || predicted_cost_after > predicted_cost_before+tolerance
+            || predicted_cost_after < -tolerance) {
+            throw std::runtime_error(
+                "finite-horizon LQR failed to reduce its quadratic cost in "
+                "Fourier block (m="+std::to_string(projector.m())+",l="
+                +std::to_string(projector.l())+")");
+        }
+        predicted_cost_after = std::max(0.0, predicted_cost_after);
+    }
+
     void compute_amplitudes(
         const BlockProjector& projector,
         const CorrectionBlock& correction,
         const std::vector<T>& current_block,
         const std::vector<T>& coordinates,
-        std::vector<T>& amplitudes) {
+        std::vector<T>& amplitudes,
+        double& predicted_lqr_cost_before,
+        double& predicted_lqr_cost_after) {
         const int dimension = static_cast<int>(coordinates.size());
         const int continuation_dimension =
             static_cast<int>(correction.basis.size());
         if (static_cast<int>(amplitudes.size()) != continuation_dimension) {
             throw std::invalid_argument(
                 "auxiliary amplitude vector has the wrong size");
+        }
+        if (control_law_ == "finite_horizon_lqr") {
+            compute_lqr_amplitudes(
+                projector, correction, current_block, amplitudes,
+                predicted_lqr_cost_before, predicted_lqr_cost_after);
+            return;
         }
         if (response_regularization_ == 0) {
             for (int row = 0; row < continuation_dimension; ++row) {
