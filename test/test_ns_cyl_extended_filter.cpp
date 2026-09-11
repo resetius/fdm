@@ -1216,6 +1216,10 @@ int run(const Config& config) {
         "extended", "boundary_fourier_output", std::string());
     const std::string boundary_spectrum_input = config.get(
         "extended", "boundary_spectrum_input", std::string());
+    const bool boundary_lqr_cache_first_feedback = config.get(
+        "extended", "boundary_lqr_cache_first_feedback", 0) != 0;
+    const std::string boundary_lqr_closed_loop_output = config.get(
+        "extended", "boundary_lqr_closed_loop_output", std::string());
     const std::string boundary_checkpoint_output = config.get(
         "extended", "boundary_checkpoint_output", std::string());
     if (checkpoint_input.empty() || spectrum_input.empty()
@@ -1425,11 +1429,43 @@ int run(const Config& config) {
             fdm::NSCylBoundaryLQR<T> physical_lqr(
                 config, controlled_blocks, lqr_horizon_intervals,
                 boundary_feedback_interval, lqr_control_weight, lqr_ridge,
-                boundary_control_components);
+                boundary_control_components,
+                boundary_lqr_cache_first_feedback
+                    || !boundary_lqr_closed_loop_output.empty());
             std::printf("physical LQR block selection: G modes=%zu "
                         "Omega modes=%zu union blocks=%zu\n",
                         modes.size(), physical_mode_count,
                         physical_lqr.block_count());
+            if (!boundary_lqr_closed_loop_output.empty()) {
+                std::ofstream closed_loop_output(
+                    boundary_lqr_closed_loop_output);
+                if (!closed_loop_output) {
+                    throw std::runtime_error(
+                        "cannot create physical LQR closed-loop CSV: "
+                        +boundary_lqr_closed_loop_output);
+                }
+                closed_loop_output
+                    << "m,l,augmented_size,spectral_radius,growth_rate\n"
+                    << std::scientific << std::setprecision(16);
+                double maximum_radius = 0;
+                for (const auto& diagnostic :
+                     physical_lqr.closed_loop_diagnostics()) {
+                    const double growth = diagnostic.spectral_radius > 0
+                        ? std::log(diagnostic.spectral_radius)
+                            /(boundary_feedback_interval*original_task.dt)
+                        : -std::numeric_limits<double>::infinity();
+                    closed_loop_output
+                        << diagnostic.m << ',' << diagnostic.l << ','
+                        << diagnostic.augmented_size << ','
+                        << diagnostic.spectral_radius << ',' << growth
+                        << '\n';
+                    maximum_radius = std::max(
+                        maximum_radius, diagnostic.spectral_radius);
+                }
+                std::printf("physical LQR closed loop: max rho=%.9e "
+                            "csv=%s\n", maximum_radius,
+                            boundary_lqr_closed_loop_output.c_str());
+            }
             boundary = run_boundary_evolution(
                 config, filter, &physical_lqr, nullptr, -1, reference,
                 original_perturbation, checkpoint_metadata.time_index,
@@ -1501,8 +1537,10 @@ int run(const Config& config) {
                     lqr_control_weight, lqr_ridge);
     }
     if (boundary_mode == "physical_lqr") {
-        std::printf(" physical_boundary_components=%s",
-                    boundary_control_components.c_str());
+        std::printf(" physical_boundary_components=%s cached_feedback=%d",
+                    boundary_control_components.c_str(),
+                    (boundary_lqr_cache_first_feedback
+                     || !boundary_lqr_closed_loop_output.empty()) ? 1 : 0);
     }
     std::printf("\n");
     std::printf("initial perturbation scale: %.9e\n",

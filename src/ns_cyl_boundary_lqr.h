@@ -30,6 +30,13 @@ struct NSCylBoundaryLQRBlockDiagnostics {
     double control_norm = 0;
 };
 
+struct NSCylBoundaryLQRClosedLoopDiagnostics {
+    int m = -1;
+    int l = -1;
+    int augmented_size = 0;
+    double spectral_radius = 0;
+};
+
 template<typename T>
 struct NSCylBoundaryLQRResult {
     int nphi = 0;
@@ -137,6 +144,117 @@ public:
     int interval_steps() const { return dynamics_.operator_steps(); }
 
     const Native& dynamics() const { return dynamics_; }
+
+    bool first_feedback_gain_cached() const {
+        return !first_feedback_gain_.empty();
+    }
+
+    // Materialize the sampled free transition once and use its transpose to
+    // collapse the condensed horizon optimum to u_0=K_0(q_0,b_0).  This is
+    // exactly the first command returned by control(); it only avoids the H
+    // native time integrations on every subsequent feedback call.
+    void cache_first_feedback_gain() {
+        if (first_feedback_gain_cached()) {
+            return;
+        }
+        build_free_transition();
+        build_first_feedback_gain();
+    }
+
+    std::vector<T> cached_control(
+        const T* state, const T* current_boundary,
+        BlockDiagnostics* diagnostics = nullptr) const {
+        if (!state || !current_boundary) {
+            throw std::invalid_argument(
+                "null physical boundary LQR state");
+        }
+        if (!first_feedback_gain_cached()) {
+            throw std::logic_error(
+                "physical boundary LQR first-feedback gain is not cached");
+        }
+        const int augmented_size = state_size()+boundary_size();
+        std::vector<T> augmented(augmented_size);
+        std::copy(state, state+state_size(), augmented.begin());
+        std::copy(current_boundary, current_boundary+boundary_size(),
+                  augmented.begin()+state_size());
+        std::vector<T> result(boundary_size(), T(0));
+        long double norm2 = 0;
+        for (int input = 0; input < input_size(); ++input) {
+            long double value = 0;
+            for (int coordinate = 0; coordinate < augmented_size;
+                 ++coordinate) {
+                value += static_cast<long double>(first_feedback_gain_[
+                    static_cast<std::size_t>(input)*augmented_size
+                        +coordinate])*augmented[coordinate];
+            }
+            result[input_indices_[input]] = static_cast<T>(value);
+            norm2 += value*value;
+        }
+        if (diagnostics) {
+            diagnostics->m = m();
+            diagnostics->l = l();
+            diagnostics->input_size = input_size();
+            diagnostics->predicted_cost_before =
+                std::numeric_limits<double>::quiet_NaN();
+            diagnostics->predicted_cost_after =
+                std::numeric_limits<double>::quiet_NaN();
+            diagnostics->control_norm = std::sqrt(
+                static_cast<double>(norm2));
+        }
+        return result;
+    }
+
+    double closed_loop_spectral_radius() const {
+        if (!first_feedback_gain_cached()) {
+            throw std::logic_error(
+                "physical boundary LQR first-feedback gain is not cached");
+        }
+        const int augmented_size = state_size()+boundary_size();
+        std::vector<T> matrix(
+            static_cast<std::size_t>(augmented_size)*augmented_size, T(0));
+        for (int column = 0; column < augmented_size; ++column) {
+            for (int row = 0; row < state_size(); ++row) {
+                matrix[static_cast<std::size_t>(column)*augmented_size+row] =
+                    free_transition_[
+                        static_cast<std::size_t>(column)*state_size()+row];
+            }
+            for (int input = 0; input < input_size(); ++input) {
+                const T gain = first_feedback_gain_[
+                    static_cast<std::size_t>(input)*augmented_size+column];
+                const auto& immediate = impulse_response(1, input);
+                for (int row = 0; row < state_size(); ++row) {
+                    matrix[static_cast<std::size_t>(column)*augmented_size
+                           +row] += immediate[row]*gain;
+                }
+                matrix[static_cast<std::size_t>(column)*augmented_size
+                       +state_size()+input_indices_[input]] += gain;
+            }
+        }
+
+        std::vector<T> real(augmented_size);
+        std::vector<T> imaginary(augmented_size);
+        std::vector<T> left(1);
+        std::vector<T> right(1);
+        std::vector<T> work(std::max(1, 4*augmented_size));
+        int info = 0;
+        lapack::geev("N", "N", augmented_size, matrix.data(),
+                     augmented_size, real.data(), imaginary.data(),
+                     left.data(), 1, right.data(), 1, work.data(),
+                     static_cast<int>(work.size()), &info);
+        if (info != 0) {
+            throw std::runtime_error(
+                "closed-loop geev failed with info="+std::to_string(info)
+                +" in Fourier block (m="+std::to_string(m())+",l="
+                +std::to_string(l())+")");
+        }
+        double result = 0;
+        for (int index = 0; index < augmented_size; ++index) {
+            result = std::max(result, std::hypot(
+                static_cast<double>(real[index]),
+                static_cast<double>(imaginary[index])));
+        }
+        return result;
+    }
 
     std::vector<T> control(const T* state, const T* current_boundary,
                            BlockDiagnostics* diagnostics = nullptr) {
@@ -265,6 +383,10 @@ private:
     std::vector<int> input_indices_;
     std::vector<std::vector<T>> impulse_responses_;
     std::vector<T> inverse_hessian_;
+    // Top state rows of F for z=(q,b_old), stored column-major.
+    std::vector<T> free_transition_;
+    // K_0 in u_0=K_0 z, stored row-major by enabled wall input.
+    std::vector<T> first_feedback_gain_;
 
     std::vector<T> build_phase_gram() const {
         const int phases = phase_count();
@@ -405,6 +527,133 @@ private:
                 +std::to_string(m())+",l="+std::to_string(l())+")");
         }
     }
+
+    void build_free_transition() {
+        const int augmented_size = state_size()+boundary_size();
+        free_transition_.assign(
+            static_cast<std::size_t>(state_size())*augmented_size, T(0));
+        std::vector<T> state(state_size(), T(0));
+        std::vector<T> old_boundary(boundary_size(), T(0));
+        std::vector<T> zero_boundary(boundary_size(), T(0));
+        std::vector<T> image(state_size(), T(0));
+        for (int column = 0; column < state_size(); ++column) {
+            state[column] = T(1);
+            dynamics_.apply_with_outer_boundary(
+                image.data(), state.data(), zero_boundary.data(),
+                zero_boundary.data());
+            state[column] = T(0);
+            std::copy(image.begin(), image.end(),
+                      free_transition_.begin()
+                          +static_cast<std::size_t>(column)*state_size());
+        }
+        std::vector<T> zero_state(state_size(), T(0));
+        for (int boundary = 0; boundary < boundary_size(); ++boundary) {
+            old_boundary[boundary] = T(1);
+            dynamics_.apply_with_outer_boundary(
+                image.data(), zero_state.data(), old_boundary.data(),
+                zero_boundary.data());
+            old_boundary[boundary] = T(0);
+            std::copy(image.begin(), image.end(),
+                      free_transition_.begin()+static_cast<std::size_t>(
+                          state_size()+boundary)*state_size());
+        }
+    }
+
+    void transposed_free_transition(const std::vector<T>& source,
+                                    std::vector<T>& result) const {
+        const int augmented_size = state_size()+boundary_size();
+        result.assign(augmented_size, T(0));
+        for (int column = 0; column < augmented_size; ++column) {
+            long double value = 0;
+            for (int row = 0; row < state_size(); ++row) {
+                value += static_cast<long double>(free_transition_[
+                    static_cast<std::size_t>(column)*state_size()+row])
+                    *source[row];
+            }
+            result[column] = static_cast<T>(value);
+        }
+    }
+
+    std::vector<T> velocity_gram_image(const T* state) const {
+        std::vector<T> result(state_size(), T(0));
+        const int phases = phase_count();
+        const long double cell_measure = dynamics_.dr*dynamics_.dphi
+            *dynamics_.dz;
+        for (Component component : {
+                 Component::u, Component::v, Component::w}) {
+            const int radial_end = component == Component::u
+                ? dynamics_.nr-1 : dynamics_.nr;
+            for (int j = 1; j <= radial_end; ++j) {
+                const long double radius = component == Component::u
+                    ? dynamics_.r0+j*dynamics_.dr
+                    : dynamics_.r0+(j-0.5L)*dynamics_.dr;
+                const int radial = dynamics_.state_layout().radial_index(
+                    component, j);
+                for (int row_phase = 0; row_phase < phases; ++row_phase) {
+                    long double value = 0;
+                    for (int column_phase = 0; column_phase < phases;
+                         ++column_phase) {
+                        value += static_cast<long double>(phase_gram_[
+                            static_cast<std::size_t>(row_phase)*phases
+                                +column_phase])*state[
+                            static_cast<std::size_t>(column_phase)
+                                *dynamics_.radial_size()+radial];
+                    }
+                    result[static_cast<std::size_t>(row_phase)
+                           *dynamics_.radial_size()+radial] = static_cast<T>(
+                        cell_measure*radius*value);
+                }
+            }
+        }
+        return result;
+    }
+
+    void build_first_feedback_gain() {
+        const int inputs = input_size();
+        const int augmented_size = state_size()+boundary_size();
+        const int problem_size = horizon_*inputs;
+        std::vector<std::vector<T>> weighted_responses(
+            static_cast<std::size_t>(horizon_)*inputs);
+        for (int lag = 1; lag <= horizon_; ++lag) {
+            for (int input = 0; input < inputs; ++input) {
+                weighted_responses[static_cast<std::size_t>(lag-1)*inputs
+                                   +input] = velocity_gram_image(
+                    impulse_response(lag, input).data());
+            }
+        }
+
+        first_feedback_gain_.assign(
+            static_cast<std::size_t>(inputs)*augmented_size, T(0));
+        std::vector<T> adjoint(augmented_size, T(0));
+        std::vector<T> next_adjoint;
+        for (int output = 0; output < inputs; ++output) {
+            std::fill(adjoint.begin(), adjoint.end(), T(0));
+            for (int sample = horizon_; sample >= 1; --sample) {
+                transposed_free_transition(adjoint, next_adjoint);
+                adjoint.swap(next_adjoint);
+                for (int stage = 0; stage < sample; ++stage) {
+                    const int lag = sample-stage;
+                    for (int input = 0; input < inputs; ++input) {
+                        const T coefficient = inverse_hessian_[
+                            static_cast<std::size_t>(output)*problem_size
+                                +stage*inputs+input];
+                        const auto& response = weighted_responses[
+                            static_cast<std::size_t>(lag-1)*inputs+input];
+                        for (int row = 0; row < state_size(); ++row) {
+                            adjoint[row] += coefficient*response[row];
+                        }
+                    }
+                }
+            }
+            transposed_free_transition(adjoint, next_adjoint);
+            for (int coordinate = 0; coordinate < augmented_size;
+                 ++coordinate) {
+                first_feedback_gain_[
+                    static_cast<std::size_t>(output)*augmented_size
+                        +coordinate] = -next_adjoint[coordinate];
+            }
+        }
+    }
 };
 
 // Transform a physical packed NSCyl perturbation once, run independent exact
@@ -420,7 +669,8 @@ public:
                      const std::vector<std::pair<int, int>>& blocks,
                      int horizon_intervals, int interval_steps,
                      double control_weight, double ridge,
-                     const std::string& components = "all")
+                     const std::string& components = "all",
+                     bool cache_first_feedback = false)
         : nr_(config.get("ns", "nr", 32))
         , nphi_(config.get("ns", "nphi", 32))
         , nz_(config.get("ns", "nz", 32))
@@ -439,6 +689,9 @@ public:
                     config, index.first, index.second,
                     horizon_intervals, interval_steps,
                     control_weight, ridge, components));
+            if (cache_first_feedback) {
+                controllers_.back()->cache_first_feedback_gain();
+            }
         }
         if (controllers_.empty()) {
             throw std::invalid_argument(
@@ -447,6 +700,19 @@ public:
     }
 
     std::size_t block_count() const { return controllers_.size(); }
+
+    std::vector<NSCylBoundaryLQRClosedLoopDiagnostics>
+    closed_loop_diagnostics() const {
+        std::vector<NSCylBoundaryLQRClosedLoopDiagnostics> result;
+        result.reserve(controllers_.size());
+        for (const auto& controller : controllers_) {
+            result.push_back({
+                controller->m(), controller->l(),
+                controller->state_size()+controller->boundary_size(),
+                controller->closed_loop_spectral_radius()});
+        }
+        return result;
+    }
 
     // Cylindrical velocity norm carried by the complete Fourier blocks on
     // which this controller acts. This includes stable directions in those
@@ -498,8 +764,11 @@ public:
             std::vector<T> block_boundary = gather_boundary(
                 *controller, boundary_coefficients);
             typename NSCylFourierBoundaryLQR<T>::BlockDiagnostics diagnostic;
-            const auto next = controller->control(
-                block_state.data(), block_boundary.data(), &diagnostic);
+            const auto next = controller->first_feedback_gain_cached()
+                ? controller->cached_control(
+                    block_state.data(), block_boundary.data(), &diagnostic)
+                : controller->control(
+                    block_state.data(), block_boundary.data(), &diagnostic);
             scatter_boundary(*controller, next, next_coefficients);
             result.predicted_cost_before += diagnostic.predicted_cost_before;
             result.predicted_cost_after += diagnostic.predicted_cost_after;

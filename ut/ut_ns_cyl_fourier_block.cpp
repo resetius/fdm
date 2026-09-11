@@ -429,6 +429,47 @@ void test_physical_boundary_lqr_minimizes_one_interval_cost(void**) {
     }
 }
 
+void test_physical_boundary_lqr_cached_first_gain_matches_condensed(void**) {
+    Config config = make_config(5, 8, 8);
+    for (const auto [m, l] : std::vector<std::pair<int, int>>{
+             {0, 0}, {0, 1}, {1, 0}, {1, 1}, {4, 4}}) {
+        fdm::NSCylFourierBoundaryLQR<double> controller(
+            config, m, l, 4, 2, 0.01, 1e-10, "tangential");
+        std::vector<double> state(controller.state_size());
+        std::vector<double> current(controller.boundary_size());
+        std::mt19937 generator(7079+31*m+l);
+        std::uniform_real_distribution<double> distribution(-0.02, 0.02);
+        for (double& value : state) {
+            value = distribution(generator);
+        }
+        for (double& value : current) {
+            value = distribution(generator);
+        }
+
+        const auto condensed = controller.control(
+            state.data(), current.data());
+        controller.cache_first_feedback_gain();
+        fdm::NSCylBoundaryLQRBlockDiagnostics<double> diagnostics;
+        const auto cached = controller.cached_control(
+            state.data(), current.data(), &diagnostics);
+        double maximum_error = 0;
+        double maximum_value = 0;
+        for (std::size_t index = 0; index < cached.size(); ++index) {
+            maximum_error = std::max(
+                maximum_error, std::abs(cached[index]-condensed[index]));
+            maximum_value = std::max(
+                maximum_value, std::abs(condensed[index]));
+        }
+        assert_true(maximum_error
+                    < 2e-10*std::max(1.0, maximum_value));
+        assert_true(std::isnan(diagnostics.predicted_cost_before));
+        assert_true(std::isnan(diagnostics.predicted_cost_after));
+        const double radius = controller.closed_loop_spectral_radius();
+        assert_true(std::isfinite(radius));
+        assert_true(radius > 0);
+    }
+}
+
 void test_physical_boundary_lqr_global_packing_matches_block(void**) {
     Config config = make_config(4, 4, 4);
     constexpr int m = 1;
@@ -1322,6 +1363,8 @@ int main() {
             test_native_outer_boundary_matches_full_reference),
         cmocka_unit_test(
             test_physical_boundary_lqr_minimizes_one_interval_cost),
+        cmocka_unit_test(
+            test_physical_boundary_lqr_cached_first_gain_matches_condensed),
         cmocka_unit_test(
             test_physical_boundary_lqr_global_packing_matches_block),
         cmocka_unit_test(test_fourier_velocity_energy_satisfies_parseval),
