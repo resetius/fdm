@@ -29,9 +29,10 @@ using Filter = fdm::NSCylExtendedSpectralFilter<T>;
 Config make_config(double base_outer_radius=2.0,
                    double response_regularization=0.0,
                    int response_basis_count=1,
-                   int response_trace_horizon_steps=0,
-                   int response_trace_sample_stride=1,
-                   double response_cost_ridge=0.0) {
+                   int response_cost_horizon_steps=0,
+                   int response_cost_sample_stride=1,
+                   double response_cost_ridge=0.0,
+                   const std::string& response_cost="boundary_trace") {
     Config config;
     std::vector<std::string> arguments = {
         "ut_ns_cyl_extended_filter",
@@ -52,12 +53,13 @@ Config make_config(double base_outer_radius=2.0,
             +std::to_string(response_regularization),
         "--extended:response_basis_count="
             +std::to_string(response_basis_count),
-        "--extended:response_trace_horizon_steps="
-            +std::to_string(response_trace_horizon_steps),
-        "--extended:response_trace_sample_stride="
-            +std::to_string(response_trace_sample_stride),
+        "--extended:response_cost_horizon_steps="
+            +std::to_string(response_cost_horizon_steps),
+        "--extended:response_cost_sample_stride="
+            +std::to_string(response_cost_sample_stride),
         "--extended:response_cost_ridge="
-            +std::to_string(response_cost_ridge)
+            +std::to_string(response_cost_ridge),
+        "--extended:response_cost="+response_cost
     };
     std::vector<char*> argv;
     for (auto& argument : arguments) {
@@ -149,6 +151,77 @@ double maximum_divergence(const Config& config,
                         /(radius*state.dphi);
                 result = std::max(result, std::abs(divergence));
             }
+        }
+    }
+    return result;
+}
+
+std::vector<T> axial_block_from_physical(
+    const std::vector<T>& physical) {
+    const Layout layout(8, 4, 4);
+    fdm::PeriodicPackedFFT2<T> fft(layout.nphi, layout.nz);
+    std::vector<T> result(2*layout.radial_size, T(0));
+    std::vector<T> values(fft.size());
+    std::vector<T> coefficients(fft.size());
+    layout.for_each_radial(
+        [&](Component component, int j, int radial_index) {
+            for (int i = 0; i < layout.nphi; ++i) {
+                for (int k = 0; k < layout.nz; ++k) {
+                    values[static_cast<std::size_t>(i)*layout.nz+k] =
+                        physical[packed_index(layout, component, i, k, j)];
+                }
+            }
+            fft.analysis(values.data(), coefficients.data());
+            result[radial_index] = coefficients[1];
+            result[layout.radial_size+radial_index] = coefficients[3];
+        });
+    return result;
+}
+
+double axial_block_original_velocity_norm(
+    const Config& config, const std::vector<T>& block) {
+    const Layout layout(8, 4, 4);
+    fdm::PeriodicPackedFFT2<T> fft(layout.nphi, layout.nz);
+    std::vector<T> physical(layout.state_size, T(0));
+    std::vector<T> coefficients(fft.size(), T(0));
+    std::vector<T> values(fft.size());
+    for (Component component : {
+             Component::u, Component::v, Component::w}) {
+        const int radial_end = component == Component::u ? 3 : 4;
+        for (int j = 1; j <= radial_end; ++j) {
+            std::fill(coefficients.begin(), coefficients.end(), T(0));
+            const int radial_index = layout.radial_index(component, j);
+            coefficients[1] = block[radial_index];
+            coefficients[3] = block[layout.radial_size+radial_index];
+            fft.synthesis(coefficients.data(), values.data());
+            for (int i = 0; i < layout.nphi; ++i) {
+                for (int k = 0; k < layout.nz; ++k) {
+                    physical[packed_index(layout, component, i, k, j)] =
+                        values[static_cast<std::size_t>(i)*layout.nz+k];
+                }
+            }
+        }
+    }
+    Task geometry(config);
+    return layout.velocity_norm(geometry, physical.data());
+}
+
+double finite_horizon_original_energy(
+    const Config& config, const std::vector<T>& physical,
+    int steps, int stride) {
+    fdm::NSCylFourierBlockNative<T> dynamics(config, 0, 1, 1);
+    auto state = axial_block_from_physical(physical);
+    std::vector<T> next(state.size());
+    double result = 0;
+    for (int step = 0; step <= steps; ++step) {
+        if (step%stride == 0 || step == steps) {
+            const double norm = axial_block_original_velocity_norm(
+                config, state);
+            result += norm*norm;
+        }
+        if (step != steps) {
+            dynamics.apply(next.data(), state.data());
+            state.swap(next);
         }
     }
     return result;
@@ -327,7 +400,7 @@ void test_regularization_trades_residual_for_boundary_energy(void**) {
     assert_true(maximum_divergence(regularized_config, correction) < 1e-11);
 }
 
-void test_expanded_continuation_minimizes_boundary_trace(void**) {
+void test_expanded_continuation_costs(void**) {
     const Layout layout(8, 4, 4);
     fdm::PeriodicPackedFFT2<T> fft(layout.nphi, layout.nz);
     std::vector<T> input(layout.state_size, T(0));
@@ -370,7 +443,8 @@ void test_expanded_continuation_minimizes_boundary_trace(void**) {
     // Exercise the time-averaged trace path as well.  Its optimum need not
     // minimize the initial trace, but it must retain the exact modal
     // constraint and support restriction.
-    Config horizon_config = make_config(2.0, 0.0, 2, 4, 2, 1e-10);
+    Config horizon_config = make_config(
+        2.0, 0.0, 2, 4, 2, 1e-10, "omega_velocity");
     auto horizon_state = input;
     Filter horizon_filter(
         horizon_config, make_projector(horizon_config, true));
@@ -382,6 +456,15 @@ void test_expanded_continuation_minimizes_boundary_trace(void**) {
         correction[index] = horizon_state[index]-input[index];
     }
     assert_true(maximum_divergence(horizon_config, correction) < 1e-11);
+    std::vector<T> exact_correction(exact_state.size());
+    for (std::size_t index = 0; index < exact_correction.size(); ++index) {
+        exact_correction[index] = exact_state[index]-input[index];
+    }
+    const double exact_energy = finite_horizon_original_energy(
+        horizon_config, exact_correction, 4, 2);
+    const double horizon_energy = finite_horizon_original_energy(
+        horizon_config, correction, 4, 2);
+    assert_true(horizon_energy <= exact_energy*(1+1e-7));
 }
 
 void test_zero_order_nonlinear_target_matches_linear_correction(void**) {
@@ -457,7 +540,7 @@ int main() {
         cmocka_unit_test(test_biorthogonal_auxiliary_correction),
         cmocka_unit_test(test_supported_correction_can_target_nonzero_coordinates),
         cmocka_unit_test(test_regularization_trades_residual_for_boundary_energy),
-        cmocka_unit_test(test_expanded_continuation_minimizes_boundary_trace),
+        cmocka_unit_test(test_expanded_continuation_costs),
         cmocka_unit_test(test_zero_order_nonlinear_target_matches_linear_correction),
         cmocka_unit_test(test_auxiliary_interface_must_be_grid_aligned)
     };
