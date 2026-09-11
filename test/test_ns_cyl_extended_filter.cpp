@@ -91,7 +91,7 @@ Config make_extended_config(
     double response_condition_limit, double response_regularization,
     int response_basis_count, int response_cost_horizon_steps,
     int response_cost_sample_stride, double response_cost_ridge,
-    const std::string& response_cost) {
+    const std::string& response_cost, bool response_include_state) {
     Config result;
     std::vector<std::string> arguments = {
         "fdm_ns_cyl_extended_filter",
@@ -118,7 +118,9 @@ Config make_extended_config(
         "--extended:response_cost_sample_stride="
             +std::to_string(response_cost_sample_stride),
         "--extended:response_cost_ridge="+number(response_cost_ridge),
-        "--extended:response_cost="+response_cost
+        "--extended:response_cost="+response_cost,
+        "--extended:response_include_state="
+            +std::to_string(response_include_state ? 1 : 0)
     };
     std::vector<char*> argv;
     for (auto& argument : arguments) {
@@ -622,9 +624,8 @@ BoundaryEvolutionResult run_boundary_evolution(
                 for (std::size_t index = 0; index < target.size(); ++index) {
                     target[index] = stable[index]+nonlinear[index];
                 }
-                auto target_diagnostic = target;
-                target_coordinate_norm = filter.apply(
-                    target_diagnostic).unstable_coordinate_norm_before;
+                target_coordinate_norm =
+                    filter.unstable_coordinate_norm(target);
                 gluing_correction_velocity_norm =
                     nonlinear_method->velocity_norm(nonlinear);
                 const auto response = filter.apply_towards(extended, target);
@@ -783,9 +784,8 @@ BoundaryEvolutionResult run_extended_trace_evolution(
                 for (std::size_t index = 0; index < target.size(); ++index) {
                     target[index] = stable[index]+nonlinear[index];
                 }
-                auto target_diagnostic = target;
-                target_coordinate_norm = filter.apply(
-                    target_diagnostic).unstable_coordinate_norm_before;
+                target_coordinate_norm =
+                    filter.unstable_coordinate_norm(target);
                 gluing_correction_velocity_norm =
                     nonlinear_method->velocity_norm(nonlinear);
                 const auto response = filter.apply_towards(
@@ -814,13 +814,12 @@ BoundaryEvolutionResult run_extended_trace_evolution(
                 filter.embed_original_perturbation(q_uncontrolled);
             auto embedded_controlled =
                 filter.embed_original_perturbation(q_controlled);
-            const auto uncontrolled_modal = filter.apply(
-                embedded_uncontrolled);
-            const auto controlled_modal = filter.apply(
-                embedded_controlled);
-            auto extended_diagnostic = extended_controlled;
-            const auto extended_modal = filter.apply(
-                extended_diagnostic);
+            const double uncontrolled_coordinate_norm =
+                filter.unstable_coordinate_norm(embedded_uncontrolled);
+            const double controlled_coordinate_norm =
+                filter.unstable_coordinate_norm(embedded_controlled);
+            const double extended_coordinate_norm =
+                filter.unstable_coordinate_norm(extended_controlled);
 
             std::vector<T> extended_delta(extended_controlled.size());
             for (std::size_t index = 0;
@@ -837,17 +836,17 @@ BoundaryEvolutionResult run_extended_trace_evolution(
 
             auto write = [&](const char* branch,
                              bool controlled_branch,
-                             const fdm::NSCylExtendedFilterDiagnostics& modal,
+                             double coordinate_norm,
                              const std::vector<T>& q, Task& task) {
                 output << branch << ',' << step << ','
                        << (initial_time_index+step)*filter.geometry().dt
                        << ',' << (controlled_branch && apply ? 1 : 0) << ','
-                       << modal.unstable_coordinate_norm_before << ','
+                       << coordinate_norm << ','
                        << original_layout.velocity_norm(task, q.data())
                        << ',' << maximum_divergence(task) << ','
                        << control.rms_norm() << ','
                        << control.maximum_norm() << ','
-                       << extended_modal.unstable_coordinate_norm_before
+                       << extended_coordinate_norm
                        << ',' << extended_delta_norm << ','
                        << extended_delta_omega_norm << ','
                        << target_coordinate_norm << ','
@@ -857,9 +856,10 @@ BoundaryEvolutionResult run_extended_trace_evolution(
                                ? 0 : nonlinear_method->applications())
                        << '\n';
             };
-            write("uncontrolled", false, uncontrolled_modal, q_uncontrolled,
+            write("uncontrolled", false, uncontrolled_coordinate_norm,
+                  q_uncontrolled,
                   original_uncontrolled);
-            write("boundary", true, controlled_modal, q_controlled,
+            write("boundary", true, controlled_coordinate_norm, q_controlled,
                   original_controlled);
 
             const double uncontrolled_norm = original_layout.velocity_norm(
@@ -1009,6 +1009,8 @@ int run(const Config& config) {
         "extended", "response_cost_ridge", 0.0);
     const std::string response_cost = config.get(
         "extended", "response_cost", std::string("boundary_trace"));
+    const bool response_include_state = config.get(
+        "extended", "response_include_state", 0) != 0;
     const double control_growth_min = config.get(
         "extended", "control_growth_min", 0.0);
     const double coordinate_tolerance = config.get(
@@ -1102,7 +1104,7 @@ int run(const Config& config) {
         spectral_metadata, response_condition_limit,
         response_regularization, response_basis_count,
         response_cost_horizon_steps, response_cost_sample_stride,
-        response_cost_ridge, response_cost);
+        response_cost_ridge, response_cost, response_include_state);
     fdm::NSCylSpectralProjector<T> projector(
         modes, spectral_metadata.condition_limit);
     ExtendedFilter filter(extended_config, std::move(projector));
@@ -1262,9 +1264,10 @@ int run(const Config& config) {
                 available_real_dimension);
     std::printf("response regularization: alpha=%.9e\n",
                 response_regularization);
-    std::printf("response basis: count=%d cost=%s horizon=%d "
-                "sample_stride=%d cost_ridge=%.9e\n",
+    std::printf("response basis: count=%d cost=%s include_state=%d "
+                "horizon=%d sample_stride=%d cost_ridge=%.9e\n",
                 response_basis_count, response_cost.c_str(),
+                response_include_state ? 1 : 0,
                 response_cost_horizon_steps,
                 response_cost_sample_stride, response_cost_ridge);
     std::printf("initial perturbation scale: %.9e\n",

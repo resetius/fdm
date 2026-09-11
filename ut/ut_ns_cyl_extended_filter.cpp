@@ -32,7 +32,8 @@ Config make_config(double base_outer_radius=2.0,
                    int response_cost_horizon_steps=0,
                    int response_cost_sample_stride=1,
                    double response_cost_ridge=0.0,
-                   const std::string& response_cost="boundary_trace") {
+                   const std::string& response_cost="boundary_trace",
+                   bool response_include_state=false) {
     Config config;
     std::vector<std::string> arguments = {
         "ut_ns_cyl_extended_filter",
@@ -59,7 +60,9 @@ Config make_config(double base_outer_radius=2.0,
             +std::to_string(response_cost_sample_stride),
         "--extended:response_cost_ridge="
             +std::to_string(response_cost_ridge),
-        "--extended:response_cost="+response_cost
+        "--extended:response_cost="+response_cost,
+        "--extended:response_include_state="
+            +std::to_string(response_include_state ? 1 : 0)
     };
     std::vector<char*> argv;
     for (auto& argument : arguments) {
@@ -440,9 +443,8 @@ void test_expanded_continuation_costs(void**) {
     }
     assert_true(maximum_divergence(expanded_config, correction) < 1e-11);
 
-    // Exercise the time-averaged trace path as well.  Its optimum need not
-    // minimize the initial trace, but it must retain the exact modal
-    // constraint and support restriction.
+    // The finite-horizon cost must retain the exact modal constraint and
+    // support restriction while improving on the one-continuation response.
     Config horizon_config = make_config(
         2.0, 0.0, 2, 4, 2, 1e-10, "omega_velocity");
     auto horizon_state = input;
@@ -465,6 +467,41 @@ void test_expanded_continuation_costs(void**) {
     const double horizon_energy = finite_horizon_original_energy(
         horizon_config, correction, 4, 2);
     assert_true(horizon_energy <= exact_energy*(1+1e-7));
+
+    Config state_cost_config = make_config(
+        2.0, 0.0, 2, 4, 2, 1e-10, "omega_velocity", true);
+    auto state_cost_state = input;
+    Filter state_cost_filter(
+        state_cost_config, make_projector(state_cost_config, true));
+    const auto state_cost = state_cost_filter.apply(state_cost_state, true);
+    assert_true(state_cost.unstable_coordinate_norm_after
+                < 1e-10*state_cost.unstable_coordinate_norm_before);
+    assert_true(state_cost.original_domain_change_norm < 1e-13);
+    const auto boundary_before_diagnostic =
+        state_cost_filter.correction_boundary_velocity();
+    assert_float_equal(
+        state_cost_filter.unstable_coordinate_norm(state_cost_state),
+        state_cost.unstable_coordinate_norm_after, 1e-12);
+    const auto boundary_after_diagnostic =
+        state_cost_filter.correction_boundary_velocity();
+    for (std::size_t index = 0;
+         index < boundary_before_diagnostic.radial.size(); ++index) {
+        assert_float_equal(boundary_after_diagnostic.radial[index],
+                           boundary_before_diagnostic.radial[index], 0);
+        assert_float_equal(boundary_after_diagnostic.axial[index],
+                           boundary_before_diagnostic.axial[index], 0);
+        assert_float_equal(boundary_after_diagnostic.azimuthal[index],
+                           boundary_before_diagnostic.azimuthal[index], 0);
+    }
+    for (std::size_t index = 0; index < correction.size(); ++index) {
+        correction[index] = state_cost_state[index]-input[index];
+    }
+    assert_true(maximum_divergence(state_cost_config, correction) < 1e-11);
+    const double state_independent_energy = finite_horizon_original_energy(
+        horizon_config, horizon_state, 4, 2);
+    const double state_dependent_energy = finite_horizon_original_energy(
+        state_cost_config, state_cost_state, 4, 2);
+    assert_true(state_dependent_energy < state_independent_energy);
 }
 
 void test_zero_order_nonlinear_target_matches_linear_correction(void**) {

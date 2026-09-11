@@ -93,7 +93,8 @@ struct NSCylOuterBoundaryVelocity {
 // default uses the square response M^{-1}; an expanded basis uses the
 // minimum-cost right inverse H^{-1}M^T(MH^{-1}M^T)^{-1}.  Thus C(q+Wa)=0
 // remains exact while every velocity degree of freedom in the original
-// cylinder is unchanged.
+// cylinder is unchanged.  The state-dependent variant adds the null-space
+// term -(I-KM)H^{-1}g(q) for the sampled energy of q+Wa.
 template<typename T>
 class NSCylExtendedSpectralFilter {
 public:
@@ -154,6 +155,8 @@ public:
             "extended", "response_cost_ridge", 0.0);
         response_cost_ = config.get(
             "extended", "response_cost", std::string("boundary_trace"));
+        response_include_state_ = config.get(
+            "extended", "response_include_state", 0) != 0;
         if (!(response_condition_limit_ >= 1)) {
             throw std::invalid_argument(
                 "extended response condition limit must be at least one");
@@ -173,6 +176,14 @@ public:
                 && response_cost_ != "omega_velocity")) {
             throw std::invalid_argument(
                 "invalid extended response basis or cost settings");
+        }
+        if (response_include_state_
+            && (response_cost_ != "omega_velocity"
+                || response_cost_horizon_steps_ == 0
+                || response_regularization_ != 0)) {
+            throw std::invalid_argument(
+                "state-dependent response cost requires omega_velocity, "
+                "a positive horizon, and exact response");
         }
         validate_projector();
         build_corrections();
@@ -303,7 +314,8 @@ public:
                 block_correction.assign(projector.block_size(), T(0));
             }
             projector.coordinates(before.data(), block_.data());
-            compute_amplitudes(correction, before, amplitudes);
+            compute_amplitudes(
+                projector, correction, block_, before, amplitudes);
             for (int column = 0;
                  column < static_cast<int>(correction.basis.size());
                  ++column) {
@@ -387,6 +399,29 @@ public:
         return result;
     }
 
+    double unstable_coordinate_norm(
+        const std::vector<T>& extended_perturbation) {
+        if (static_cast<int>(extended_perturbation.size())
+            != layout_.state_size) {
+            throw std::invalid_argument(
+                "extended perturbation has the wrong packed size");
+        }
+        physical_ = extended_perturbation;
+        analysis();
+        canonicalize_pressure_gauge();
+        long double norm2 = 0;
+        for (const auto& projector : projector_.blocks()) {
+            gather_block(projector);
+            std::vector<T> coordinates(projector.dimension(), T(0));
+            projector.coordinates(coordinates.data(), block_.data());
+            for (T coordinate : coordinates) {
+                const long double value = coordinate;
+                norm2 += value*value;
+            }
+        }
+        return std::sqrt(static_cast<double>(norm2));
+    }
+
 private:
     struct BlockPhysicalMetrics {
         double velocity_norm = 0;
@@ -399,6 +434,8 @@ private:
         std::vector<T> response;
         std::vector<T> inverse_response;
         std::vector<T> cost_gram;
+        std::vector<T> inverse_cost;
+        std::vector<std::vector<T>> sampled_basis;
         double response_norm = 0;
         double inverse_response_norm = 0;
         double response_condition = 0;
@@ -418,6 +455,7 @@ private:
     int response_cost_sample_stride_ = 1;
     double response_cost_ridge_ = 0;
     std::string response_cost_;
+    bool response_include_state_ = false;
     std::vector<CorrectionBlock> corrections_;
     std::vector<T> physical_;
     std::vector<T> original_physical_;
@@ -741,6 +779,13 @@ private:
             throw std::invalid_argument(
                 "original-domain velocity block has the wrong size");
         }
+        return original_velocity_inner_product(
+            projector, first.data(), second.data(), phase_gram);
+    }
+
+    double original_velocity_inner_product(
+        const BlockProjector& projector, const T* first, const T* second,
+        const std::vector<T>& phase_gram) const {
         const int phase_count = projector.phase_count();
         const long double cell_measure = geometry_.dr
             *geometry_.dphi*geometry_.dz;
@@ -794,7 +839,8 @@ private:
 
     std::vector<T> build_response_cost_gram(
         const BlockProjector& projector,
-        const std::vector<std::vector<T>>& basis) {
+        const std::vector<std::vector<T>>& basis,
+        std::vector<std::vector<T>>& sampled_basis) {
         const int size = static_cast<int>(basis.size());
         std::vector<T> result(
             static_cast<std::size_t>(size)*size, T(0));
@@ -879,6 +925,17 @@ private:
                         }
                     }
                 } else {
+                    if (response_include_state_
+                        && size > projector.dimension()) {
+                        std::vector<T> sample;
+                        sample.reserve(static_cast<std::size_t>(size)
+                                       *projector.block_size());
+                        for (const auto& state : states) {
+                            sample.insert(
+                                sample.end(), state.begin(), state.end());
+                        }
+                        sampled_basis.push_back(std::move(sample));
+                    }
                     for (int row = 0; row < size; ++row) {
                         for (int column = row; column < size; ++column) {
                             const T value = static_cast<T>(
@@ -914,7 +971,7 @@ private:
     std::vector<T> minimum_cost_right_inverse(
         const BlockProjector& projector, const std::vector<T>& response,
         const std::vector<T>& cost_gram, int dimension,
-        int continuation_dimension) const {
+        int continuation_dimension, std::vector<T>& inverse_cost) const {
         if (continuation_dimension == dimension) {
             std::vector<T> result(response.size());
             const T pivot = inverse_general_matrix(
@@ -928,7 +985,7 @@ private:
             return result;
         }
 
-        std::vector<T> inverse_cost(cost_gram.size());
+        inverse_cost.resize(cost_gram.size());
         const T cost_pivot = inverse_general_matrix(
             inverse_cost.data(), cost_gram.data(),
             continuation_dimension);
@@ -1106,10 +1163,10 @@ private:
         }
         result.response = response;
         result.cost_gram = build_response_cost_gram(
-            projector, result.basis);
+            projector, result.basis, result.sampled_basis);
         result.inverse_response = minimum_cost_right_inverse(
             projector, result.response, result.cost_gram,
-            dimension, continuation_dimension);
+            dimension, continuation_dimension, result.inverse_cost);
         result.response_norm = infinity_norm(
             response, dimension, continuation_dimension);
         result.inverse_response_norm = infinity_norm(
@@ -1129,9 +1186,65 @@ private:
         }
     }
 
+    std::vector<T> state_cost_linear_term(
+        const BlockProjector& projector,
+        const CorrectionBlock& correction,
+        const std::vector<T>& current_block) {
+        const int continuation_dimension =
+            static_cast<int>(correction.basis.size());
+        std::vector<T> result(continuation_dimension, T(0));
+        if (!response_include_state_
+            || continuation_dimension == projector.dimension()) {
+            return result;
+        }
+        NSCylFourierBlockNative<T> dynamics(
+            extended_dynamics_config(), projector.m(), projector.l(), 1);
+        std::vector<T> state = current_block;
+        std::vector<T> next(state.size(), T(0));
+        const auto phase_gram = phase_spatial_gram(projector);
+        int sample_index = 0;
+        for (int step = 0; step <= response_cost_horizon_steps_; ++step) {
+            if (step%response_cost_sample_stride_ == 0
+                || step == response_cost_horizon_steps_) {
+                if (sample_index
+                    >= static_cast<int>(correction.sampled_basis.size())) {
+                    throw std::logic_error(
+                        "missing sampled continuation response");
+                }
+                const auto& sample = correction.sampled_basis[sample_index];
+                for (int column = 0;
+                     column < continuation_dimension; ++column) {
+                    result[column] += static_cast<T>(
+                        original_velocity_inner_product(
+                            projector,
+                            sample.data()+static_cast<std::size_t>(column)
+                                *projector.block_size(),
+                            state.data(), phase_gram));
+                }
+                ++sample_index;
+            }
+            if (step != response_cost_horizon_steps_) {
+                dynamics.apply(next.data(), state.data());
+                state.swap(next);
+            }
+        }
+        if (sample_index
+            != static_cast<int>(correction.sampled_basis.size())) {
+            throw std::logic_error(
+                "unused sampled continuation response");
+        }
+        for (T& entry : result) {
+            entry /= static_cast<T>(sample_index);
+        }
+        return result;
+    }
+
     void compute_amplitudes(
-        const CorrectionBlock& correction, const std::vector<T>& coordinates,
-        std::vector<T>& amplitudes) const {
+        const BlockProjector& projector,
+        const CorrectionBlock& correction,
+        const std::vector<T>& current_block,
+        const std::vector<T>& coordinates,
+        std::vector<T>& amplitudes) {
         const int dimension = static_cast<int>(coordinates.size());
         const int continuation_dimension =
             static_cast<int>(correction.basis.size());
@@ -1145,6 +1258,44 @@ private:
                     amplitudes[row] -= correction.inverse_response[
                         static_cast<std::size_t>(row)*dimension+column]
                         *coordinates[column];
+                }
+            }
+            if (response_include_state_
+                && continuation_dimension > dimension) {
+                const auto linear = state_cost_linear_term(
+                    projector, correction, current_block);
+                std::vector<T> unconstrained(
+                    continuation_dimension, T(0));
+                for (int row = 0;
+                     row < continuation_dimension; ++row) {
+                    for (int column = 0;
+                         column < continuation_dimension; ++column) {
+                        unconstrained[row] += correction.inverse_cost[
+                            static_cast<std::size_t>(row)
+                                *continuation_dimension+column]
+                            *linear[column];
+                    }
+                }
+                std::vector<T> response_component(dimension, T(0));
+                for (int row = 0; row < dimension; ++row) {
+                    for (int column = 0;
+                         column < continuation_dimension; ++column) {
+                        response_component[row] += correction.response[
+                            static_cast<std::size_t>(row)
+                                *continuation_dimension+column]
+                            *unconstrained[column];
+                    }
+                }
+                for (int row = 0;
+                     row < continuation_dimension; ++row) {
+                    T constrained_component = T(0);
+                    for (int column = 0; column < dimension; ++column) {
+                        constrained_component += correction.inverse_response[
+                            static_cast<std::size_t>(row)*dimension+column]
+                            *response_component[column];
+                    }
+                    amplitudes[row] -=
+                        unconstrained[row]-constrained_component;
                 }
             }
             return;
