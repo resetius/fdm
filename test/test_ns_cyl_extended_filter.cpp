@@ -91,7 +91,8 @@ Config make_extended_config(
     double response_condition_limit, double response_regularization,
     int response_basis_count, int response_cost_horizon_steps,
     int response_cost_sample_stride, double response_cost_ridge,
-    const std::string& response_cost, bool response_include_state) {
+    const std::string& response_cost, bool response_include_state,
+    const std::string& state_extension) {
     Config result;
     std::vector<std::string> arguments = {
         "fdm_ns_cyl_extended_filter",
@@ -120,7 +121,8 @@ Config make_extended_config(
         "--extended:response_cost_ridge="+number(response_cost_ridge),
         "--extended:response_cost="+response_cost,
         "--extended:response_include_state="
-            +std::to_string(response_include_state ? 1 : 0)
+            +std::to_string(response_include_state ? 1 : 0),
+        "--extended:state_extension="+state_extension
     };
     std::vector<char*> argv;
     for (auto& argument : arguments) {
@@ -1011,6 +1013,8 @@ int run(const Config& config) {
         "extended", "response_cost", std::string("boundary_trace"));
     const bool response_include_state = config.get(
         "extended", "response_include_state", 0) != 0;
+    const std::string state_extension = config.get(
+        "extended", "state_extension", std::string("zero"));
     const double control_growth_min = config.get(
         "extended", "control_growth_min", 0.0);
     const double coordinate_tolerance = config.get(
@@ -1104,7 +1108,8 @@ int run(const Config& config) {
         spectral_metadata, response_condition_limit,
         response_regularization, response_basis_count,
         response_cost_horizon_steps, response_cost_sample_stride,
-        response_cost_ridge, response_cost, response_include_state);
+        response_cost_ridge, response_cost, response_include_state,
+        state_extension);
     fdm::NSCylSpectralProjector<T> projector(
         modes, spectral_metadata.condition_limit);
     ExtendedFilter filter(extended_config, std::move(projector));
@@ -1270,6 +1275,7 @@ int run(const Config& config) {
                 response_include_state ? 1 : 0,
                 response_cost_horizon_steps,
                 response_cost_sample_stride, response_cost_ridge);
+    std::printf("state extension: %s\n", state_extension.c_str());
     std::printf("initial perturbation scale: %.9e\n",
                 initial_perturbation_scale);
     std::printf("coordinates: before=%.9e after=%.9e ratio=%.9e\n",

@@ -33,7 +33,8 @@ Config make_config(double base_outer_radius=2.0,
                    int response_cost_sample_stride=1,
                    double response_cost_ridge=0.0,
                    const std::string& response_cost="boundary_trace",
-                   bool response_include_state=false) {
+                   bool response_include_state=false,
+                   const std::string& state_extension="zero") {
     Config config;
     std::vector<std::string> arguments = {
         "ut_ns_cyl_extended_filter",
@@ -62,7 +63,8 @@ Config make_config(double base_outer_radius=2.0,
             +std::to_string(response_cost_ridge),
         "--extended:response_cost="+response_cost,
         "--extended:response_include_state="
-            +std::to_string(response_include_state ? 1 : 0)
+            +std::to_string(response_include_state ? 1 : 0),
+        "--extended:state_extension="+state_extension
     };
     std::vector<char*> argv;
     for (auto& argument : arguments) {
@@ -558,6 +560,101 @@ void test_zero_order_nonlinear_target_matches_linear_correction(void**) {
     }
 }
 
+void test_stokes_state_extension_matches_interface_and_divergence(void**) {
+    Config config = make_config(
+        2.0, 0.0, 1, 0, 1, 0.0, "boundary_trace", false, "stokes");
+    Filter filter(config, make_projector(config));
+    const Layout source_layout(4, 4, 4);
+    const Layout extended_layout(8, 4, 4);
+    fdm::PeriodicPackedFFT2<T> fft(source_layout.nphi, source_layout.nz);
+    std::vector<T> input(source_layout.state_size, T(0));
+    std::vector<T> plane(fft.size(), T(0));
+    std::vector<T> values(fft.size());
+    plane[0] = T(0.1);
+    plane[1] = T(1);
+    plane[3] = T(0.25);
+    plane[4] = T(-0.15);
+    plane[5] = T(0.2);
+    plane[7] = T(-0.1);
+    plane[10] = T(0.02);
+    plane[13] = T(0.05);
+    plane[15] = T(-0.03);
+    fft.synthesis(plane.data(), values.data());
+    for (int i = 0; i < source_layout.nphi; ++i) {
+        for (int k = 0; k < source_layout.nz; ++k) {
+            const T value = values[static_cast<std::size_t>(i)
+                                   *source_layout.nz+k];
+            input[packed_index(
+                source_layout, Component::v, i, k, source_layout.nr)] = value;
+            input[packed_index(
+                source_layout, Component::w, i, k, source_layout.nr)] =
+                T(0.5)*value;
+        }
+    }
+
+    const auto extended = filter.embed_original_perturbation(input);
+    long double auxiliary_norm2 = 0;
+    for (int i = 0; i < source_layout.nphi; ++i) {
+        for (int k = 0; k < source_layout.nz; ++k) {
+            for (Component component : {
+                     Component::v, Component::w, Component::p}) {
+                for (int j = 1; j <= source_layout.nr; ++j) {
+                    assert_float_equal(
+                        extended[packed_index(
+                            extended_layout, component, i, k, j)],
+                        input[packed_index(
+                            source_layout, component, i, k, j)], 0);
+                }
+            }
+            for (int j = 1; j < source_layout.nr; ++j) {
+                assert_float_equal(
+                    extended[packed_index(
+                        extended_layout, Component::u, i, k, j)],
+                    input[packed_index(
+                        source_layout, Component::u, i, k, j)], 0);
+            }
+            for (Component component : {Component::v, Component::w}) {
+                const T interior = input[packed_index(
+                    source_layout, component, i, k, source_layout.nr)];
+                const T auxiliary = extended[packed_index(
+                    extended_layout, component, i, k,
+                    source_layout.nr+1)];
+                assert_true(std::abs(interior+auxiliary) < 1e-12);
+            }
+            for (int j = source_layout.nr+1;
+                 j <= extended_layout.nr; ++j) {
+                for (Component component : {Component::v, Component::w}) {
+                    const long double value = extended[packed_index(
+                        extended_layout, component, i, k, j)];
+                    auxiliary_norm2 += value*value;
+                }
+            }
+        }
+    }
+    assert_true(auxiliary_norm2 > 0);
+
+    Task state(config);
+    extended_layout.unpack(state, extended.data());
+    double auxiliary_divergence = 0;
+    for (int i = 0; i < state.nphi; ++i) {
+        for (int k = 0; k < state.nz; ++k) {
+            for (int j = source_layout.nr+1; j <= state.nr; ++j) {
+                const double radius = state.r0+(j-0.5)*state.dr;
+                const double divergence =
+                    ((radius+0.5*state.dr)*state.u[i][k][j]
+                     -(radius-0.5*state.dr)*state.u[i][k][j-1])
+                        /(radius*state.dr)
+                    +(state.v[i][k][j]-state.v[i][k-1][j])/state.dz
+                    +(state.w[i][k][j]-state.w[i-1][k][j])
+                        /(radius*state.dphi);
+                auxiliary_divergence = std::max(
+                    auxiliary_divergence, std::abs(divergence));
+            }
+        }
+    }
+    assert_true(auxiliary_divergence < 1e-11);
+}
+
 void test_auxiliary_interface_must_be_grid_aligned(void**) {
     Config config = make_config(2.01);
     auto projector = make_projector(make_config());
@@ -579,6 +676,7 @@ int main() {
         cmocka_unit_test(test_regularization_trades_residual_for_boundary_energy),
         cmocka_unit_test(test_expanded_continuation_costs),
         cmocka_unit_test(test_zero_order_nonlinear_target_matches_linear_correction),
+        cmocka_unit_test(test_stokes_state_extension_matches_interface_and_divergence),
         cmocka_unit_test(test_auxiliary_interface_must_be_grid_aligned)
     };
     return cmocka_run_group_tests(tests, nullptr, nullptr);

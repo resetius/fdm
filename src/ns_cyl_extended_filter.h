@@ -157,6 +157,8 @@ public:
             "extended", "response_cost", std::string("boundary_trace"));
         response_include_state_ = config.get(
             "extended", "response_include_state", 0) != 0;
+        state_extension_ = config.get(
+            "extended", "state_extension", std::string("zero"));
         if (!(response_condition_limit_ >= 1)) {
             throw std::invalid_argument(
                 "extended response condition limit must be at least one");
@@ -173,9 +175,12 @@ public:
             || !(response_cost_ridge_ >= 0)
             || !std::isfinite(response_cost_ridge_)
             || (response_cost_ != "boundary_trace"
-                && response_cost_ != "omega_velocity")) {
+                && response_cost_ != "omega_velocity")
+            || (state_extension_ != "zero"
+                && state_extension_ != "stokes")) {
             throw std::invalid_argument(
-                "invalid extended response basis or cost settings");
+                "invalid extended response basis, cost, or state extension "
+                "settings");
         }
         if (response_include_state_
             && (response_cost_ != "omega_velocity"
@@ -194,12 +199,13 @@ public:
     int auxiliary_nr() const { return auxiliary_nr_; }
     double base_outer_radius() const { return base_outer_radius_; }
 
-    // Embed the independent unknowns from Omega into G.  The auxiliary
-    // degrees of freedom are zero; the interface-normal velocity is an
-    // independent interior face of G and is therefore also initialized to
-    // zero.  This embedding preserves the packed pressure convention.
+    // Embed the independent unknowns from Omega into G.  The default leaves
+    // the auxiliary degrees of freedom zero.  The Stokes variant matches the
+    // no-slip interface trace and completes the auxiliary velocity with zero
+    // discrete divergence.  Both variants preserve the source values and
+    // the packed pressure convention in Omega.
     std::vector<T> embed_original_perturbation(
-        const std::vector<T>& original) const {
+        const std::vector<T>& original) {
         const Layout source(original_nr_, geometry_.nz, geometry_.nphi);
         if (static_cast<int>(original.size()) != source.state_size) {
             throw std::invalid_argument(
@@ -220,6 +226,9 @@ public:
                     }
                 }
             }
+        }
+        if (state_extension_ == "stokes") {
+            extend_original_velocity(result);
         }
         return result;
     }
@@ -441,6 +450,13 @@ private:
         double response_condition = 0;
     };
 
+    struct ExtensionBlock {
+        int m = 0;
+        int l = 0;
+        int phase_count = 0;
+        std::vector<std::vector<T>> basis;
+    };
+
     Geometry geometry_;
     double base_outer_radius_;
     int original_nr_;
@@ -456,7 +472,9 @@ private:
     double response_cost_ridge_ = 0;
     std::string response_cost_;
     bool response_include_state_ = false;
+    std::string state_extension_;
     std::vector<CorrectionBlock> corrections_;
+    std::vector<ExtensionBlock> extension_blocks_;
     std::vector<T> physical_;
     std::vector<T> original_physical_;
     std::vector<T> correction_physical_;
@@ -641,6 +659,237 @@ private:
             }
         }
         return result;
+    }
+
+    ExtensionBlock build_extension_block(int m, int l) {
+        const Config stokes_config = auxiliary_config(geometry_.Re);
+        NSCylFourierBlockNative<T> stokes(stokes_config, m, l, 1);
+        const int phase_count = stokes.phase_count();
+        const auto local_indices = local_velocity_indices(phase_count);
+        const auto full_indices =
+            full_auxiliary_velocity_indices(phase_count);
+        const int velocity_size = stokes.velocity_block_size();
+        if (static_cast<int>(local_indices.size()) != velocity_size
+            || full_indices.size() != local_indices.size()) {
+            throw std::logic_error(
+                "auxiliary extension layout does not match native block");
+        }
+
+        std::vector<T> momentum(
+            static_cast<std::size_t>(velocity_size)*velocity_size);
+        std::vector<T> input(stokes.size(), T(0));
+        std::vector<T> output(stokes.size(), T(0));
+        for (int column = 0; column < velocity_size; ++column) {
+            std::fill(input.begin(), input.end(), T(0));
+            input[local_indices[column]] = T(1);
+            stokes.apply(output.data(), input.data());
+            for (int row = 0; row < velocity_size; ++row) {
+                momentum[static_cast<std::size_t>(column)*velocity_size+row]
+                    = ((row == column ? T(1) : T(0))
+                       -output[local_indices[row]])
+                    /static_cast<T>(geometry_.dt);
+            }
+        }
+
+        std::vector<int> fixed;
+        fixed.reserve(2*phase_count);
+        for (int phase = 0; phase < phase_count; ++phase) {
+            fixed.push_back(stokes.velocity_block_index(
+                Component::v, phase, 1));
+            fixed.push_back(stokes.velocity_block_index(
+                Component::w, phase, 1));
+        }
+        std::vector<bool> is_fixed(velocity_size, false);
+        for (int index : fixed) {
+            is_fixed[index] = true;
+        }
+        std::vector<int> free;
+        free.reserve(velocity_size-fixed.size());
+        for (int index = 0; index < velocity_size; ++index) {
+            if (!is_fixed[index]) {
+                free.push_back(index);
+            }
+        }
+
+        const int constraint_count = stokes.pressure_block_size()
+            -(m == 0 && l == 0 ? 1 : 0);
+        const auto divergence = stokes.velocity_divergence_matrix(true);
+        const int free_size = static_cast<int>(free.size());
+        const int saddle_size = free_size+constraint_count;
+        std::vector<T> saddle(
+            static_cast<std::size_t>(saddle_size)*saddle_size, T(0));
+        for (int column = 0; column < free_size; ++column) {
+            for (int row = 0; row < free_size; ++row) {
+                saddle[static_cast<std::size_t>(column)*saddle_size+row] =
+                    momentum[static_cast<std::size_t>(free[column])
+                             *velocity_size+free[row]];
+            }
+        }
+        for (int pressure = 0; pressure < constraint_count; ++pressure) {
+            for (int velocity = 0; velocity < free_size; ++velocity) {
+                const T entry = divergence[
+                    static_cast<std::size_t>(pressure)*velocity_size
+                    +free[velocity]];
+                saddle[static_cast<std::size_t>(velocity)*saddle_size
+                       +free_size+pressure] = entry;
+                saddle[static_cast<std::size_t>(free_size+pressure)
+                       *saddle_size+velocity] = entry;
+            }
+        }
+
+        const int fixed_size = static_cast<int>(fixed.size());
+        std::vector<T> right_hand_sides(
+            static_cast<std::size_t>(saddle_size)*fixed_size, T(0));
+        for (int column = 0; column < fixed_size; ++column) {
+            for (int row = 0; row < free_size; ++row) {
+                right_hand_sides[
+                    static_cast<std::size_t>(column)*saddle_size+row] =
+                    -momentum[static_cast<std::size_t>(fixed[column])
+                              *velocity_size+free[row]];
+            }
+            for (int pressure = 0;
+                 pressure < constraint_count; ++pressure) {
+                right_hand_sides[static_cast<std::size_t>(column)
+                                     *saddle_size+free_size+pressure] =
+                    -divergence[static_cast<std::size_t>(pressure)
+                                    *velocity_size+fixed[column]];
+            }
+        }
+        solve_dense(saddle, right_hand_sides, saddle_size, fixed_size);
+
+        ExtensionBlock result;
+        result.m = m;
+        result.l = l;
+        result.phase_count = phase_count;
+        result.basis.assign(
+            fixed_size,
+            std::vector<T>(static_cast<std::size_t>(phase_count)
+                               *layout_.radial_size,
+                           T(0)));
+        for (int column = 0; column < fixed_size; ++column) {
+            result.basis[column][full_indices[fixed[column]]] = T(1);
+            for (int row = 0; row < free_size; ++row) {
+                result.basis[column][full_indices[free[row]]] =
+                    right_hand_sides[
+                        static_cast<std::size_t>(column)*saddle_size+row];
+            }
+        }
+        return result;
+    }
+
+    const ExtensionBlock& extension_block(int m, int l) {
+        const auto found = std::find_if(
+            extension_blocks_.begin(), extension_blocks_.end(),
+            [=](const ExtensionBlock& block) {
+                return block.m == m && block.l == l;
+            });
+        if (found != extension_blocks_.end()) {
+            return *found;
+        }
+        extension_blocks_.push_back(build_extension_block(m, l));
+        return extension_blocks_.back();
+    }
+
+    std::vector<T> interface_extension_coefficients(int m, int l) const {
+        const auto phi = packed_indices(m, layout_.nphi);
+        const auto z = packed_indices(l, layout_.nz);
+        std::vector<T> result;
+        result.reserve(2*phi.size()*z.size());
+        for (int i : phi) {
+            for (int k : z) {
+                result.push_back(-packed_fourier_[state_index(
+                    Component::v, i, k, original_nr_)]);
+                result.push_back(-packed_fourier_[state_index(
+                    Component::w, i, k, original_nr_)]);
+            }
+        }
+        return result;
+    }
+
+    void extend_original_velocity(std::vector<T>& extended) {
+        physical_ = extended;
+        analysis();
+        T maximum = T(0);
+        for (int m = 0; m <= layout_.nphi/2; ++m) {
+            for (int l = 0; l <= layout_.nz/2; ++l) {
+                for (T value : interface_extension_coefficients(m, l)) {
+                    maximum = std::max(maximum, std::abs(value));
+                }
+            }
+        }
+        if (maximum == T(0)) {
+            return;
+        }
+        const T tolerance = static_cast<T>(128)
+            *std::numeric_limits<T>::epsilon()*maximum;
+        for (int m = 0; m <= layout_.nphi/2; ++m) {
+            for (int l = 0; l <= layout_.nz/2; ++l) {
+                const auto coefficients =
+                    interface_extension_coefficients(m, l);
+                if (std::all_of(
+                        coefficients.begin(), coefficients.end(),
+                        [=](T value) { return std::abs(value) <= tolerance; })) {
+                    continue;
+                }
+                const auto& extension = extension_block(m, l);
+                std::vector<T> block(
+                    static_cast<std::size_t>(extension.phase_count)
+                        *layout_.radial_size,
+                    T(0));
+                for (int column = 0;
+                     column < static_cast<int>(coefficients.size());
+                     ++column) {
+                    for (std::size_t row = 0; row < block.size(); ++row) {
+                        block[row] += coefficients[column]
+                            *extension.basis[column][row];
+                    }
+                }
+                const auto phi = packed_indices(m, layout_.nphi);
+                const auto z = packed_indices(l, layout_.nz);
+                int phase = 0;
+                for (int i : phi) {
+                    for (int k : z) {
+                        const std::size_t offset =
+                            static_cast<std::size_t>(phase)
+                                *layout_.radial_size;
+                        for (int j = original_nr_+1;
+                             j < layout_.nr; ++j) {
+                            packed_fourier_[state_index(
+                                Component::u, i, k, j)] = block[
+                                    offset+layout_.radial_index(
+                                        Component::u, j)];
+                        }
+                        for (Component component : {
+                                 Component::v, Component::w}) {
+                            for (int j = original_nr_+1;
+                                 j <= layout_.nr; ++j) {
+                                packed_fourier_[state_index(
+                                    component, i, k, j)] = block[
+                                        offset+layout_.radial_index(
+                                            component, j)];
+                            }
+                        }
+                        ++phase;
+                    }
+                }
+            }
+        }
+        synthesis();
+        for (int i = 0; i < layout_.nphi; ++i) {
+            for (int k = 0; k < layout_.nz; ++k) {
+                for (int j = original_nr_+1; j < layout_.nr; ++j) {
+                    extended[state_index(Component::u, i, k, j)] =
+                        physical_[state_index(Component::u, i, k, j)];
+                }
+                for (Component component : {Component::v, Component::w}) {
+                    for (int j = original_nr_+1;
+                         j <= layout_.nr; ++j) {
+                        extended[state_index(component, i, k, j)] =
+                            physical_[state_index(component, i, k, j)];
+                    }
+                }
+            }
+        }
     }
 
     static T shifted_legendre(int degree, double coordinate) {
