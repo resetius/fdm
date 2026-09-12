@@ -64,6 +64,17 @@ struct NSCylOuterBoundaryVelocity {
     std::vector<T> axial;
     std::vector<T> azimuthal;
 
+    bool is_finite() const {
+        for (std::size_t index = 0; index < radial.size(); ++index) {
+            if (!std::isfinite(radial[index])
+                || !std::isfinite(axial[index])
+                || !std::isfinite(azimuthal[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     double rms_norm() const {
         if (radial.empty()) {
             return 0;

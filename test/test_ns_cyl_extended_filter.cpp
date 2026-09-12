@@ -947,6 +947,11 @@ BoundaryEvolutionResult run_extended_trace_evolution(
         const auto control = boundary_trace_difference(
             extended_controlled, extended_uncontrolled,
             filter.geometry(), filter.original_nr());
+        if (!control.is_finite()) {
+            throw std::runtime_error(
+                "extended trace produced a non-finite boundary value at "
+                "step "+std::to_string(step));
+        }
         original_controlled.set_outer_boundary_velocity(
             control.radial, control.axial, control.azimuthal);
         original_controlled.apply_boundary_conditions();
