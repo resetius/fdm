@@ -12,6 +12,7 @@
 
 #ifdef FDM_NS_CYL_SPECTRAL_FILTER_SYCL
 #include <sycl/sycl.hpp>
+#include "ns_cyl_spectral_filter_sycl.h"
 #include "ns_cyl_sycl_task.h"
 #endif
 
@@ -57,7 +58,11 @@ using Task = fdm::NSCyl<T, true, fdm::tensor_flag::periodic>;
 
 using Layout = fdm::NSCylStateLayout<T>;
 using Projector = fdm::NSCylSpectralProjector<T>;
+#ifdef FDM_NS_CYL_SPECTRAL_FILTER_SYCL
+using Filter = fdm::NSCylSpectralFilterSycl<T>;
+#else
 using Filter = fdm::NSCylSpectralFilter<T>;
+#endif
 
 fdm::NSCylSpectralMetadata runtime_spectral_metadata(
     const Config& config, const fdm::NSCylSpectralMetadata& stored) {
@@ -453,11 +458,19 @@ int run(const Config& config) {
         state.time_index = initial_metadata.time_index;
     }
     const int initial_time_index = state.time_index;
+#ifdef FDM_NS_CYL_SPECTRAL_FILTER_SYCL
+    Filter filter(
+        *sycl_queue_instance, state.nr, state.nphi, state.nz, projector);
+#else
     Filter filter(state.nr, state.nphi, state.nz, projector);
+#endif
     CsvOutput csv(csv_output);
     DecayRate development_decay;
 
     printf("developed spectral-filter experiment\n");
+#ifdef FDM_NS_CYL_SPECTRAL_FILTER_SYCL
+    printf("spectral filter: SYCL packed FFT and block projection\n");
+#endif
     printf("spectrum: groups=%zu blocks=%zu real_dimension=%d\n",
            modes.size(), projector.blocks().size(), projector.real_dimension());
     printf("grid: nr=%d nphi=%d nz=%d Re=%.9g dt=%.9g\n",

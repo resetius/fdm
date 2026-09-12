@@ -17,8 +17,11 @@
 #include "ns_cyl.h"
 #include "ns_cyl_fourier_batch_sycl.h"
 #include "ns_cyl_fourier_block_sycl.h"
+#include "ns_cyl_spectral_filter.h"
+#include "ns_cyl_spectral_filter_sycl.h"
 #include "ns_cyl_spectral_modes.h"
 #include "ns_cyl_sycl.h"
+#include "ns_cyl_sycl_task.h"
 
 extern "C" {
 #include <cmocka.h>
@@ -117,6 +120,42 @@ Config make_re100_n16_config() {
     }
     config.rewrite(static_cast<int>(argv.size()), argv.data());
     return config;
+}
+
+fdm::NSCylSpectralMode<float> coordinate_mode(
+    const fdm::NSCylFourierBlockReference<float, true>& block,
+    int coordinate) {
+    fdm::NSCylSpectralMode<float> mode;
+    mode.m = block.m();
+    mode.l = block.l();
+    mode.phase_count = block.phase_count();
+    mode.radial_size = block.radial_size();
+    mode.block_size = block.size();
+    mode.pressure_gauge_fixed = block.pressure_gauge_fixed();
+    mode.multiplier = {1.1f, 0.0f};
+    mode.growth_rate = 1;
+    mode.frequency = 0;
+    mode.right_residual = 0;
+    mode.left_residual = 0;
+    mode.growing = true;
+    mode.residual_accepted = true;
+    mode.column_count = 1;
+    mode.right_columns.assign(block.size(), 0);
+    mode.left_columns.assign(block.size(), 0);
+    mode.right_columns.at(coordinate) = 1;
+    mode.left_columns.at(coordinate) = 1;
+    return mode;
+}
+
+fdm::NSCylSpectralProjector<float> make_filter_projector(
+    const Config& config) {
+    fdm::NSCylSpectralModeSet<float> modes;
+    for (const auto [m, l] : std::vector<std::pair<int, int>>{
+             {0, 0}, {1, 2}, {4, 4}}) {
+        fdm::NSCylFourierBlockReference<float, true> block(config, m, l);
+        modes.append_filterable_mode(coordinate_mode(block, 0));
+    }
+    return fdm::NSCylSpectralProjector<float>(modes, 1e6);
 }
 
 void copy_state_to_cpu(
@@ -540,6 +579,103 @@ void test_sycl_packed_state_round_trip(void**) {
     for (std::size_t index = 0; index < actual.size(); ++index) {
         assert_true(actual[index] == expected[index]);
     }
+}
+
+void check_sycl_spectral_filter_matches_cpu(
+    fdm::NSCylSpectralRemoval removal) {
+    using CpuTask =
+        fdm::NSCyl<float, true, fdm::tensor_flag::periodic>;
+    const Config config = make_cpu_config();
+    CpuTask cpu(config);
+    fdm::NSCylSyclTask<float> device(queue(), config);
+    const fdm::NSCylStateLayout<float> layout(cpu);
+    layout.initialize_couette_state(cpu);
+    const auto reference = layout.pack(cpu);
+
+    std::vector<float> perturbation(layout.state_size);
+    for (int index = 0; index < layout.state_size; ++index) {
+        const float x = static_cast<float>(index+1);
+        perturbation[index] = 0.017f*std::sin(0.071f*x)
+            +0.009f*std::cos(0.037f*x+0.2f);
+    }
+    layout.normalize_packed_pressure(cpu, perturbation.data());
+    layout.unpack_sum(cpu, reference, perturbation.data());
+    layout.unpack_sum(device, reference, perturbation.data());
+
+    const auto projector = make_filter_projector(config);
+    fdm::NSCylSpectralFilter<float> cpu_filter(
+        cpu.nr, cpu.nphi, cpu.nz, projector);
+    fdm::NSCylSpectralFilterSycl<float> device_filter(
+        queue(), device.nr, device.nphi, device.nz, projector);
+
+    const auto device_before_measure = layout.pack(device);
+    const auto cpu_measured = cpu_filter.measure(cpu, reference, removal);
+    const auto device_measured =
+        device_filter.measure(device, reference, removal);
+    const auto device_after_measure = layout.pack(device);
+    assert_true(device_after_measure == device_before_measure);
+
+    const auto close = [](double actual, double expected, double tolerance) {
+        return std::abs(actual-expected)
+            <= tolerance*std::max({1.0, std::abs(actual), std::abs(expected)});
+    };
+    assert_true(close(device_measured.packed_perturbation_norm,
+                      cpu_measured.packed_perturbation_norm, 2e-5));
+    assert_true(close(device_measured.removed_norm,
+                      cpu_measured.removed_norm, 2e-5));
+    assert_true(close(device_measured.remaining_unstable_norm,
+                      cpu_measured.remaining_unstable_norm, 2e-5));
+    assert_true(close(device_measured.filtered_velocity_norm,
+                      cpu_measured.filtered_velocity_norm, 2e-5));
+    assert_int_equal(device_measured.blocks.size(), cpu_measured.blocks.size());
+    for (std::size_t block = 0; block < cpu_measured.blocks.size(); ++block) {
+        const auto& expected = cpu_measured.blocks[block];
+        const auto& actual = device_measured.blocks[block];
+        assert_int_equal(actual.m, expected.m);
+        assert_int_equal(actual.l, expected.l);
+        assert_true(close(actual.block_norm, expected.block_norm, 2e-5));
+        assert_true(close(actual.removed_norm, expected.removed_norm, 2e-5));
+        assert_true(close(actual.remaining_unstable_norm,
+                          expected.remaining_unstable_norm, 2e-5));
+        assert_int_equal(actual.coordinates_before.size(),
+                         expected.coordinates_before.size());
+        for (std::size_t coordinate = 0;
+             coordinate < expected.coordinates_before.size(); ++coordinate) {
+            assert_true(close(actual.coordinates_before[coordinate],
+                              expected.coordinates_before[coordinate], 2e-5));
+            assert_true(close(actual.coordinates_after[coordinate],
+                              expected.coordinates_after[coordinate], 2e-5));
+        }
+    }
+
+    const auto cpu_removed = cpu_filter.remove(cpu, reference, removal);
+    const auto device_removed =
+        device_filter.remove(device, reference, removal);
+    const auto expected_state = layout.pack(cpu);
+    const auto actual_state = layout.pack(device);
+    Difference difference;
+    for (int index = 0; index < layout.state_size; ++index) {
+        difference.add(actual_state[index], expected_state[index]);
+    }
+    std::printf("SYCL/CPU packed spectral filter (%s): state=%e/%e "
+                "removed=%e/%e remaining=%e/%e\n",
+                removal == fdm::NSCylSpectralRemoval::unstable_eigenspace
+                    ? "eigenspace" : "whole blocks",
+                difference.error, difference.relative(),
+                device_removed.removed_norm, cpu_removed.removed_norm,
+                device_removed.remaining_unstable_norm,
+                cpu_removed.remaining_unstable_norm);
+    assert_true(difference.relative() < 3e-5);
+    assert_true(close(device_removed.removed_velocity_norm,
+                      cpu_removed.removed_velocity_norm, 2e-5));
+    assert_true(std::abs(layout.pressure_mean(device)) < 2e-5);
+}
+
+void test_sycl_spectral_filter_matches_cpu(void**) {
+    check_sycl_spectral_filter_matches_cpu(
+        fdm::NSCylSpectralRemoval::unstable_eigenspace);
+    check_sycl_spectral_filter_matches_cpu(
+        fdm::NSCylSpectralRemoval::whole_fourier_blocks);
 }
 
 std::vector<float> make_block_input(int size) {
@@ -1094,6 +1230,7 @@ int main() {
         cmocka_unit_test(
             test_sycl_time_dependent_outer_boundary_matches_cpu),
         cmocka_unit_test(test_sycl_packed_state_round_trip),
+        cmocka_unit_test(test_sycl_spectral_filter_matches_cpu),
         cmocka_unit_test(test_sycl_linear_fourier_blocks_match_cpu),
         cmocka_unit_test(
             test_sycl_batched_blocks_match_individual_applications),

@@ -72,6 +72,11 @@ public:
         queue_.wait_and_throw();
     }
 
+    CylAcc<T> ua() const { return u.access; }
+    CylAcc<T> va() const { return v.access; }
+    CylAcc<T> wa() const { return w.access; }
+    CylAcc<T> pa() const { return p.access; }
+
     const int nr;
     const int nz;
     const int nphi;
