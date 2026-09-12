@@ -16,9 +16,10 @@ extern "C" {
 #include <cmocka.h>
 }
 
+static sycl::queue* test_queue = nullptr;
+
 static sycl::queue& get_queue() {
-    static sycl::queue q{sycl::default_selector_v};
-    return q;
+    return *test_queue;
 }
 
 // Mandelbrot using integer literals - no double inside kernel body
@@ -255,6 +256,10 @@ void test_sycl_to_double(void** s) {
     { #f "(uint64_t,generic)", f<uint64_t,GenericPlatformSpec<uint64_t>>, NULL, NULL, NULL }
 
 int main() {
+    // Keep the queue's lifetime inside main. AdaptiveCpp's queue destructor
+    // reports asynchronous errors and must run before its static error list.
+    sycl::queue owned_queue{sycl::default_selector_v};
+    test_queue = &owned_queue;
     auto& q = get_queue();
     std::cerr << "SYCL device: "
               << q.get_device().get_info<sycl::info::device::name>() << "\n";
@@ -270,5 +275,7 @@ int main() {
         my_unit(test_sycl_to_double),
     };
 
-    return cmocka_run_group_tests(tests, NULL, NULL);
+    const int result = cmocka_run_group_tests(tests, NULL, NULL);
+    test_queue = nullptr;
+    return result;
 }

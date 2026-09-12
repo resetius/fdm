@@ -80,18 +80,19 @@ SyclField<T> sycl_field(fdm::CylAcc<T> acc, int nphi, int nz, int radial) {
     return {acc, acc.ptr, nphi*nz*radial};
 }
 
+sycl::queue* sycl_queue_instance = nullptr;
+
+sycl::device select_sycl_device() {
+    for (const auto& platform : sycl::platform::get_platforms()) {
+        for (const auto& device : platform.get_devices()) {
+            if (device.is_gpu()) { return device; }
+        }
+    }
+    return sycl::device{sycl::cpu_selector_v};
+}
+
 sycl::queue& sycl_queue() {
-    static sycl::queue queue{
-        [] {
-            for (const auto& platform : sycl::platform::get_platforms()) {
-                for (const auto& device : platform.get_devices()) {
-                    if (device.is_gpu()) { return device; }
-                }
-            }
-            return sycl::device{sycl::cpu_selector_v};
-        }(),
-        sycl::property::queue::in_order{}};
-    return queue;
+    return *sycl_queue_instance;
 }
 
 // Same surface as Task<T> for what the layout and the branch loop touch,
@@ -428,10 +429,18 @@ int main(int argc, char** argv) {
             fprintf(stderr, "the sycl backend supports datatype=float only\n");
             return 1;
         }
+        // A local queue is destroyed before AdaptiveCpp's process-wide async
+        // error list. A function-local static queue can outlive that list and
+        // access its already-destroyed mutex from queue::~queue().
+        sycl::queue owned_queue{
+            select_sycl_device(), sycl::property::queue::in_order{}};
+        sycl_queue_instance = &owned_queue;
         printf("SYCL device: %s\n",
                sycl_queue().get_device()
                    .get_info<sycl::info::device::name>().c_str());
-        return run<float, SyclTask<float>>(config);
+        const int result = run<float, SyclTask<float>>(config);
+        sycl_queue_instance = nullptr;
+        return result;
 #else
         fprintf(stderr, "this build has no SYCL\n");
         return 1;
