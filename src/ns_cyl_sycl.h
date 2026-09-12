@@ -221,6 +221,63 @@ public:
         return outer_boundary_velocity_enabled;
     }
 
+    std::vector<T> pack_state() const {
+        q.wait();
+        const NSCylStateLayout<T> layout(nr, nz, nphi);
+        std::vector<T> result(layout.state_size);
+        auto u=ua(), v=va(), w=wa(), p=pa();
+        int index = layout.u_offset;
+        for (int i = 0; i < nphi; ++i) {
+            for (int k = 0; k < nz; ++k) {
+                for (int j = 1; j < nr; ++j) {
+                    result[index++] = u(i,k,j);
+                }
+            }
+        }
+        for (auto field : {v, w, p}) {
+            for (int i = 0; i < nphi; ++i) {
+                for (int k = 0; k < nz; ++k) {
+                    for (int j = 1; j <= nr; ++j) {
+                        result[index++] = field(i,k,j);
+                    }
+                }
+            }
+        }
+        if (index != layout.state_size) {
+            throw std::logic_error("invalid packed SYCL NSCyl state size");
+        }
+        return result;
+    }
+
+    void unpack_state(const std::vector<T>& state) {
+        const NSCylStateLayout<T> layout(nr, nz, nphi);
+        if (state.size() != static_cast<std::size_t>(layout.state_size)) {
+            throw std::invalid_argument(
+                "packed SYCL NSCyl state has the wrong size");
+        }
+        q.wait();
+        auto u=ua(), v=va(), w=wa(), p=pa();
+        int index = layout.u_offset;
+        for (int i = 0; i < nphi; ++i) {
+            for (int k = 0; k < nz; ++k) {
+                for (int j = 1; j < nr; ++j) {
+                    u(i,k,j) = state[index++];
+                }
+            }
+        }
+        for (auto field : {v, w, p}) {
+            for (int i = 0; i < nphi; ++i) {
+                for (int k = 0; k < nz; ++k) {
+                    for (int j = 1; j <= nr; ++j) {
+                        field(i,k,j) = state[index++];
+                    }
+                }
+            }
+        }
+        kernel_init_bound(U0);
+        q.wait();
+    }
+
     void step() {
         kernel_init_bound(U0);
         kernel_FGH();

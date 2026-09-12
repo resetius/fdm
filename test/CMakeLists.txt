@@ -50,6 +50,9 @@ add_executable(fdm_ns_cyl_nonlinear_filter test_ns_cyl_nonlinear_filter.cpp)
 target_link_libraries(fdm_ns_cyl_nonlinear_filter fdm)
 if (SYCL_FOUND)
 target_compile_definitions(fdm_ns_cyl_nonlinear_filter PRIVATE FDM_HAVE_SYCL=1)
+add_executable(fdm_ns_cyl_boundary_lqr_sycl
+    test_ns_cyl_boundary_lqr_sycl.cpp)
+target_link_libraries(fdm_ns_cyl_boundary_lqr_sycl fdm)
 endif()
 
 add_executable(fdm_ns_cyl_lbb test_ns_cyl_lbb.cpp)

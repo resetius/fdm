@@ -440,6 +440,22 @@ void test_sycl_time_dependent_outer_boundary_matches_cpu(void**) {
     compare();
 }
 
+void test_sycl_packed_state_round_trip(void**) {
+    NSCylSycl<float> source(
+        queue(), kNr, kNz, kNphi, kR0, kR, kLz, kU0, kRe, kDt);
+    NSCylSycl<float> destination(
+        queue(), kNr, kNz, kNphi, kR0, kR, kLz, kU0, kRe, kDt);
+    fill_smooth_state(source);
+    source.apply_boundary_conditions();
+    const auto expected = source.pack_state();
+    destination.unpack_state(expected);
+    const auto actual = destination.pack_state();
+    assert_int_equal(actual.size(), expected.size());
+    for (std::size_t index = 0; index < actual.size(); ++index) {
+        assert_true(actual[index] == expected[index]);
+    }
+}
+
 std::vector<float> make_block_input(int size) {
     std::vector<float> input(size);
     for (int index = 0; index < size; ++index) {
@@ -983,6 +999,7 @@ int main() {
         cmocka_unit_test(test_sycl_step_matches_cpu_float_reference),
         cmocka_unit_test(
             test_sycl_time_dependent_outer_boundary_matches_cpu),
+        cmocka_unit_test(test_sycl_packed_state_round_trip),
         cmocka_unit_test(test_sycl_linear_fourier_blocks_match_cpu),
         cmocka_unit_test(
             test_sycl_batched_blocks_match_individual_applications),

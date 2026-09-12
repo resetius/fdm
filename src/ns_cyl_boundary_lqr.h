@@ -38,6 +38,18 @@ struct NSCylBoundaryLQRClosedLoopDiagnostics {
 };
 
 template<typename T>
+struct NSCylBoundaryLQRGainBlock {
+    int m = -1;
+    int l = -1;
+    std::vector<T> values;
+};
+
+template<typename T>
+struct NSCylBoundaryLQRGainSet {
+    std::vector<NSCylBoundaryLQRGainBlock<T>> blocks;
+};
+
+template<typename T>
 struct NSCylBoundaryLQRResult {
     int nphi = 0;
     int nz = 0;
@@ -106,32 +118,38 @@ public:
             throw std::invalid_argument(
                 "invalid physical boundary LQR settings");
         }
-        if (components != "all" && components != "tangential"
-            && components != "azimuthal") {
-            throw std::invalid_argument(
-                "physical boundary LQR components must be 'all', "
-                "'tangential', or 'azimuthal'");
-        }
-        for (int component = 0; component < 3; ++component) {
-            const bool enabled = components == "all"
-                || (components == "tangential" && component != 0)
-                || (components == "azimuthal" && component == 2);
-            if (!enabled) {
-                continue;
-            }
-            for (int phase = 0; phase < dynamics_.phase_count(); ++phase) {
-                // A spatially constant radial wall velocity has nonzero net
-                // flux and is incompatible with the closed periodic cylinder.
-                if (component == 0 && dynamics_.m() == 0
-                    && dynamics_.l() == 0) {
-                    continue;
-                }
-                input_indices_.push_back(
-                    component*dynamics_.phase_count()+phase);
-            }
-        }
+        select_inputs(components);
         build_impulse_responses();
         build_inverse_hessian();
+    }
+
+    // Restore a previously materialized K_0 without rebuilding the horizon
+    // impulse responses or the condensed Hessian.
+    NSCylFourierBoundaryLQR(
+        const Config& config, const NSCylBoundaryLQRGainBlock<T>& gain,
+        int horizon_intervals, int interval_steps, double control_weight,
+        double ridge, const std::string& components = "all")
+        : dynamics_(config, gain.m, gain.l, interval_steps)
+        , horizon_(horizon_intervals)
+        , control_weight_(control_weight)
+        , ridge_(ridge)
+        , phase_gram_(build_phase_gram()) {
+        if (horizon_ <= 0 || !(control_weight_ >= 0)
+            || !std::isfinite(control_weight_) || !(ridge_ >= 0)
+            || !std::isfinite(ridge_)) {
+            throw std::invalid_argument(
+                "invalid physical boundary LQR settings");
+        }
+        select_inputs(components);
+        const std::size_t expected = static_cast<std::size_t>(input_size())
+            *(state_size()+boundary_size());
+        if (gain.values.size() != expected) {
+            throw std::runtime_error(
+                "physical boundary LQR cached gain has the wrong size in "
+                "Fourier block (m="+std::to_string(m())+",l="
+                +std::to_string(l())+")");
+        }
+        first_feedback_gain_ = gain.values;
     }
 
     int m() const { return dynamics_.m(); }
@@ -147,6 +165,14 @@ public:
 
     bool first_feedback_gain_cached() const {
         return !first_feedback_gain_.empty();
+    }
+
+    NSCylBoundaryLQRGainBlock<T> first_feedback_gain() const {
+        if (!first_feedback_gain_cached()) {
+            throw std::logic_error(
+                "physical boundary LQR first-feedback gain is not cached");
+        }
+        return {m(), l(), first_feedback_gain_};
     }
 
     // Materialize the sampled free transition once and use its transpose to
@@ -208,6 +234,10 @@ public:
         if (!first_feedback_gain_cached()) {
             throw std::logic_error(
                 "physical boundary LQR first-feedback gain is not cached");
+        }
+        if (free_transition_.empty() || impulse_responses_.empty()) {
+            throw std::logic_error(
+                "closed-loop diagnostics require a materialized plant");
         }
         const int augmented_size = state_size()+boundary_size();
         std::vector<T> matrix(
@@ -387,6 +417,33 @@ private:
     std::vector<T> free_transition_;
     // K_0 in u_0=K_0 z, stored row-major by enabled wall input.
     std::vector<T> first_feedback_gain_;
+
+    void select_inputs(const std::string& components) {
+        if (components != "all" && components != "tangential"
+            && components != "azimuthal") {
+            throw std::invalid_argument(
+                "physical boundary LQR components must be 'all', "
+                "'tangential', or 'azimuthal'");
+        }
+        for (int component = 0; component < 3; ++component) {
+            const bool enabled = components == "all"
+                || (components == "tangential" && component != 0)
+                || (components == "azimuthal" && component == 2);
+            if (!enabled) {
+                continue;
+            }
+            for (int phase = 0; phase < dynamics_.phase_count(); ++phase) {
+                // A spatially constant radial wall velocity has nonzero net
+                // flux and is incompatible with the closed periodic cylinder.
+                if (component == 0 && dynamics_.m() == 0
+                    && dynamics_.l() == 0) {
+                    continue;
+                }
+                input_indices_.push_back(
+                    component*dynamics_.phase_count()+phase);
+            }
+        }
+    }
 
     std::vector<T> build_phase_gram() const {
         const int phases = phase_count();
@@ -699,7 +756,46 @@ public:
         }
     }
 
+    NSCylBoundaryLQR(const Config& config,
+                     const NSCylBoundaryLQRGainSet<T>& gains,
+                     int horizon_intervals, int interval_steps,
+                     double control_weight, double ridge,
+                     const std::string& components = "all")
+        : nr_(config.get("ns", "nr", 32))
+        , nphi_(config.get("ns", "nphi", 32))
+        , nz_(config.get("ns", "nz", 32))
+        , layout_(nr_, nz_, nphi_)
+        , fft_(nphi_, nz_)
+        , packed_state_(layout_.state_size)
+        , plane_values_(fft_.size())
+        , plane_coefficients_(fft_.size()) {
+        std::set<std::pair<int, int>> unique;
+        for (const auto& gain : gains.blocks) {
+            if (!unique.emplace(gain.m, gain.l).second) {
+                throw std::invalid_argument(
+                    "duplicate physical boundary LQR cached block");
+            }
+            controllers_.push_back(std::make_unique<
+                NSCylFourierBoundaryLQR<T>>(
+                    config, gain, horizon_intervals, interval_steps,
+                    control_weight, ridge, components));
+        }
+        if (controllers_.empty()) {
+            throw std::invalid_argument(
+                "physical boundary LQR needs at least one cached block");
+        }
+    }
+
     std::size_t block_count() const { return controllers_.size(); }
+
+    NSCylBoundaryLQRGainSet<T> cached_gain_set() const {
+        NSCylBoundaryLQRGainSet<T> result;
+        result.blocks.reserve(controllers_.size());
+        for (const auto& controller : controllers_) {
+            result.blocks.push_back(controller->first_feedback_gain());
+        }
+        return result;
+    }
 
     std::vector<NSCylBoundaryLQRClosedLoopDiagnostics>
     closed_loop_diagnostics() const {

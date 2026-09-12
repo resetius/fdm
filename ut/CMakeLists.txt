@@ -25,6 +25,7 @@ ut(fft ut_fft.cpp)
 ut(lapl_cyl ut_lapl_cyl.cpp)
 ut(ns_cyl ut_ns_cyl.cpp)
 ut(ns_cyl_checkpoint_storage ut_ns_cyl_checkpoint_storage.cpp)
+ut(ns_cyl_boundary_lqr_storage ut_ns_cyl_boundary_lqr_storage.cpp)
 ut(ns_cyl_fourier_block ut_ns_cyl_fourier_block.cpp)
 ut(ns_cyl_spectral_compare ut_ns_cyl_spectral_compare.cpp)
 ut(ns_cyl_spectral_filter ut_ns_cyl_spectral_filter.cpp)
@@ -35,6 +36,8 @@ target_compile_definitions(ut_ns_cyl_spectral_storage PRIVATE
   NS_CYL_SPECTRAL_TEST_DIR="${CMAKE_BINARY_DIR}/ns_lapl_experiments")
 target_compile_definitions(ut_ns_cyl_checkpoint_storage PRIVATE
   NS_CYL_CHECKPOINT_TEST_DIR="${CMAKE_BINARY_DIR}/ns_lapl_experiments")
+target_compile_definitions(ut_ns_cyl_boundary_lqr_storage PRIVATE
+  NS_CYL_BOUNDARY_LQR_TEST_DIR="${CMAKE_BINARY_DIR}/ns_lapl_experiments")
 ut(lapl_cyl_slice ut_lapl_cyl_slice.cpp)
 ut(lapl_rect ut_lapl_rect.cpp)
 ut(lapl_cube ut_lapl_cube.cpp)
