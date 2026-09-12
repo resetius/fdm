@@ -13,6 +13,7 @@
 #include <sycl/sycl.hpp>
 
 #include "config.h"
+#include "fft/sycl/rfft_registers.h"
 #include "ns_cyl.h"
 #include "ns_cyl_fourier_batch_sycl.h"
 #include "ns_cyl_fourier_block_sycl.h"
@@ -155,6 +156,89 @@ struct Difference {
     }
 };
 
+template<int N>
+void check_register_rfft(bool interleaved) {
+    constexpr int line_count = 5;
+    constexpr int size = N*line_count;
+    const int stride = interleaved ? line_count : 1;
+    const int inner = interleaved ? line_count : 1;
+    const int outer = interleaved ? line_count : N;
+    const auto index = [=](int line, int element) {
+        const int base = (line/inner)*outer+line%inner;
+        return base+element*stride;
+    };
+
+    float* input = sycl::malloc_shared<float>(size, queue());
+    float* coefficients = sycl::malloc_shared<float>(size, queue());
+    float* restored = sycl::malloc_shared<float>(size, queue());
+    const auto host_twiddles = fdm::fft_sycl::make_twiddles<float>(N);
+    float* twiddles = sycl::malloc_shared<float>(
+        host_twiddles.size(), queue());
+    std::copy(host_twiddles.begin(), host_twiddles.end(), twiddles);
+
+    for (int line = 0; line < line_count; ++line) {
+        for (int element = 0; element < N; ++element) {
+            input[index(line, element)] = static_cast<float>(
+                std::sin(0.137*(element+1)*(line+1))
+                +0.31*std::cos(0.071*(element+3)*(line+2)));
+        }
+    }
+    fdm::fft_sycl::real_forward<N>(
+        queue(), coefficients, input, twiddles, 1.0f,
+        line_count, stride, inner, outer);
+    queue().wait();
+
+    Difference forward;
+    for (int line = 0; line < line_count; ++line) {
+        for (int mode = 0; mode <= N/2; ++mode) {
+            double cosine = 0;
+            double sine = 0;
+            for (int element = 0; element < N; ++element) {
+                const double angle = 2*M_PI*element*mode/N;
+                const double value = input[index(line, element)];
+                cosine += value*std::cos(angle);
+                sine += value*std::sin(angle);
+            }
+            forward.add(coefficients[index(line, mode)], cosine);
+            if (mode > 0 && mode < N/2) {
+                forward.add(coefficients[index(line, N-mode)], sine);
+            }
+        }
+    }
+
+    fdm::fft_sycl::real_inverse<N>(
+        queue(), restored, coefficients, twiddles, 2.0f/N,
+        line_count, stride, inner, outer);
+    queue().wait();
+    Difference inverse;
+    for (int line = 0; line < line_count; ++line) {
+        for (int element = 0; element < N; ++element) {
+            inverse.add(restored[index(line, element)],
+                        input[index(line, element)]);
+        }
+    }
+    std::printf("SYCL register RFFT N=%d %s: forward=%e inverse=%e\n",
+                N, interleaved ? "interleaved" : "contiguous",
+                forward.relative(), inverse.relative());
+
+    sycl::free(twiddles, queue());
+    sycl::free(restored, queue());
+    sycl::free(coefficients, queue());
+    sycl::free(input, queue());
+    assert_true(forward.relative() < 2e-5);
+    assert_true(inverse.relative() < 2e-5);
+}
+
+void test_sycl_register_rfft_matches_direct_transform(void**) {
+    check_register_rfft<8>(false);
+    check_register_rfft<8>(true);
+    check_register_rfft<16>(true);
+    check_register_rfft<32>(true);
+    check_register_rfft<64>(true);
+    check_register_rfft<128>(true);
+    check_register_rfft<256>(true);
+}
+
 void check_sycl_poisson_matches_cpu(
     int nr, int nz, int nphi, float r0, float outer_r, float lz,
     bool radial_neumann = false)
@@ -209,8 +293,11 @@ void check_sycl_poisson_matches_cpu(
 void test_sycl_poisson_matches_cpu_float_reference(void**) {
     check_sycl_poisson_matches_cpu(8, 8, 8, 1.0f, 2.0f, kLz);
     check_sycl_poisson_matches_cpu(9, 8, 8, 1.0f, 2.0f, kLz);
+    check_sycl_poisson_matches_cpu(9, 16, 8, 1.0f, 2.0f, kLz);
+    check_sycl_poisson_matches_cpu(9, 8, 16, 1.0f, 2.0f, kLz);
     check_sycl_poisson_matches_cpu(16, 16, 16, kR0, kR, 10.0f);
     check_sycl_poisson_matches_cpu(32, 32, 32, kR0, kR, 10.0f);
+    check_sycl_poisson_matches_cpu(64, 64, 64, kR0, kR, 10.0f);
     check_sycl_poisson_matches_cpu(
         8, 8, 8, 1.0f, 2.0f, kLz, true);
     check_sycl_poisson_matches_cpu(
@@ -994,6 +1081,7 @@ void test_sycl_radial_pressure_boundary_uses_new_time_level(void**) {
 
 int main() {
     const CMUnitTest tests[] = {
+        cmocka_unit_test(test_sycl_register_rfft_matches_direct_transform),
         cmocka_unit_test(test_sycl_poisson_matches_cpu_float_reference),
         cmocka_unit_test(test_sycl_fourier_block_poisson_matches_full),
         cmocka_unit_test(test_sycl_step_matches_cpu_float_reference),

@@ -1,12 +1,16 @@
 #pragma once
 // LaplCylSycl — SYCL Poisson solver for cylindrical geometry.
 // phi and z are periodic; radial Dirichlet and Neumann matrices are supported.
-// Direct O(N²) DFT in phi and z, GPU batched cyclic reduction in r.
+// Register-resident real FFT in phi and z when their lengths are powers of
+// two, the direct O(N²) DFT otherwise; GPU batched cyclic reduction in r.
 // Compatible with LaplCyl3FFT2<T,false,tensor_flag::periodic> interface.
 
-#include <sycl/sycl.hpp>
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <sycl/sycl.hpp>
+
+#include "fft/sycl/rfft_registers.h"
 
 namespace fdm {
 
@@ -51,6 +55,12 @@ private:
     // Intermediate buffer for DFT pipeline
     T* tmp = nullptr;   // [nphi*nz*nr]
 
+    // A power-of-two axis gets the register FFT; anything else falls back to
+    // the direct transform, which has no such restriction.
+    bool fft_phi = false, fft_z = false;
+    T* tw_phi = nullptr;
+    T* tw_z   = nullptr;
+
     // Scale factors matching LaplCyl3FFT2 / pFFT_1 / pFFT convention:
     //   forward phi: scale = dphi * sqrt(1/π)
     //   inverse phi: scale = sqrt(1/π)
@@ -94,6 +104,15 @@ private:
                 cos_z[m*nz+k] = std::cos(ang);
                 sin_z[m*nz+k] = std::sin(ang);
             }
+
+        if (fft_phi) {
+            const auto t = fft_sycl::make_twiddles<T>(nphi);
+            std::copy(t.begin(), t.end(), tw_phi);
+        }
+        if (fft_z) {
+            const auto t = fft_sycl::make_twiddles<T>(nz);
+            std::copy(t.begin(), t.end(), tw_z);
+        }
 
         // Base tridiagonal
         for (int j = 0; j < nr; j++) {
@@ -307,6 +326,12 @@ public:
         , U_cr   (sha(q_, nphi_*nz_*nr_))
         , b_cr   (sha(q_, nphi_*nz_*nr_))
         , tmp    (sha(q_, nphi_*nz_*nr_))
+        , fft_phi(fft_sycl::is_power_of_two(nphi_)
+                  && nphi_ >= 8 && nphi_ <= 256)
+        , fft_z  (fft_sycl::is_power_of_two(nz_)
+                  && nz_ >= 8 && nz_ <= 256)
+        , tw_phi (fft_phi ? sha(q_, 2*(nphi_/2) + 2*(nphi_/2+1)) : nullptr)
+        , tw_z   (fft_z   ? sha(q_, 2*(nz_/2)   + 2*(nz_/2+1))   : nullptr)
         // Scale factors:  fwd*inv*N/2 = 1
         , sc_phi_f(dphi * std::sqrt(T(1)/T(M_PI)))
         , sc_phi_i(std::sqrt(T(1)/T(M_PI)))
@@ -324,13 +349,71 @@ public:
         sycl::free(D_cr,    q); sycl::free(L_cr,    q);
         sycl::free(U_cr,    q); sycl::free(b_cr,    q);
         sycl::free(tmp,     q);
+        if (tw_phi) { sycl::free(tw_phi, q); }
+        if (tw_z)   { sycl::free(tw_z,   q); }
     }
 
+private:
+    // Element e of line t is at
+    // (t/inner)*outer + t%inner + e*stride.
+    template<bool Forward>
+    bool rfft(T* out, const T* in, const T* tw, T sc, int N,
+              int lines, int stride, int inner, int outer) {
+#define FDM_RFFT_CASE(n)                                                      \
+        case n:                                                               \
+            if constexpr (Forward) {                                          \
+                fft_sycl::real_forward<n>(q, out, in, tw, sc,                 \
+                                          lines, stride, inner, outer);       \
+            } else {                                                          \
+                fft_sycl::real_inverse<n>(q, out, in, tw, sc,                 \
+                                          lines, stride, inner, outer);       \
+            }                                                                 \
+            return true;
+        switch (N) {
+        FDM_RFFT_CASE(8)
+        FDM_RFFT_CASE(16)
+        FDM_RFFT_CASE(32)
+        FDM_RFFT_CASE(64)
+        FDM_RFFT_CASE(128)
+        FDM_RFFT_CASE(256)
+        default: return false;
+        }
+#undef FDM_RFFT_CASE
+    }
+
+    void transform_phi_fwd(T* out, const T* in) {
+        if (!fft_phi || !rfft<true>(out, in, tw_phi, sc_phi_f, nphi,
+                                    nz*nr, nz*nr, nr, nr)) {
+            dft_phi_fwd(out, in);
+        }
+    }
+    void transform_phi_inv(T* out, const T* in) {
+        // The direct routine folds a 0.5 of the pFFT convention into its scale;
+        // the FFT wants the factor undoubled.
+        if (!fft_phi || !rfft<false>(out, in, tw_phi, sc_phi_i, nphi,
+                                     nz*nr, nz*nr, nr, nr)) {
+            idft_phi(out, in);
+        }
+    }
+    void transform_z_fwd(T* out, const T* in) {
+        if (!fft_z || !rfft<true>(out, in, tw_z, sc_z_f, nz,
+                                  nphi*nr, nr, nr, nz*nr)) {
+            dft_z_fwd(out, in);
+        }
+    }
+    void transform_z_inv(T* out, const T* in) {
+        if (!fft_z || !rfft<false>(out, in, tw_z, sc_z_i, nz,
+                                   nphi*nr, nr, nr, nz*nr)) {
+            idft_z(out, in);
+        }
+    }
+
+public:
     // solve(ans, rhs): both are T[nphi*nz*nr], layout [phi][z][r-1] (0-based r)
     void solve(T* ans, T* rhs) {
         // Copy rhs into b_cr workspace via forward FFTs
-        dft_phi_fwd(tmp,   rhs);   // rhs → tmp (phi modes)
-        dft_z_fwd  (b_cr,  tmp);   // tmp → b_cr (z modes)
+        transform_phi_fwd(tmp,  rhs);   // rhs → tmp (phi modes)
+        transform_z_fwd  (b_cr, tmp);   // tmp → b_cr (z modes)
 
         if (radial_neumann) {
             T* coefficients=b_cr;
@@ -347,8 +430,8 @@ public:
         for (int l = nrq-1; l >= 1; l--) cr_bwd(l);
 
         // Inverse FFTs: b_cr → ans
-        idft_z  (tmp, b_cr);
-        idft_phi(ans, tmp);
+        transform_z_inv  (tmp, b_cr);
+        transform_phi_inv(ans, tmp);
     }
 
     void solve_fourier_block(T* ans, const T* rhs, int m, int l) {
