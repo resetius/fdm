@@ -222,7 +222,7 @@ public:
     }
 
     std::vector<T> pack_state() const {
-        q.wait();
+        q.wait_and_throw();
         const NSCylStateLayout<T> layout(nr, nz, nphi);
         std::vector<T> result(layout.state_size);
         auto u=ua(), v=va(), w=wa(), p=pa();
@@ -255,7 +255,7 @@ public:
             throw std::invalid_argument(
                 "packed SYCL NSCyl state has the wrong size");
         }
-        q.wait();
+        q.wait_and_throw();
         auto u=ua(), v=va(), w=wa(), p=pa();
         int index = layout.u_offset;
         for (int i = 0; i < nphi; ++i) {
@@ -275,7 +275,7 @@ public:
             }
         }
         kernel_init_bound(U0);
-        q.wait();
+        q.wait_and_throw();
     }
 
     void step() {

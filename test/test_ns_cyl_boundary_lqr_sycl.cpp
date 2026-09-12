@@ -466,7 +466,7 @@ int run(const Config& config) {
             controlled.step();
         }
     }
-    queue.wait();
+    queue.wait_and_throw();
 
     if (!checkpoint_output.empty()) {
         auto final_state = controlled.pack_state();
