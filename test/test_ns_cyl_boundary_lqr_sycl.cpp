@@ -22,6 +22,7 @@
 #include "ns_cyl_spectral_storage.h"
 #include "ns_cyl_state.h"
 #include "ns_cyl_sycl.h"
+#include "sycl_queue_properties.h"
 
 namespace {
 
@@ -308,7 +309,7 @@ int run(const Config& config) {
             }
             return sycl::device{sycl::cpu_selector_v};
         }(),
-        sycl::property::queue::in_order{}};
+        fdm::sycl_in_order_queue_properties()};
     std::printf("SYCL device: %s\n",
                 queue.get_device().get_info<sycl::info::device::name>().c_str());
     fdm::NSCylSycl<float> uncontrolled(

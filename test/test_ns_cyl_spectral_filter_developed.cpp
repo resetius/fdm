@@ -14,6 +14,7 @@
 #include <sycl/sycl.hpp>
 #include "ns_cyl_spectral_filter_sycl.h"
 #include "ns_cyl_sycl_task.h"
+#include "sycl_queue_properties.h"
 #endif
 
 #include "config.h"
@@ -619,10 +620,13 @@ int main(int argc, char** argv) {
         // Keep the queue local so it is destroyed before AdaptiveCpp's
         // process-wide asynchronous error list.
         sycl::queue owned_queue{
-            select_sycl_device(), sycl::property::queue::in_order{}};
+            select_sycl_device(), fdm::sycl_in_order_queue_properties()};
         sycl_queue_instance = &owned_queue;
         std::printf("SYCL device: %s\n", owned_queue.get_device()
             .get_info<sycl::info::device::name>().c_str());
+        std::printf("SYCL queue: in_order%s\n",
+                    fdm::sycl_queue_uses_coarse_grained_events
+                        ? ", AdaptiveCpp coarse-grained events" : "");
         const int result = run(config);
         sycl_queue_instance = nullptr;
         return result;

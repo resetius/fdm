@@ -4,6 +4,7 @@
 
 #include <sycl/sycl.hpp>
 #include "ns_cube_sycl.h"
+#include "sycl_queue_properties.h"
 #include "ns_cube.h"
 #include "config.h"
 
@@ -42,7 +43,7 @@ int main()
                     if (d.is_gpu()) return d;
             return sycl::device{sycl::cpu_selector_v};
         }(),
-        sycl::property::queue::in_order{}};
+        fdm::sycl_in_order_queue_properties()};
 
     std::cout << "SYCL device: "
               << q.get_device().get_info<sycl::info::device::name>() << "\n";

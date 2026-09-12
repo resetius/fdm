@@ -39,6 +39,7 @@
 #ifdef FDM_HAVE_SYCL
 #include <sycl/sycl.hpp>
 #include "ns_cyl_sycl_task.h"
+#include "sycl_queue_properties.h"
 #endif
 
 #include "config.h"
@@ -378,7 +379,7 @@ int main(int argc, char** argv) {
         // error list. A function-local static queue can outlive that list and
         // access its already-destroyed mutex from queue::~queue().
         sycl::queue owned_queue{
-            select_sycl_device(), sycl::property::queue::in_order{}};
+            select_sycl_device(), fdm::sycl_in_order_queue_properties()};
         sycl_queue_instance = &owned_queue;
         printf("SYCL device: %s\n",
                sycl_queue().get_device()

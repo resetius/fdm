@@ -21,6 +21,7 @@
 #include "ns_cyl_spectral_filter_sycl.h"
 #include "ns_cyl_spectral_storage.h"
 #include "ns_cyl_state.h"
+#include "sycl_queue_properties.h"
 
 // ── Standard ──────────────────────────────────────────────────────────────────
 #include <algorithm>
@@ -394,7 +395,7 @@ struct Demo {
                     if (dev.is_gpu()) return dev;
             return sycl::device{sycl::cpu_selector_v};
         }(),
-        {sycl::property::queue::in_order{}, sycl::property::queue::AdaptiveCpp_coarse_grained_events{}}};
+        fdm::sycl_in_order_queue_properties()};
 
     fdm::NSCylSycl<float> sim;
     fdm::NSCylStateLayout<float> stateLayout;

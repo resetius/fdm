@@ -22,6 +22,7 @@
 #ifdef FDM_HAVE_SYCL
 #include "ns_cyl_fourier_batch_sycl.h"
 #include "ns_cyl_fourier_block_sycl.h"
+#include "sycl_queue_properties.h"
 #endif
 
 #ifdef _OPENMP
@@ -1280,7 +1281,7 @@ void probe_cooperative_blocks(const Config& config,
         const sycl::device device = select_sycl_device();
         printf("SYCL device: %s\n",
                device.get_info<sycl::info::device::name>().c_str());
-        sycl::queue queue{device, sycl::property::queue::in_order{}};
+        sycl::queue queue{device, fdm::sycl_in_order_queue_properties()};
         fdm::NSCylSyclFourierBlockBatchReference<T> op(
             queue, config, operator_steps);
         probe_cooperative_blocks_impl(config, blocks, results, op);
@@ -1312,7 +1313,7 @@ void probe_batched_blocks(const Config& config,
         const sycl::device device = select_sycl_device();
         printf("SYCL device: %s\n",
                device.get_info<sycl::info::device::name>().c_str());
-        sycl::queue queue{device, sycl::property::queue::in_order{}};
+        sycl::queue queue{device, fdm::sycl_in_order_queue_properties()};
         fdm::NSCylSyclFourierBlockBatchReference<T> op(
             queue, config, operator_steps);
         probe_batched_blocks_impl(config, blocks, results, op);
@@ -1912,7 +1913,7 @@ void run_global(const Config& config) {
         const sycl::device device = select_sycl_device();
         printf("SYCL device: %s\n",
                device.get_info<sycl::info::device::name>().c_str());
-        sycl::queue queue{device, sycl::property::queue::in_order{}};
+        sycl::queue queue{device, fdm::sycl_in_order_queue_properties()};
         GlobalSyclOperator op(queue, config);
         run_global_impl<float>(config, op);
     } else {
@@ -2049,7 +2050,7 @@ void run(const Config& config) {
 #pragma omp parallel num_threads(threads)
         {
             sycl::queue queue{
-                device, sycl::property::queue::in_order{}};
+                device, fdm::sycl_in_order_queue_properties()};
 #pragma omp for schedule(dynamic, 1)
             for (int i = 0; i < static_cast<int>(blocks.size()); ++i) {
                 try {
@@ -2062,7 +2063,7 @@ void run(const Config& config) {
         }
 #else
         sycl::queue queue{
-            device, sycl::property::queue::in_order{}};
+            device, fdm::sycl_in_order_queue_properties()};
         for (int i = 0; i < static_cast<int>(blocks.size()); ++i) {
             try {
                 results[i] = probe_sycl_block(queue, config, blocks[i]);

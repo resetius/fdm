@@ -24,6 +24,7 @@
 
 // ── SYCL + simulation ─────────────────────────────────────────────────────────
 #include "ns_cube_sycl.h"
+#include "sycl_queue_properties.h"
 
 // ── Standard ──────────────────────────────────────────────────────────────────
 #include <cmath>
@@ -106,7 +107,7 @@ struct Demo {
                     if (dev.is_gpu()) return dev;
             return sycl::device{sycl::cpu_selector_v};
         }(),
-        sycl::property::queue::in_order{}};
+        fdm::sycl_in_order_queue_properties()};
 
     fdm::NSCubeSycl<float> sim;
 

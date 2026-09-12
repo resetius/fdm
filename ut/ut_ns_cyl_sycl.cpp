@@ -22,6 +22,7 @@
 #include "ns_cyl_spectral_modes.h"
 #include "ns_cyl_sycl.h"
 #include "ns_cyl_sycl_task.h"
+#include "sycl_queue_properties.h"
 
 extern "C" {
 #include <cmocka.h>
@@ -1219,7 +1220,15 @@ int main() {
     // destroyed after AdaptiveCpp's lazily-created async error list on macOS;
     // queue::~queue() then tries to lock the already-destroyed error mutex.
     sycl::queue owned_queue{
-        select_test_device(), sycl::property::queue::in_order{}};
+        select_test_device(), fdm::sycl_in_order_queue_properties()};
+#if defined(__ACPP__) || defined(ACPP_EXT_COARSE_GRAINED_EVENTS)
+    if (!owned_queue.has_property<
+            sycl::property::queue::AdaptiveCpp_coarse_grained_events>()) {
+        std::fprintf(stderr,
+                     "AdaptiveCpp coarse-grained queue property is missing\n");
+        return 2;
+    }
+#endif
     test_queue = &owned_queue;
 
     const CMUnitTest tests[] = {
