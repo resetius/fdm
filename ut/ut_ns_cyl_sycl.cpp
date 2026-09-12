@@ -32,18 +32,17 @@ constexpr int kNr = 8, kNz = 8, kNphi = 8;
 constexpr float kR0 = 1.0f, kR = 2.0f, kLz = float(2*M_PI);
 constexpr float kU0 = 1.0f, kRe = 10.0f, kDt = 1e-3f;
 
-// Same device choice as the demo: the real deployment path is the GPU, and
-// Metal has no fp64, so the kernels are exercised in float.
+sycl::queue* test_queue = nullptr;
+
+sycl::device select_test_device() {
+    for (auto& platform : sycl::platform::get_platforms())
+        for (auto& device : platform.get_devices())
+            if (device.is_gpu()) return device;
+    return sycl::device{sycl::cpu_selector_v};
+}
+
 sycl::queue& queue() {
-    static sycl::queue q{
-        []() {
-            for (auto& platform : sycl::platform::get_platforms())
-                for (auto& device : platform.get_devices())
-                    if (device.is_gpu()) return device;
-            return sycl::device{sycl::cpu_selector_v};
-        }(),
-        sycl::property::queue::in_order{}};
-    return q;
+    return *test_queue;
 }
 
 // A z-dependent, azimuthally varying state with zero radial velocity on both
@@ -1080,6 +1079,13 @@ void test_sycl_radial_pressure_boundary_uses_new_time_level(void**) {
 } // namespace
 
 int main() {
+    // Keep the shared queue local to main.  A function-local static queue is
+    // destroyed after AdaptiveCpp's lazily-created async error list on macOS;
+    // queue::~queue() then tries to lock the already-destroyed error mutex.
+    sycl::queue owned_queue{
+        select_test_device(), sycl::property::queue::in_order{}};
+    test_queue = &owned_queue;
+
     const CMUnitTest tests[] = {
         cmocka_unit_test(test_sycl_register_rfft_matches_direct_transform),
         cmocka_unit_test(test_sycl_poisson_matches_cpu_float_reference),
@@ -1099,5 +1105,7 @@ int main() {
         cmocka_unit_test(
             test_sycl_radial_pressure_boundary_uses_new_time_level),
     };
-    return cmocka_run_group_tests(tests, nullptr, nullptr);
+    const int result = cmocka_run_group_tests(tests, nullptr, nullptr);
+    test_queue = nullptr;
+    return result;
 }
