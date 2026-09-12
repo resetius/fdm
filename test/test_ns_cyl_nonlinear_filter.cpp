@@ -38,7 +38,7 @@
 // builtins header, the same order the sycl demo uses.
 #ifdef FDM_HAVE_SYCL
 #include <sycl/sycl.hpp>
-#include "ns_cyl_sycl.h"
+#include "ns_cyl_sycl_task.h"
 #endif
 
 #include "config.h"
@@ -54,32 +54,6 @@ template<typename T>
 using Task = fdm::NSCyl<T, false, fdm::tensor_flag::periodic>;
 
 #ifdef FDM_HAVE_SYCL
-// Presents NSCylSycl's USM fields the way NSCylStateLayout reads them --
-// field[i][k][j] -- plus the flat (vec, size) pair clear_state fills.
-template<typename T>
-struct SyclField {
-    fdm::CylAcc<T> acc;
-    T* vec = nullptr;
-    int size = 0;
-
-    struct Row {
-        fdm::CylAcc<T> acc;
-        int i, k;
-        T& operator[](int j) const { return acc(i, k, j); }
-    };
-    struct Plane {
-        fdm::CylAcc<T> acc;
-        int i;
-        Row operator[](int k) const { return {acc, i, k}; }
-    };
-    Plane operator[](int i) const { return {acc, i}; }
-};
-
-template<typename T>
-SyclField<T> sycl_field(fdm::CylAcc<T> acc, int nphi, int nz, int radial) {
-    return {acc, acc.ptr, nphi*nz*radial};
-}
-
 sycl::queue* sycl_queue_instance = nullptr;
 
 sycl::device select_sycl_device() {
@@ -95,41 +69,12 @@ sycl::queue& sycl_queue() {
     return *sycl_queue_instance;
 }
 
-// Same surface as Task<T> for what the layout and the branch loop touch,
-// but step() runs on the device.
 template<typename T>
-class SyclTask {
+class SyclTask : public fdm::NSCylSyclTask<T> {
 public:
     explicit SyclTask(const Config& config)
-        : nr(config.get("ns", "nr", 32))
-        , nz(config.get("ns", "nz", 31))
-        , nphi(config.get("ns", "nphi", 32))
-        , dt(config.get("ns", "dt", 0.001))
-        , ns_(sycl_queue(), nr, nz, nphi,
-              T(config.get("ns", "r", M_PI/2)),
-              T(config.get("ns", "R", M_PI)),
-              T(config.get("ns", "h2", 10.0)-config.get("ns", "h1", 0.0)),
-              T(config.get("ns", "u0", 1.0)),
-              T(config.get("ns", "Re", 1.0)),
-              T(dt))
-        , u(sycl_field(ns_.ua(), nphi, nz, nr+3))
-        , v(sycl_field(ns_.va(), nphi, nz, nr+2))
-        , w(sycl_field(ns_.wa(), nphi, nz, nr+2))
-        , p(sycl_field(ns_.pa(), nphi, nz, nr+2))
+        : fdm::NSCylSyclTask<T>(sycl_queue(), config)
     { }
-
-    void step() { ns_.step(); }
-    void wait() { sycl_queue().wait(); }
-    void apply_boundary_conditions() { ns_.apply_boundary_conditions(); }
-
-    const int nr, nz, nphi;
-    const double dt;
-
-private:
-    fdm::NSCylSycl<T> ns_;
-
-public:
-    SyclField<T> u, v, w, p;
 };
 #endif
 template<typename T>

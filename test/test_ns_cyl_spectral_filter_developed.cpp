@@ -7,7 +7,13 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
+
+#ifdef FDM_NS_CYL_SPECTRAL_FILTER_SYCL
+#include <sycl/sycl.hpp>
+#include "ns_cyl_sycl_task.h"
+#endif
 
 #include "config.h"
 #include "ns_cyl.h"
@@ -24,7 +30,31 @@ using T = float;
 #else
 using T = double;
 #endif
+
+#ifdef FDM_NS_CYL_SPECTRAL_FILTER_SYCL
+static_assert(std::is_same_v<T, float>);
+
+sycl::queue* sycl_queue_instance = nullptr;
+
+sycl::device select_sycl_device() {
+    for (const auto& platform : sycl::platform::get_platforms()) {
+        for (const auto& device : platform.get_devices()) {
+            if (device.is_gpu()) { return device; }
+        }
+    }
+    return sycl::device{sycl::cpu_selector_v};
+}
+
+class Task : public fdm::NSCylSyclTask<T> {
+public:
+    explicit Task(const Config& config)
+        : fdm::NSCylSyclTask<T>(*sycl_queue_instance, config)
+    { }
+};
+#else
 using Task = fdm::NSCyl<T, true, fdm::tensor_flag::periodic>;
+#endif
+
 using Layout = fdm::NSCylStateLayout<T>;
 using Projector = fdm::NSCylSpectralProjector<T>;
 using Filter = fdm::NSCylSpectralFilter<T>;
@@ -332,6 +362,8 @@ int run(const Config& config) {
         "developed", "checkpoint_output", std::string());
     const std::string checkpoint_input = config.get(
         "developed", "checkpoint_input", std::string());
+    const std::string checkpoint_datatype = config.get(
+        "developed", "checkpoint_datatype", std::string("native"));
     const std::string csv_output = config.get(
         "developed", "output", "ns_cyl_spectral_filter_developed.csv");
     const double seed_norm = config.get(
@@ -363,7 +395,8 @@ int run(const Config& config) {
     const double maximum_periodic_to_once_ratio = config.get(
         "developed", "maximum_periodic_to_once_ratio", 1e-8);
     if (spectrum_input.empty() || checkpoint_output.empty()
-        || !(seed_norm > 0) || develop_steps <= 0
+        || !(seed_norm > 0) || develop_steps < 0
+        || (checkpoint_input.empty() && develop_steps == 0)
         || develop_log_interval <= 0 || branch_steps <= 0
         || branch_log_interval <= 0 || periodic_interval <= 0
         || branch_steps%periodic_interval != 0
@@ -397,9 +430,25 @@ int run(const Config& config) {
     } else {
         std::vector<T> initial_state;
         fdm::NSCylCheckpointMetadata initial_metadata;
-        fdm::NSCylCheckpointStorage(checkpoint_input).load(
-            initial_state, initial_metadata,
-            fdm::make_ns_cyl_checkpoint_metadata<T>(config, 0));
+        const fdm::NSCylCheckpointStorage storage(checkpoint_input);
+        if (checkpoint_datatype == "native") {
+            storage.load(
+                initial_state, initial_metadata,
+                fdm::make_ns_cyl_checkpoint_metadata<T>(config, 0));
+        } else if constexpr (std::is_same_v<T, float>) {
+            if (checkpoint_datatype != "double") {
+                throw std::invalid_argument(
+                    "developed:checkpoint_datatype must be native or double");
+            }
+            std::vector<double> double_state;
+            storage.load(
+                double_state, initial_metadata,
+                fdm::make_ns_cyl_checkpoint_metadata<double>(config, 0));
+            initial_state.assign(double_state.begin(), double_state.end());
+        } else {
+            throw std::invalid_argument(
+                "developed:checkpoint_datatype must be native for double");
+        }
         layout.unpack(state, initial_state.data());
         state.time_index = initial_metadata.time_index;
     }
@@ -512,10 +561,13 @@ int run(const Config& config) {
         periodic.maximum_boundary_residual});
     const double periodic_to_once = periodic.final.unstable_norm/std::max(
         once.final.unstable_norm, std::numeric_limits<double>::min());
+    const bool development_rate_accepted = develop_steps == 0
+        || (std::isfinite(developed.decay_rate)
+            && std::abs(developed.decay_rate)
+                <= maximum_final_decay_rate);
     const bool passed = std::isfinite(remainder_fraction)
         && remainder_fraction >= minimum_remainder_fraction
-        && std::isfinite(developed.decay_rate)
-        && std::abs(developed.decay_rate) <= maximum_final_decay_rate
+        && development_rate_accepted
         && developed.taylor_norm >= minimum_taylor_norm
         && once.immediate_ratio <= filter_tolerance
         && periodic.immediate_ratio <= filter_tolerance
@@ -550,7 +602,20 @@ int main(int argc, char** argv) {
     config.open(config_name);
     config.rewrite(argc, argv);
     try {
+#ifdef FDM_NS_CYL_SPECTRAL_FILTER_SYCL
+        // Keep the queue local so it is destroyed before AdaptiveCpp's
+        // process-wide asynchronous error list.
+        sycl::queue owned_queue{
+            select_sycl_device(), sycl::property::queue::in_order{}};
+        sycl_queue_instance = &owned_queue;
+        std::printf("SYCL device: %s\n", owned_queue.get_device()
+            .get_info<sycl::info::device::name>().c_str());
+        const int result = run(config);
+        sycl_queue_instance = nullptr;
+        return result;
+#else
         return run(config);
+#endif
     } catch (const std::exception& error) {
         std::fprintf(stderr, "developed spectral-filter experiment failed: %s\n",
                      error.what());
