@@ -597,10 +597,14 @@ BoundaryEvolutionResult run_boundary_evolution(
     const std::vector<T>& reference, const std::vector<T>& initial,
     int initial_time_index, int steps, int log_interval,
     int feedback_interval, double maximum_velocity_norm,
+    double boundary_control_rms_limit,
     const std::string& output_name,
     const std::string& fourier_output_name) {
     if (steps < 0 || log_interval <= 0 || feedback_interval <= 0
-        || !(maximum_velocity_norm > 0) || output_name.empty()) {
+        || !(maximum_velocity_norm > 0)
+        || !(boundary_control_rms_limit >= 0)
+        || !std::isfinite(boundary_control_rms_limit)
+        || output_name.empty()) {
         throw std::invalid_argument("invalid boundary evolution settings");
     }
 
@@ -621,7 +625,8 @@ BoundaryEvolutionResult run_boundary_evolution(
               "maximum_divergence,boundary_rms,boundary_maximum,"
               "supported_correction_norm,gluing_correction_velocity_norm,"
               "nonlinear_S_applications,controlled_block_velocity_norm,"
-              "other_block_velocity_norm\n";
+              "other_block_velocity_norm,unconstrained_boundary_rms,"
+              "constraint_multiplier\n";
     output << std::scientific << std::setprecision(16);
 
     std::unique_ptr<std::ofstream> fourier_output;
@@ -649,6 +654,8 @@ BoundaryEvolutionResult run_boundary_evolution(
     applied_control.axial.assign(boundary_size, T(0));
     applied_control.azimuthal.assign(boundary_size, T(0));
     auto control = applied_control;
+    double unconstrained_boundary_rms = 0;
+    double boundary_constraint_multiplier = 0;
     fdm::NSCylExtendedFilterDiagnostics controlled_modal;
     double target_coordinate_norm = 0;
     double response_residual_norm = 0;
@@ -673,10 +680,16 @@ BoundaryEvolutionResult run_boundary_evolution(
                 controlled_modal = filter.apply(extended);
                 const auto physical = physical_lqr->control(
                     q, applied_control.radial, applied_control.axial,
-                    applied_control.azimuthal);
+                    applied_control.azimuthal,
+                    boundary_control_rms_limit > 0
+                        ? boundary_control_rms_limit
+                        : std::numeric_limits<double>::infinity());
                 control.radial = physical.radial;
                 control.axial = physical.axial;
                 control.azimuthal = physical.azimuthal;
+                unconstrained_boundary_rms = physical.unconstrained_rms;
+                boundary_constraint_multiplier =
+                    physical.constraint_multiplier;
                 controlled_modal.predicted_lqr_cost_before =
                     physical.predicted_cost_before;
                 controlled_modal.predicted_lqr_cost_after =
@@ -764,7 +777,7 @@ BoundaryEvolutionResult run_boundary_evolution(
                    << ',' << unorm
                    << ',' << maximum_divergence(uncontrolled)
                    << ",0,0,0,0,0," << uncontrolled_block_norm << ','
-                   << uncontrolled_other_norm << '\n';
+                   << uncontrolled_other_norm << ",0,0\n";
 
             auto q_controlled = perturbation(controlled, layout, reference);
             if (!feedback) {
@@ -814,7 +827,11 @@ BoundaryEvolutionResult run_boundary_evolution(
                    << (nonlinear_method == nullptr
                            ? 0 : nonlinear_method->applications())
                    << ',' << controlled_block_norm << ','
-                   << controlled_other_norm
+                   << controlled_other_norm << ','
+                   << (physical_lqr == nullptr
+                           ? 0 : unconstrained_boundary_rms) << ','
+                   << (physical_lqr == nullptr
+                           ? 0 : boundary_constraint_multiplier)
                    << '\n';
 
             if (!std::isfinite(unorm) || !std::isfinite(cnorm)
@@ -1199,6 +1216,8 @@ int run(const Config& config) {
         "extended", "reorthogonalization_interval", 250);
     const double maximum_velocity_norm = config.get(
         "extended", "maximum_velocity_norm", 1e8);
+    const double boundary_control_rms_limit = config.get(
+        "extended", "boundary_control_rms_limit", 0.0);
     const std::string evolution_output = config.get(
         "extended", "evolution_output", std::string());
     const std::string evolution_checkpoint_output = config.get(
@@ -1237,6 +1256,11 @@ int run(const Config& config) {
         || !std::isfinite(initial_perturbation_scale)) {
         throw std::invalid_argument(
             "extended initial_perturbation_scale must be positive");
+    }
+    if (!(boundary_control_rms_limit >= 0)
+        || !std::isfinite(boundary_control_rms_limit)) {
+        throw std::invalid_argument(
+            "extended boundary_control_rms_limit must be nonnegative");
     }
     if (control_law == "finite_horizon_lqr"
         && boundary_evolution_steps > 0
@@ -1406,6 +1430,7 @@ int run(const Config& config) {
                 original_perturbation, checkpoint_metadata.time_index,
                 boundary_evolution_steps, boundary_log_interval,
                 boundary_feedback_interval, maximum_velocity_norm,
+                boundary_control_rms_limit,
                 boundary_evolution_output, boundary_fourier_output);
         } else if (boundary_mode == "physical_lqr") {
             if (boundary_nonlinear_iterations >= 0) {
@@ -1476,6 +1501,7 @@ int run(const Config& config) {
                 original_perturbation, checkpoint_metadata.time_index,
                 boundary_evolution_steps, boundary_log_interval,
                 boundary_feedback_interval, maximum_velocity_norm,
+                boundary_control_rms_limit,
                 boundary_evolution_output, boundary_fourier_output);
         } else if (boundary_mode == "extended_trace") {
             boundary = run_extended_trace_evolution(
@@ -1542,10 +1568,12 @@ int run(const Config& config) {
                     lqr_control_weight, lqr_ridge);
     }
     if (boundary_mode == "physical_lqr") {
-        std::printf(" physical_boundary_components=%s cached_feedback=%d",
+        std::printf(" physical_boundary_components=%s cached_feedback=%d "
+                    "wall_rms_limit=%.9e",
                     boundary_control_components.c_str(),
                     (boundary_lqr_cache_first_feedback
-                     || !boundary_lqr_closed_loop_output.empty()) ? 1 : 0);
+                     || !boundary_lqr_closed_loop_output.empty()) ? 1 : 0,
+                    boundary_control_rms_limit);
     }
     std::printf("\n");
     std::printf("initial perturbation scale: %.9e\n",

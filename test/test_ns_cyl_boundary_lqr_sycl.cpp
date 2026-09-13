@@ -230,12 +230,17 @@ int run(const Config& config) {
     const double control_weight = config.get(
         "extended", "lqr_control_weight", 0.0);
     const double ridge = config.get("extended", "lqr_ridge", 0.0);
+    const double boundary_control_rms_limit = config.get(
+        "extended", "boundary_control_rms_limit", 0.0);
     const std::string components = config.get(
         "extended", "boundary_control_components",
         std::string("tangential"));
-    if (horizon <= 0 || feedback_interval <= 0) {
+    if (horizon <= 0 || feedback_interval <= 0
+        || !(boundary_control_rms_limit >= 0)
+        || !std::isfinite(boundary_control_rms_limit)) {
         throw std::invalid_argument(
-            "SYCL boundary LQR horizon and feedback interval must be positive");
+            "invalid SYCL boundary LQR horizon, feedback interval, or RMS "
+            "limit");
     }
     const auto gain_metadata =
         fdm::make_ns_cyl_boundary_lqr_gain_metadata<double>(
@@ -334,7 +339,8 @@ int run(const Config& config) {
     }
     output << "branch,step,time,feedback_applied,velocity_norm,"
               "maximum_divergence,boundary_rms,boundary_maximum,"
-              "controlled_block_velocity_norm,other_block_velocity_norm\n"
+              "controlled_block_velocity_norm,other_block_velocity_norm,"
+              "unconstrained_boundary_rms,constraint_multiplier\n"
            << std::scientific << std::setprecision(16);
     std::unique_ptr<std::ofstream> fourier_output;
     std::unique_ptr<fdm::NSCylFourierVelocityEnergy<double>> fourier_energy;
@@ -383,7 +389,10 @@ int run(const Config& config) {
         if (feedback) {
             command = controller->control(
                 controlled_q, applied_radial, applied_axial,
-                applied_azimuthal);
+                applied_azimuthal,
+                boundary_control_rms_limit > 0
+                    ? boundary_control_rms_limit
+                    : std::numeric_limits<double>::infinity());
         }
         if (log) {
             const auto uncontrolled_state = uncontrolled.pack_state();
@@ -409,12 +418,14 @@ int run(const Config& config) {
                    << ",0," << uncontrolled_norm << ','
                    << maximum_divergence(uncontrolled)
                    << ",0,0," << uncontrolled_block << ','
-                   << uncontrolled_other << '\n';
+                   << uncontrolled_other << ",0,0\n";
             output << "boundary," << step << ',' << time << ','
                    << (feedback ? 1 : 0) << ',' << controlled_norm << ','
                    << maximum_divergence(controlled) << ','
                    << command.rms_norm() << ',' << command.maximum_norm()
                    << ',' << controlled_block << ',' << controlled_other
+                   << ',' << command.unconstrained_rms << ','
+                   << command.constraint_multiplier
                    << '\n';
             if (fourier_output) {
                 for (const auto& branch : {
@@ -480,8 +491,10 @@ int run(const Config& config) {
         fdm::NSCylCheckpointStorage(checkpoint_output).save(
             final_state, metadata);
     }
-    std::printf("SYCL boundary evolution complete: steps=%d csv=%s\n",
-                steps, evolution_output.c_str());
+    std::printf("SYCL boundary evolution complete: steps=%d "
+                "wall_rms_limit=%.9e csv=%s\n",
+                steps, boundary_control_rms_limit,
+                evolution_output.c_str());
     return 0;
 }
 

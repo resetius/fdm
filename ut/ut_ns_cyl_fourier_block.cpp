@@ -470,6 +470,247 @@ void test_physical_boundary_lqr_cached_first_gain_matches_condensed(void**) {
     }
 }
 
+void test_physical_boundary_mpc_fixed_multiplier_satisfies_kkt(void**) {
+    Config config = make_config(4, 4, 4);
+    constexpr int m = 1;
+    constexpr int l = 1;
+    constexpr int interval_steps = 2;
+    constexpr double control_weight = 0.25;
+    constexpr double multiplier = 0.7;
+    fdm::NSCylFourierBoundaryLQR<double> controller(
+        config, m, l, 1, interval_steps, control_weight, 0.0);
+    fdm::NSCylFourierBlockNative<double> plant(
+        config, m, l, interval_steps);
+    std::vector<double> state(controller.state_size());
+    std::vector<double> current(controller.boundary_size());
+    std::mt19937 generator(5519);
+    std::uniform_real_distribution<double> distribution(-0.02, 0.02);
+    for (double& value : state) value = distribution(generator);
+    for (double& value : current) value = distribution(generator);
+
+    const auto unconstrained = controller.control(
+        state.data(), current.data());
+    const auto constrained = controller.constrained_first_control(
+        unconstrained, multiplier);
+    assert_true(controller.boundary_norm_squared(constrained)
+                < controller.boundary_norm_squared(unconstrained));
+
+    std::vector<double> image(controller.state_size());
+    auto lagrangian = [&](const std::vector<double>& boundary) {
+        plant.apply_with_outer_boundary(
+            image.data(), state.data(), current.data(), boundary.data());
+        return controller.velocity_inner_product(
+                   image.data(), image.data())
+            +control_weight*controller.boundary_norm_squared(boundary)
+            +multiplier*controller.boundary_norm_squared(boundary);
+    };
+    const double optimum = lagrangian(constrained);
+    const double epsilon = 1e-6;
+    for (int coordinate = 0; coordinate < controller.boundary_size();
+         ++coordinate) {
+        auto plus = constrained;
+        auto minus = constrained;
+        plus[coordinate] += epsilon;
+        minus[coordinate] -= epsilon;
+        assert_true(lagrangian(plus) >= optimum-2e-12);
+        assert_true(lagrangian(minus) >= optimum-2e-12);
+    }
+}
+
+void test_physical_boundary_mpc_schur_matches_full_horizon(void**) {
+    Config config = make_config(4, 4, 4);
+    constexpr int m = 0;
+    constexpr int l = 0;
+    constexpr int horizon = 3;
+    constexpr int interval_steps = 1;
+    constexpr int inputs = 2;
+    constexpr double control_weight = 0.1;
+    constexpr double multiplier = 0.35;
+    fdm::NSCylFourierBoundaryLQR<double> controller(
+        config, m, l, horizon, interval_steps,
+        control_weight, 1e-10, "tangential");
+    fdm::NSCylFourierBlockNative<double> plant(
+        config, m, l, interval_steps);
+    assert_int_equal(controller.input_size(), inputs);
+
+    std::vector<double> initial(controller.state_size());
+    std::vector<double> current(controller.boundary_size());
+    std::mt19937 generator(5520);
+    std::uniform_real_distribution<double> distribution(-0.02, 0.02);
+    for (double& value : initial) value = distribution(generator);
+    for (double& value : current) value = distribution(generator);
+
+    const auto unconstrained = controller.control(
+        initial.data(), current.data());
+    const auto constrained = controller.constrained_first_control(
+        unconstrained, multiplier);
+
+    const std::vector<int> input_indices = {1, 2};
+    std::vector<double> zero_state(controller.state_size(), 0.0);
+    std::vector<double> zero_boundary(controller.boundary_size(), 0.0);
+    std::vector<std::vector<double>> responses(
+        horizon*inputs, std::vector<double>(controller.state_size()));
+    for (int input = 0; input < inputs; ++input) {
+        auto unit = zero_boundary;
+        unit[input_indices[input]] = 1;
+        plant.apply_with_outer_boundary(
+            responses[input].data(), zero_state.data(),
+            zero_boundary.data(), unit.data());
+        for (int lag = 2; lag <= horizon; ++lag) {
+            plant.apply_with_outer_boundary(
+                responses[(lag-1)*inputs+input].data(),
+                responses[(lag-2)*inputs+input].data(),
+                lag == 2 ? unit.data() : zero_boundary.data(),
+                zero_boundary.data());
+        }
+    }
+
+    std::vector<std::vector<double>> free_states(
+        horizon, std::vector<double>(controller.state_size()));
+    auto free = initial;
+    auto old_boundary = current;
+    for (int sample = 0; sample < horizon; ++sample) {
+        plant.apply_with_outer_boundary(
+            free_states[sample].data(), free.data(), old_boundary.data(),
+            zero_boundary.data());
+        free = free_states[sample];
+        old_boundary = zero_boundary;
+    }
+
+    auto gram = [&](int first, int second) {
+        auto first_unit = zero_boundary;
+        auto second_unit = zero_boundary;
+        first_unit[input_indices[first]] = 1;
+        second_unit[input_indices[second]] = 1;
+        if (first == second) {
+            return controller.boundary_norm_squared(first_unit);
+        }
+        auto sum = first_unit;
+        sum[input_indices[second]] = 1;
+        return 0.5*(controller.boundary_norm_squared(sum)
+                    -controller.boundary_norm_squared(first_unit)
+                    -controller.boundary_norm_squared(second_unit));
+    };
+
+    const int problem_size = horizon*inputs;
+    std::vector<double> hessian(problem_size*problem_size, 0.0);
+    std::vector<double> linear(problem_size, 0.0);
+    for (int first_stage = 0; first_stage < horizon; ++first_stage) {
+        for (int first_input = 0; first_input < inputs; ++first_input) {
+            const int row = first_stage*inputs+first_input;
+            for (int sample = first_stage; sample < horizon; ++sample) {
+                linear[row] += controller.velocity_inner_product(
+                    responses[(sample-first_stage)*inputs+first_input]
+                        .data(),
+                    free_states[sample].data());
+            }
+            for (int second_stage = 0; second_stage < horizon;
+                 ++second_stage) {
+                for (int second_input = 0; second_input < inputs;
+                     ++second_input) {
+                    const int column = second_stage*inputs+second_input;
+                    for (int sample = std::max(
+                             first_stage, second_stage);
+                         sample < horizon; ++sample) {
+                        hessian[row*problem_size+column] +=
+                            controller.velocity_inner_product(
+                                responses[(sample-first_stage)*inputs
+                                          +first_input].data(),
+                                responses[(sample-second_stage)*inputs
+                                          +second_input].data());
+                    }
+                    if (first_stage == second_stage) {
+                        hessian[row*problem_size+column] +=
+                            control_weight*gram(first_input, second_input);
+                    }
+                }
+            }
+        }
+    }
+    long double diagonal_sum = 0;
+    for (int row = 0; row < problem_size; ++row) {
+        diagonal_sum += std::abs(hessian[row*problem_size+row]);
+    }
+    const double ridge_scale = static_cast<double>(
+        diagonal_sum/problem_size);
+    for (int row = 0; row < problem_size; ++row) {
+        hessian[row*problem_size+row] += 1e-10*ridge_scale;
+    }
+    for (int row = 0; row < inputs; ++row) {
+        for (int column = 0; column < inputs; ++column) {
+            hessian[row*problem_size+column] +=
+                multiplier*gram(row, column);
+        }
+    }
+    std::vector<double> inverse(hessian.size());
+    assert_true(fdm::inverse_general_matrix(
+                    inverse.data(), hessian.data(), problem_size) > 0);
+    std::vector<double> full_plan(problem_size, 0.0);
+    for (int row = 0; row < problem_size; ++row) {
+        for (int column = 0; column < problem_size; ++column) {
+            full_plan[row] -= inverse[row*problem_size+column]
+                *linear[column];
+        }
+    }
+    for (int input = 0; input < inputs; ++input) {
+        assert_true(std::abs(
+            constrained[input_indices[input]]-full_plan[input]) < 2e-11);
+    }
+}
+
+void test_physical_boundary_mpc_enforces_global_rms_limit(void**) {
+    Config config = make_config(4, 4, 4);
+    fdm::NSCylBoundaryLQR<double> controller(
+        config, {{0, 1}, {1, 1}}, 2, 2, 0.01, 1e-10,
+        "tangential", true);
+    const fdm::NSCylStateLayout<double> layout(4, 4, 4);
+    std::vector<double> state(layout.state_size);
+    std::vector<double> radial(16), axial(16), azimuthal(16);
+    std::mt19937 generator(5521);
+    std::uniform_real_distribution<double> distribution(-0.02, 0.02);
+    for (double& value : state) value = distribution(generator);
+    for (double& value : radial) value = distribution(generator);
+    for (double& value : axial) value = distribution(generator);
+    for (double& value : azimuthal) value = distribution(generator);
+
+    const auto unconstrained = controller.control(
+        state, radial, axial, azimuthal);
+    const double limit = 0.4*unconstrained.rms_norm();
+    const auto constrained = controller.control(
+        state, radial, axial, azimuthal, limit);
+    assert_true(constrained.constraint_multiplier > 0);
+    assert_true(std::abs(constrained.unconstrained_rms
+                         -unconstrained.rms_norm()) < 2e-13);
+    assert_true(std::abs(constrained.rms_norm()-limit)
+                < 2e-11*std::max(1.0, limit));
+
+    const double scale = limit/unconstrained.rms_norm();
+    double difference_from_uniform_scaling = 0;
+    for (std::size_t index = 0; index < radial.size(); ++index) {
+        difference_from_uniform_scaling = std::max(
+            difference_from_uniform_scaling,
+            std::abs(constrained.axial[index]
+                     -scale*unconstrained.axial[index]));
+        difference_from_uniform_scaling = std::max(
+            difference_from_uniform_scaling,
+            std::abs(constrained.azimuthal[index]
+                     -scale*unconstrained.azimuthal[index]));
+    }
+    assert_true(difference_from_uniform_scaling > 1e-8);
+
+    const auto inactive = controller.control(
+        state, radial, axial, azimuthal, 2*unconstrained.rms_norm());
+    assert_float_equal(inactive.constraint_multiplier, 0.0, 0.0);
+    for (std::size_t index = 0; index < radial.size(); ++index) {
+        assert_float_equal(
+            inactive.radial[index], unconstrained.radial[index], 0.0);
+        assert_float_equal(
+            inactive.axial[index], unconstrained.axial[index], 0.0);
+        assert_float_equal(
+            inactive.azimuthal[index], unconstrained.azimuthal[index], 0.0);
+    }
+}
+
 void test_physical_boundary_lqr_global_packing_matches_block(void**) {
     Config config = make_config(4, 4, 4);
     constexpr int m = 1;
@@ -1365,6 +1606,12 @@ int main() {
             test_physical_boundary_lqr_minimizes_one_interval_cost),
         cmocka_unit_test(
             test_physical_boundary_lqr_cached_first_gain_matches_condensed),
+        cmocka_unit_test(
+            test_physical_boundary_mpc_fixed_multiplier_satisfies_kkt),
+        cmocka_unit_test(
+            test_physical_boundary_mpc_schur_matches_full_horizon),
+        cmocka_unit_test(
+            test_physical_boundary_mpc_enforces_global_rms_limit),
         cmocka_unit_test(
             test_physical_boundary_lqr_global_packing_matches_block),
         cmocka_unit_test(test_fourier_velocity_energy_satisfies_parseval),

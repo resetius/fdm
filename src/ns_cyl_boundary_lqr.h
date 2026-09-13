@@ -42,6 +42,10 @@ struct NSCylBoundaryLQRGainBlock {
     int m = -1;
     int l = -1;
     std::vector<T> values;
+    // Schur complement of the condensed horizon Hessian for u_0.  It is
+    // small (input_size squared) and is needed only when the first wall
+    // command is constrained.
+    std::vector<T> reduced_hessian;
 };
 
 template<typename T>
@@ -58,6 +62,8 @@ struct NSCylBoundaryLQRResult {
     std::vector<T> azimuthal;
     double predicted_cost_before = 0;
     double predicted_cost_after = 0;
+    double unconstrained_rms = 0;
+    double constraint_multiplier = 0;
     std::vector<NSCylBoundaryLQRBlockDiagnostics<T>> blocks;
 
     double rms_norm() const {
@@ -121,6 +127,7 @@ public:
         select_inputs(components);
         build_impulse_responses();
         build_inverse_hessian();
+        build_reduced_hessian();
     }
 
     // Restore a previously materialized K_0 without rebuilding the horizon
@@ -150,6 +157,15 @@ public:
                 +std::to_string(l())+")");
         }
         first_feedback_gain_ = gain.values;
+        if (!gain.reduced_hessian.empty()
+            && gain.reduced_hessian.size()
+                != static_cast<std::size_t>(input_size())*input_size()) {
+            throw std::runtime_error(
+                "physical boundary LQR cached reduced Hessian has the wrong "
+                "size in Fourier block (m="+std::to_string(m())+",l="
+                +std::to_string(l())+")");
+        }
+        reduced_hessian_ = gain.reduced_hessian;
     }
 
     int m() const { return dynamics_.m(); }
@@ -172,7 +188,129 @@ public:
             throw std::logic_error(
                 "physical boundary LQR first-feedback gain is not cached");
         }
-        return {m(), l(), first_feedback_gain_};
+        return {m(), l(), first_feedback_gain_, reduced_hessian_};
+    }
+
+    bool constrained_control_available() const {
+        return reduced_hessian_.size()
+            == static_cast<std::size_t>(input_size())*input_size();
+    }
+
+    double boundary_norm_squared(const std::vector<T>& boundary) const {
+        if (boundary.size() != static_cast<std::size_t>(boundary_size())) {
+            throw std::invalid_argument(
+                "physical boundary LQR command has the wrong size");
+        }
+        long double result = 0;
+        for (int first = 0; first < input_size(); ++first) {
+            for (int second = 0; second < input_size(); ++second) {
+                result += static_cast<long double>(
+                    boundary[input_indices_[first]])
+                    *boundary_inner_product(first, second)
+                    *boundary[input_indices_[second]];
+            }
+        }
+        const double value = static_cast<double>(result);
+        if (!std::isfinite(value)) {
+            throw std::runtime_error(
+                "non-finite physical boundary LQR command norm");
+        }
+        return std::max(0.0, value);
+    }
+
+    // Minimize the reduced horizon objective for a fixed multiplier of the
+    // first-command wall-energy constraint:
+    //
+    //   (S+lambda G) u = S u_unconstrained.
+    //
+    // S is the Schur complement after all future controls were eliminated;
+    // G is the exact packed-Fourier wall RMS Gram matrix.
+    std::vector<T> constrained_first_control(
+        const std::vector<T>& unconstrained, double multiplier) const {
+        if (unconstrained.size()
+            != static_cast<std::size_t>(boundary_size())) {
+            throw std::invalid_argument(
+                "physical boundary LQR command has the wrong size");
+        }
+        if (!(multiplier >= 0) || !std::isfinite(multiplier)) {
+            throw std::invalid_argument(
+                "invalid physical boundary MPC constraint multiplier");
+        }
+        if (multiplier == 0) {
+            return unconstrained;
+        }
+        if (!constrained_control_available()) {
+            throw std::runtime_error(
+                "physical boundary LQR gain lacks the reduced Hessian "
+                "required by constrained MPC");
+        }
+
+        const int inputs = input_size();
+        std::vector<T> matrix = reduced_hessian_;
+        std::vector<T> right(inputs, T(0));
+        for (int row = 0; row < inputs; ++row) {
+            for (int column = 0; column < inputs; ++column) {
+                right[row] += reduced_hessian_[row*inputs+column]
+                    *unconstrained[input_indices_[column]];
+                matrix[row*inputs+column] += static_cast<T>(
+                    multiplier*boundary_inner_product(row, column));
+            }
+        }
+        std::vector<T> inverse(matrix.size());
+        const T pivot = inverse_general_matrix(
+            inverse.data(), matrix.data(), inputs);
+        if (!(pivot > T(0))) {
+            throw std::runtime_error(
+                "singular constrained physical boundary MPC system in "
+                "Fourier block (m="+std::to_string(m())+",l="
+                +std::to_string(l())+")");
+        }
+        std::vector<T> result(boundary_size(), T(0));
+        for (int row = 0; row < inputs; ++row) {
+            long double value = 0;
+            for (int column = 0; column < inputs; ++column) {
+                value += static_cast<long double>(
+                    inverse[row*inputs+column])*right[column];
+            }
+            result[input_indices_[row]] = static_cast<T>(value);
+        }
+        return result;
+    }
+
+    double reduced_cost_increase(
+        const std::vector<T>& unconstrained,
+        const std::vector<T>& constrained) const {
+        if (unconstrained.size()
+                != static_cast<std::size_t>(boundary_size())
+            || constrained.size()
+                != static_cast<std::size_t>(boundary_size())) {
+            throw std::invalid_argument(
+                "physical boundary LQR command has the wrong size");
+        }
+        if (!constrained_control_available()) {
+            throw std::runtime_error(
+                "physical boundary LQR gain lacks the reduced Hessian "
+                "required by constrained MPC");
+        }
+        const int inputs = input_size();
+        long double result = 0;
+        for (int row = 0; row < inputs; ++row) {
+            const long double row_delta = constrained[input_indices_[row]]
+                -unconstrained[input_indices_[row]];
+            for (int column = 0; column < inputs; ++column) {
+                const long double column_delta =
+                    constrained[input_indices_[column]]
+                    -unconstrained[input_indices_[column]];
+                result += row_delta*reduced_hessian_[row*inputs+column]
+                    *column_delta;
+            }
+        }
+        const double value = static_cast<double>(result);
+        if (!std::isfinite(value)) {
+            throw std::runtime_error(
+                "non-finite constrained physical boundary MPC cost");
+        }
+        return std::max(0.0, value);
     }
 
     // Materialize the sampled free transition once and use its transpose to
@@ -413,6 +551,9 @@ private:
     std::vector<int> input_indices_;
     std::vector<std::vector<T>> impulse_responses_;
     std::vector<T> inverse_hessian_;
+    // Schur complement for the first command after future commands have
+    // been eliminated from the condensed horizon problem.
+    std::vector<T> reduced_hessian_;
     // Top state rows of F for z=(q,b_old), stored column-major.
     std::vector<T> free_transition_;
     // K_0 in u_0=K_0 z, stored row-major by enabled wall input.
@@ -582,6 +723,41 @@ private:
             throw std::runtime_error(
                 "singular physical boundary LQR problem in Fourier block (m="
                 +std::to_string(m())+",l="+std::to_string(l())+")");
+        }
+    }
+
+    void build_reduced_hessian() {
+        const int inputs = input_size();
+        const int problem_size = horizon_*inputs;
+        // The leading block of H^{-1} is S^{-1}, where S is the Schur
+        // complement obtained after eliminating u_1,...,u_{H-1}.
+        std::vector<T> inverse_reduced(
+            static_cast<std::size_t>(inputs)*inputs);
+        for (int row = 0; row < inputs; ++row) {
+            for (int column = 0; column < inputs; ++column) {
+                inverse_reduced[row*inputs+column] = inverse_hessian_[
+                    static_cast<std::size_t>(row)*problem_size+column];
+            }
+        }
+        reduced_hessian_.resize(inverse_reduced.size());
+        const T pivot = inverse_general_matrix(
+            reduced_hessian_.data(), inverse_reduced.data(), inputs);
+        if (!(pivot > T(0))) {
+            throw std::runtime_error(
+                "singular reduced physical boundary LQR Hessian in Fourier "
+                "block (m="+std::to_string(m())+",l="
+                +std::to_string(l())+")");
+        }
+        // Roundoff in two general inversions can leave a tiny skew part.
+        // The mathematical Schur complement is symmetric.
+        for (int row = 0; row < inputs; ++row) {
+            for (int column = row+1; column < inputs; ++column) {
+                const T value = T(0.5)*(
+                    reduced_hessian_[row*inputs+column]
+                    +reduced_hessian_[column*inputs+row]);
+                reduced_hessian_[row*inputs+column] = value;
+                reduced_hessian_[column*inputs+row] = value;
+            }
         }
     }
 
@@ -831,10 +1007,16 @@ public:
     Result control(const std::vector<T>& state,
                    const std::vector<T>& current_radial,
                    const std::vector<T>& current_axial,
-                   const std::vector<T>& current_azimuthal) {
+                   const std::vector<T>& current_azimuthal,
+                   double maximum_rms =
+                       std::numeric_limits<double>::infinity()) {
         if (static_cast<int>(state.size()) != layout_.state_size) {
             throw std::invalid_argument(
                 "physical boundary LQR state has the wrong size");
+        }
+        if (!(maximum_rms > 0) || std::isnan(maximum_rms)) {
+            throw std::invalid_argument(
+                "physical boundary MPC RMS limit must be positive");
         }
         const std::size_t plane_size = fft_.size();
         if (current_radial.size() != plane_size
@@ -855,20 +1037,113 @@ public:
         Result result;
         result.nphi = nphi_;
         result.nz = nz_;
+        std::vector<std::vector<T>> commands;
+        commands.reserve(controllers_.size());
+        long double unconstrained_norm_squared = 0;
         for (auto& controller : controllers_) {
             std::vector<T> block_state = gather_state(*controller);
             std::vector<T> block_boundary = gather_boundary(
                 *controller, boundary_coefficients);
             typename NSCylFourierBoundaryLQR<T>::BlockDiagnostics diagnostic;
-            const auto next = controller->first_feedback_gain_cached()
+            auto next = controller->first_feedback_gain_cached()
                 ? controller->cached_control(
                     block_state.data(), block_boundary.data(), &diagnostic)
                 : controller->control(
                     block_state.data(), block_boundary.data(), &diagnostic);
-            scatter_boundary(*controller, next, next_coefficients);
-            result.predicted_cost_before += diagnostic.predicted_cost_before;
-            result.predicted_cost_after += diagnostic.predicted_cost_after;
+            unconstrained_norm_squared +=
+                controller->boundary_norm_squared(next);
+            commands.push_back(std::move(next));
             result.blocks.push_back(diagnostic);
+        }
+
+        result.unconstrained_rms = std::sqrt(std::max(
+            0.0, static_cast<double>(unconstrained_norm_squared)));
+        if (std::isfinite(maximum_rms)
+            && result.unconstrained_rms > maximum_rms) {
+            for (const auto& controller : controllers_) {
+                if (!controller->constrained_control_available()) {
+                    throw std::runtime_error(
+                        "physical boundary LQR gain lacks constrained MPC "
+                        "data; rebuild and save the gain file");
+                }
+            }
+            const double limit_squared = maximum_rms*maximum_rms;
+            auto evaluate = [&](double multiplier,
+                                std::vector<std::vector<T>>* output) {
+                long double norm_squared = 0;
+                if (output) {
+                    output->clear();
+                    output->reserve(controllers_.size());
+                }
+                for (std::size_t block = 0; block < controllers_.size();
+                     ++block) {
+                    auto constrained =
+                        controllers_[block]->constrained_first_control(
+                            commands[block], multiplier);
+                    norm_squared += controllers_[block]
+                        ->boundary_norm_squared(constrained);
+                    if (output) {
+                        output->push_back(std::move(constrained));
+                    }
+                }
+                return static_cast<double>(norm_squared);
+            };
+
+            double lower = 0;
+            double upper = 1;
+            double upper_norm_squared = evaluate(upper, nullptr);
+            for (int iteration = 0;
+                 upper_norm_squared > limit_squared && iteration < 1024;
+                 ++iteration) {
+                lower = upper;
+                upper *= 2;
+                if (!std::isfinite(upper)) {
+                    throw std::runtime_error(
+                        "physical boundary MPC multiplier overflow");
+                }
+                upper_norm_squared = evaluate(upper, nullptr);
+            }
+            if (upper_norm_squared > limit_squared) {
+                throw std::runtime_error(
+                    "physical boundary MPC failed to bracket its RMS limit");
+            }
+            for (int iteration = 0; iteration < 64; ++iteration) {
+                const double middle = lower+0.5*(upper-lower);
+                if (evaluate(middle, nullptr) > limit_squared) {
+                    lower = middle;
+                } else {
+                    upper = middle;
+                }
+            }
+
+            std::vector<std::vector<T>> constrained_commands;
+            evaluate(upper, &constrained_commands);
+            for (std::size_t block = 0; block < controllers_.size();
+                 ++block) {
+                auto& diagnostic = result.blocks[block];
+                if (std::isfinite(diagnostic.predicted_cost_after)) {
+                    diagnostic.predicted_cost_after += controllers_[block]
+                        ->reduced_cost_increase(
+                            commands[block], constrained_commands[block]);
+                }
+                long double norm2 = 0;
+                for (T value : constrained_commands[block]) {
+                    norm2 += static_cast<long double>(value)*value;
+                }
+                diagnostic.control_norm = std::sqrt(
+                    static_cast<double>(norm2));
+            }
+            commands = std::move(constrained_commands);
+            result.constraint_multiplier = upper;
+        }
+
+        for (std::size_t block = 0; block < controllers_.size(); ++block) {
+            scatter_boundary(
+                *controllers_[block], commands[block], next_coefficients);
+            result.predicted_cost_before +=
+                result.blocks[block].predicted_cost_before;
+            result.predicted_cost_after +=
+                result.blocks[block].predicted_cost_after;
         }
 
         result.radial.resize(plane_size);
@@ -878,6 +1153,14 @@ public:
         fft_.synthesis(next_coefficients[1].data(), result.axial.data());
         fft_.synthesis(
             next_coefficients[2].data(), result.azimuthal.data());
+        if (std::isfinite(maximum_rms)) {
+            const double tolerance = 128*std::numeric_limits<T>::epsilon()
+                *std::max(1.0, maximum_rms);
+            if (result.rms_norm() > maximum_rms+tolerance) {
+                throw std::runtime_error(
+                    "physical boundary MPC command exceeds its RMS limit");
+            }
+        }
         return result;
     }
 

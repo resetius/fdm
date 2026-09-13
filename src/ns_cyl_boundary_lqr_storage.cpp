@@ -78,6 +78,17 @@ int get_int(int ncid, const char* name) {
     return value;
 }
 
+int get_optional_int(int ncid, const char* name, int fallback) {
+    int value = 0;
+    const int status = nc_get_att_int(ncid, NC_GLOBAL, name, &value);
+    if (status == NC_ENOTATT) {
+        return fallback;
+    }
+    nc_check(status,
+             std::string("reading boundary LQR gain attribute ")+name);
+    return value;
+}
+
 double get_double(int ncid, const char* name) {
     double value = 0;
     nc_check(nc_get_att_double(ncid, NC_GLOBAL, name, &value),
@@ -87,7 +98,8 @@ double get_double(int ncid, const char* name) {
 
 void write_metadata(int ncid,
                     const NSCylBoundaryLQRGainMetadata& metadata,
-                    int block_count, int value_count) {
+                    int block_count, int value_count,
+                    int reduced_hessian_value_count) {
     put_int(ncid, "schema_version", metadata.schema_version);
     put_text(ncid, "format_name", metadata.format_name);
     put_int(ncid, "step_operator_version", metadata.step_operator_version);
@@ -105,6 +117,8 @@ void write_metadata(int ncid,
     put_int(ncid, "interval_steps", metadata.interval_steps);
     put_int(ncid, "block_count", block_count);
     put_int(ncid, "gain_value_count", value_count);
+    put_int(ncid, "reduced_hessian_value_count",
+            reduced_hessian_value_count);
     put_double(ncid, "r", metadata.r);
     put_double(ncid, "R", metadata.R);
     put_double(ncid, "h1", metadata.h1);
@@ -292,9 +306,23 @@ void validate_gain_block(
     if (block.values.size() != expected) {
         throw std::runtime_error("invalid boundary LQR gain block size");
     }
+    const std::size_t expected_reduced = static_cast<std::size_t>(
+        input_size(block.m, block.l, metadata))
+        *input_size(block.m, block.l, metadata);
+    if (!block.reduced_hessian.empty()
+        && block.reduced_hessian.size() != expected_reduced) {
+        throw std::runtime_error(
+            "invalid boundary LQR reduced Hessian block size");
+    }
     for (T value : block.values) {
         if (!std::isfinite(static_cast<double>(value))) {
             throw std::runtime_error("non-finite boundary LQR gain value");
+        }
+    }
+    for (T value : block.reduced_hessian) {
+        if (!std::isfinite(static_cast<double>(value))) {
+            throw std::runtime_error(
+                "non-finite boundary LQR reduced Hessian value");
         }
     }
 }
@@ -379,6 +407,9 @@ void NSCylBoundaryLQRGainStorage::save_(
               });
     std::set<std::pair<int, int>> unique;
     std::size_t value_count_size = 0;
+    std::size_t reduced_hessian_count_size = 0;
+    bool has_reduced_hessian = false;
+    bool lacks_reduced_hessian = false;
     for (const auto& block : gains.blocks) {
         validate_gain_block(block, metadata);
         if (!unique.emplace(block.m, block.l).second) {
@@ -389,6 +420,22 @@ void NSCylBoundaryLQRGainStorage::save_(
             > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
             throw std::runtime_error("boundary LQR gain storage is too large");
         }
+        if (block.reduced_hessian.empty()) {
+            lacks_reduced_hessian = true;
+        } else {
+            has_reduced_hessian = true;
+            reduced_hessian_count_size += block.reduced_hessian.size();
+            if (reduced_hessian_count_size
+                > static_cast<std::size_t>(
+                    std::numeric_limits<int>::max())) {
+                throw std::runtime_error(
+                    "boundary LQR reduced Hessian storage is too large");
+            }
+        }
+    }
+    if (has_reduced_hessian && lacks_reduced_hessian) {
+        throw std::runtime_error(
+            "boundary LQR gain has incomplete constrained MPC data");
     }
     if (gains.blocks.size()
         > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
@@ -396,13 +443,16 @@ void NSCylBoundaryLQRGainStorage::save_(
     }
     const int block_count = static_cast<int>(gains.blocks.size());
     const int value_count = static_cast<int>(value_count_size);
+    const int reduced_hessian_count =
+        static_cast<int>(reduced_hessian_count_size);
 
     int ncid = -1;
     nc_check(nc_create(filename_.c_str(), NC_CLOBBER | NC_64BIT_OFFSET,
                        &ncid),
              "creating NSCyl boundary LQR gain file");
     NcFile file(ncid);
-    write_metadata(ncid, metadata, block_count, value_count);
+    write_metadata(ncid, metadata, block_count, value_count,
+                   reduced_hessian_count);
     int block_dimension = -1, value_dimension = -1;
     nc_check(nc_def_dim(ncid, "block", block_count, &block_dimension),
              "defining boundary LQR gain block dimension");
@@ -420,12 +470,29 @@ void NSCylBoundaryLQRGainStorage::save_(
         ncid, "gain_offset", NC_INT, block_dimension);
     const int values_variable = define_variable(
         ncid, "gain", scalar_nc_type<T>(), value_dimension);
+    int reduced_hessian_offset_variable = -1;
+    int reduced_hessian_values_variable = -1;
+    if (reduced_hessian_count > 0) {
+        int reduced_hessian_dimension = -1;
+        nc_check(nc_def_dim(
+            ncid, "reduced_hessian_value", reduced_hessian_count,
+            &reduced_hessian_dimension),
+            "defining boundary LQR reduced Hessian dimension");
+        reduced_hessian_offset_variable = define_variable(
+            ncid, "reduced_hessian_offset", NC_INT, block_dimension);
+        reduced_hessian_values_variable = define_variable(
+            ncid, "reduced_hessian", scalar_nc_type<T>(),
+            reduced_hessian_dimension);
+    }
     nc_check(nc_enddef(ncid), "finishing boundary LQR gain schema");
 
     std::vector<int> m(block_count), l(block_count), rows(block_count);
     std::vector<int> columns(block_count), offsets(block_count);
     std::vector<T> values(value_count);
+    std::vector<int> reduced_hessian_offsets(block_count);
+    std::vector<T> reduced_hessian_values(reduced_hessian_count);
     int offset = 0;
+    int reduced_hessian_offset = 0;
     for (int index = 0; index < block_count; ++index) {
         const auto& block = gains.blocks[index];
         m[index] = block.m;
@@ -437,6 +504,12 @@ void NSCylBoundaryLQRGainStorage::save_(
         std::copy(block.values.begin(), block.values.end(),
                   values.begin()+offset);
         offset += static_cast<int>(block.values.size());
+        reduced_hessian_offsets[index] = reduced_hessian_offset;
+        std::copy(block.reduced_hessian.begin(),
+                  block.reduced_hessian.end(),
+                  reduced_hessian_values.begin()+reduced_hessian_offset);
+        reduced_hessian_offset += static_cast<int>(
+            block.reduced_hessian.size());
     }
     nc_check(nc_put_var_int(ncid, m_variable, m.data()), "writing gain m");
     nc_check(nc_put_var_int(ncid, l_variable, l.data()), "writing gain l");
@@ -447,6 +520,15 @@ void NSCylBoundaryLQRGainStorage::save_(
     nc_check(nc_put_var_int(ncid, offset_variable, offsets.data()),
              "writing gain offsets");
     put_values(ncid, values_variable, values);
+    if (reduced_hessian_count > 0) {
+        nc_check(nc_put_var_int(
+            ncid, reduced_hessian_offset_variable,
+            reduced_hessian_offsets.data()),
+            "writing boundary LQR reduced Hessian offsets");
+        put_values(
+            ncid, reduced_hessian_values_variable,
+            reduced_hessian_values);
+    }
     file.close();
 }
 
@@ -466,7 +548,10 @@ void NSCylBoundaryLQRGainStorage::load_(
     }
     const int block_count = get_int(ncid, "block_count");
     const int value_count = get_int(ncid, "gain_value_count");
-    if (block_count <= 0 || value_count <= 0) {
+    const int reduced_hessian_count = get_optional_int(
+        ncid, "reduced_hessian_value_count", 0);
+    if (block_count <= 0 || value_count <= 0
+        || reduced_hessian_count < 0) {
         throw std::runtime_error("empty NSCyl boundary LQR gain file");
     }
     const int block_dimension = require_dimension(
@@ -485,9 +570,22 @@ void NSCylBoundaryLQRGainStorage::load_(
         ncid, "gain_offset", NC_INT, block_dimension);
     const int values_variable = require_variable(
         ncid, "gain", scalar_nc_type<T>(), value_dimension);
+    int reduced_hessian_offset_variable = -1;
+    int reduced_hessian_values_variable = -1;
+    if (reduced_hessian_count > 0) {
+        const int reduced_hessian_dimension = require_dimension(
+            ncid, "reduced_hessian_value", reduced_hessian_count);
+        reduced_hessian_offset_variable = require_variable(
+            ncid, "reduced_hessian_offset", NC_INT, block_dimension);
+        reduced_hessian_values_variable = require_variable(
+            ncid, "reduced_hessian", scalar_nc_type<T>(),
+            reduced_hessian_dimension);
+    }
     std::vector<int> m(block_count), l(block_count), rows(block_count);
     std::vector<int> columns(block_count), offsets(block_count);
     std::vector<T> values(value_count);
+    std::vector<int> reduced_hessian_offsets(block_count);
+    std::vector<T> reduced_hessian_values(reduced_hessian_count);
     nc_check(nc_get_var_int(ncid, m_variable, m.data()), "reading gain m");
     nc_check(nc_get_var_int(ncid, l_variable, l.data()), "reading gain l");
     nc_check(nc_get_var_int(ncid, rows_variable, rows.data()),
@@ -497,11 +595,21 @@ void NSCylBoundaryLQRGainStorage::load_(
     nc_check(nc_get_var_int(ncid, offset_variable, offsets.data()),
              "reading gain offsets");
     get_values(ncid, values_variable, values);
+    if (reduced_hessian_count > 0) {
+        nc_check(nc_get_var_int(
+            ncid, reduced_hessian_offset_variable,
+            reduced_hessian_offsets.data()),
+            "reading boundary LQR reduced Hessian offsets");
+        get_values(
+            ncid, reduced_hessian_values_variable,
+            reduced_hessian_values);
+    }
 
     NSCylBoundaryLQRGainSet<T> loaded;
     loaded.blocks.reserve(block_count);
     std::set<std::pair<int, int>> unique;
     int expected_offset = 0;
+    int expected_reduced_hessian_offset = 0;
     for (int index = 0; index < block_count; ++index) {
         const int expected_rows = input_size(
             m[index], l[index], loaded_metadata);
@@ -526,12 +634,35 @@ void NSCylBoundaryLQRGainStorage::load_(
         block.l = l[index];
         block.values.assign(values.begin()+expected_offset,
                             values.begin()+expected_offset+count);
+        if (reduced_hessian_count > 0) {
+            const long long reduced_count =
+                static_cast<long long>(expected_rows)*expected_rows;
+            if (reduced_hessian_offsets[index]
+                    != expected_reduced_hessian_offset
+                || reduced_count <= 0
+                || reduced_count > reduced_hessian_count
+                    -expected_reduced_hessian_offset) {
+                throw std::runtime_error(
+                    "invalid NSCyl boundary LQR reduced Hessian record");
+            }
+            block.reduced_hessian.assign(
+                reduced_hessian_values.begin()
+                    +expected_reduced_hessian_offset,
+                reduced_hessian_values.begin()
+                    +expected_reduced_hessian_offset+reduced_count);
+            expected_reduced_hessian_offset += static_cast<int>(
+                reduced_count);
+        }
         validate_gain_block(block, loaded_metadata);
         loaded.blocks.push_back(std::move(block));
         expected_offset += static_cast<int>(count);
     }
     if (expected_offset != value_count) {
         throw std::runtime_error("unused NSCyl boundary LQR gain values");
+    }
+    if (expected_reduced_hessian_offset != reduced_hessian_count) {
+        throw std::runtime_error(
+            "unused NSCyl boundary LQR reduced Hessian values");
     }
     file.close();
     gains = std::move(loaded);
