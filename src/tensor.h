@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <numeric>
+#include <type_traits>
 #include "blas.h"
 #include "verify.h"
 
@@ -247,6 +248,11 @@ public:
 
     auto operator[](int y) {
         return acc[y];
+    }
+
+    template<int R = rank, std::enable_if_t<R == 3, int> = 0>
+    T& operator()(int i, int k, int j) {
+        return acc[i][k][j];
     }
 
     int index(const std::array<int,rank>& indices /*z,y,x*/) {

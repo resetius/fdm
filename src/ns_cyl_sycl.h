@@ -5,6 +5,7 @@
 
 #include <sycl/sycl.hpp>
 #include "lapl_cyl_sycl.h"
+#include "ns_cyl_fgh.h"
 #include "ns_cyl_state.h"
 #include <algorithm>
 #include <chrono>
@@ -834,12 +835,11 @@ private:
 
     // ── FGH (momentum tendency) ───────────────────────────────────────────────
     void kernel_FGH() {
-        auto ua_=ua(), va_=va(), wa_=wa();
-        auto Fa_=Fa(), Ga_=Ga(), Ha_=Ha();
+        auto u=ua(), v=va(), w=wa();
+        auto F=Fa(), G=Ga(), H=Ha();
         const int nr_=nr;
-        const T dt_=dt, Re_=Re, r0_=r0;
-        const T dr_=dr, dz_=dz, dphi_=dphi;
-        const T dr2_=dr2, dz2_=dz2, dphi2_=dphi2;
+        const NSCylFGHParams<T> params(
+            r0, dr, dz, dphi, dr2, dz2, dphi2, dt, Re);
 
         // F uses radial faces j=0..nr, while G and H use cell centers
         // j=1..nr.  Map all three equations to one range by pairing face j
@@ -848,57 +848,9 @@ private:
             [=](sycl::id<3> id) {
                 const int i=(int)id[0], k=(int)id[1];
                 const int face=(int)id[2];
-                auto sq=[](T x){return x*x;};
-                {
-                    const int j=face;
-                    const T r=r0_+dr_*T(j);
-                    const T r2=(r+T(0.5)*dr_)/r;
-                    const T r1=(r-T(0.5)*dr_)/r;
-                    const T rr=r*r;
-                    Fa_(i,k,j) = ua_(i,k,j) + dt_*(
-                        (r2*ua_(i,k,j+1)-T(2)*ua_(i,k,j)+r1*ua_(i,k,j-1))/Re_/dr2_+
-                        (ua_(i,k+1,j)-T(2)*ua_(i,k,j)+ua_(i,k-1,j))/Re_/dz2_+
-                        (ua_(i+1,k,j)-T(2)*ua_(i,k,j)+ua_(i-1,k,j))/Re_/dphi2_/rr-
-                        (r2*sq(T(0.5)*(ua_(i,k,j)+ua_(i,k,j+1)))-
-                         r1*sq(T(0.5)*(ua_(i,k,j-1)+ua_(i,k,j))))/dr_-
-                        T(0.25)*((ua_(i,k,j)+ua_(i,k+1,j))*(va_(i,k,j+1)+va_(i,k,j))-
-                                 (ua_(i,k-1,j)+ua_(i,k,j))*(va_(i,k-1,j+1)+va_(i,k-1,j)))/dz_-
-                        T(0.25)*((ua_(i,k,j)+ua_(i+1,k,j))*(wa_(i,k,j+1)+wa_(i,k,j))-
-                                 (ua_(i-1,k,j)+ua_(i,k,j))*(wa_(i-1,k,j+1)+wa_(i-1,k,j)))/dphi_/r+
-                        sq(T(0.5)*(wa_(i,k,j+1)+wa_(i,k,j)))/r-ua_(i,k,j)/rr/Re_-
-                        T(2)*(T(0.5)*(wa_(i,k,j+1)+wa_(i,k,j))-
-                              T(0.5)*(wa_(i-1,k,j+1)+wa_(i-1,k,j)))/rr/dphi_/Re_);
-                }
-                if (face == nr_) { return; }
-
-                const int j=face+1;
-                const T r=r0_+dr_*T(j)-dr_*T(0.5);
-                const T r2=(r+T(0.5)*dr_)/r;
-                const T r1=(r-T(0.5)*dr_)/r;
-                const T rr=r*r;
-                Ga_(i,k,j) = va_(i,k,j) + dt_*(
-                    (r2*va_(i,k,j+1)-T(2)*va_(i,k,j)+r1*va_(i,k,j-1))/Re_/dr2_+
-                    (va_(i,k+1,j)-T(2)*va_(i,k,j)+va_(i,k-1,j))/Re_/dz2_+
-                    (va_(i+1,k,j)-T(2)*va_(i,k,j)+va_(i-1,k,j))/Re_/dphi2_/rr-
-                    (sq(T(0.5)*(va_(i,k,j)+va_(i,k+1,j)))-
-                     sq(T(0.5)*(va_(i,k-1,j)+va_(i,k,j))))/dz_-
-                    T(0.25)*(r2*(ua_(i,k,j)+ua_(i,k+1,j))*(va_(i,k,j+1)+va_(i,k,j))-
-                             r1*(ua_(i,k,j-1)+ua_(i,k+1,j-1))*(va_(i,k,j)+va_(i,k,j-1)))/dr_-
-                    T(0.25)*((wa_(i,k,j)+wa_(i,k+1,j))*(va_(i,k,j)+va_(i+1,k,j))-
-                             (wa_(i-1,k,j)+wa_(i-1,k+1,j))*(va_(i-1,k,j)+va_(i,k,j)))/dphi_/r);
-                Ha_(i,k,j) = wa_(i,k,j) + dt_*(
-                    (r2*wa_(i,k,j+1)-T(2)*wa_(i,k,j)+r1*wa_(i,k,j-1))/Re_/dr2_+
-                    (wa_(i,k+1,j)-T(2)*wa_(i,k,j)+wa_(i,k-1,j))/Re_/dz2_+
-                    (wa_(i+1,k,j)-T(2)*wa_(i,k,j)+wa_(i-1,k,j))/Re_/dphi2_/rr-
-                    (sq(T(0.5)*(wa_(i+1,k,j)+wa_(i,k,j)))-
-                     sq(T(0.5)*(wa_(i-1,k,j)+wa_(i,k,j))))/dphi_/r-
-                    T(0.25)*(r2*(ua_(i+1,k,j)+ua_(i,k,j))*(wa_(i,k,j+1)+wa_(i,k,j))-
-                             r1*(ua_(i+1,k,j-1)+ua_(i,k,j-1))*(wa_(i,k,j)+wa_(i,k,j-1)))/dr_-
-                    T(0.25)*((wa_(i,k,j)+wa_(i,k+1,j))*(va_(i,k,j)+va_(i+1,k,j))-
-                             (wa_(i,k-1,j)+wa_(i,k,j))*(va_(i,k-1,j)+va_(i+1,k-1,j)))/dz_-
-                    wa_(i,k,j)*T(0.5)*(ua_(i+1,k,j)+ua_(i,k,j))/r-wa_(i,k,j)/rr/Re_+
-                    T(2)*(T(0.5)*(ua_(i+1,k,j)+ua_(i,k,j))-
-                          T(0.5)*(ua_(i,k,j)+ua_(i-1,k,j)))/rr/dphi_/Re_);
+                ns_cyl_fgh_node(
+                    u, v, w, F, G, H,
+                    i, k, face, nr_, params);
             });
     }
 

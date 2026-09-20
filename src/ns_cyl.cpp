@@ -1,4 +1,5 @@
 #include "ns_cyl.h"
+#include "ns_cyl_fgh.h"
 #include "unixbench_score.h"
 
 using namespace std;
@@ -156,39 +157,32 @@ void NSCyl<T,check,zflag>::init_bound() {
 
 template<typename T, bool check, tensor_flag zflag>
 void NSCyl<T,check,zflag>::FGH() {
+    const NSCylFGHParams<T> params(
+        r0, dr, dz, dphi, dr2, dz2, dphi2, dt, Re);
+
+    if constexpr(zflag == tensor_flag::periodic) {
+#pragma omp parallel for collapse(2)
+        for (int i = 0; i < nphi; ++i) {
+            for (int k = 0; k < nz; ++k) {
+                for (int face = 0; face <= nr; ++face) {
+                    ns_cyl_fgh_node(
+                        u, v, w, F, G, H,
+                        i, k, face, nr, params);
+                }
+            }
+        }
+        return;
+    }
+
 #pragma omp parallel
     {
 
     // F (r)
 #pragma omp for collapse(2)
-    for (int i = 1; i <= nphi; i++) {
+    for (int i = 0; i < nphi; i++) {
         for (int k = z1; k <= zn; k++) { // 3/2 ..
             for (int j = 0; j <= nr; j++) { // 1/2 ..
-                double r = r0+dr*j;
-                double r2 = (r+0.5*dr)/r;
-                double r1 = (r-0.5*dr)/r;
-                double rr = r*r;
-
-                // 17.9
-                F[i][k][j] = u[i][k][j] + dt*(
-                    (r2*u[i][k][j+1]-2*u[i][k][j]+r1*u[i][k][j-1])/Re/dr2+
-                    (   u[i][k+1][j]-2*u[i][k][j]+   u[i][k-1][j])/Re/dz2+
-                    (   u[i+1][k][j]-2*u[i][k][j]+   u[i-1][k][j])/Re/dphi2/rr-
-                    (r2*sq(0.5*(u[i][k][j]+u[i][k][j+1]))-r1*sq(0.5*(u[i][k][j-1]+u[i][k][j])))/dr-
-
-                    0.25*((u[i][k]  [j]+u[i][k+1][j])*(v[i][k]  [j+1]+v[i][k]  [j])-
-                          (u[i][k-1][j]+u[i][k]  [j])*(v[i][k-1][j+1]+v[i][k-1][j])
-                        )/dz-
-
-                    0.25*((u[i]  [k][j]+u[i+1][k][j])*(w[i]  [k][j+1]+w[i]  [k][j])-
-                          (u[i-1][k][j]+u[i]  [k][j])*(w[i-1][k][j+1]+w[i-1][k][j])
-                        )/dphi/r
-
-                    // TODO: check
-                    +sq(0.5*(w[i][k][j+1]+w[i][k][j]))/r-u[i][k][j]/rr/Re
-                    -2*( 0.5*(w[i]  [k][j+1]+w[i]  [k][j])
-                         -0.5*(w[i-1][k][j+1]+w[i-1][k][j]))/rr/dphi/Re
-                    );
+                ns_cyl_f_node(u, v, w, F, i, k, j, params);
             }
         }
     }
@@ -197,27 +191,7 @@ void NSCyl<T,check,zflag>::FGH() {
     for (int i = 0; i < nphi; i++) {
         for (int k = z0; k <= zn; k++) {
             for (int j = 1; j <= nr; j++) {
-                double r = r0+dr*j-dr/2;
-                double r2 = (r+0.5*dr)/r;
-                double r1 = (r-0.5*dr)/r;
-                double rr = r*r;
-
-                // 17.11
-                G[i][k][j] = v[i][k][j] + dt*(
-                    (r2*v[i][k][j+1]-2*v[i][k][j]+r1*v[i][k][j-1])/Re/dr2+
-                    (   v[i][k+1][j]-2*v[i][k][j]+   v[i][k-1][j])/Re/dz2+
-                    (   v[i+1][k][j]-2*v[i][k][j]+   v[i-1][k][j])/Re/dphi2/rr-
-                    (sq(0.5*(v[i][k][j]+v[i][k+1][j]))-sq(0.5*(v[i][k-1][j]+v[i][k][j])))/dz-
-
-                    // TODO: check
-                    0.25*(r2*(u[i][k][j]+  u[i][k+1][j])*  (v[i][k][j+1]+v[i][k][j])-
-                          r1*(u[i][k][j-1]+u[i][k+1][j-1])*(v[i][k][j]  +v[i][k][j-1])
-                        )/dr-
-
-                    0.25*((w[i]  [k][j]+w[i]  [k+1][j])*(v[i]  [k][j]+v[i+1][k][j])-
-                          (w[i-1][k][j]+w[i-1][k+1][j])*(v[i-1][k][j]+v[i]  [k][j])
-                        )/dphi/r
-                    );
+                ns_cyl_g_node(u, v, w, G, i, k, j, params);
             }
         }
     }
@@ -226,32 +200,7 @@ void NSCyl<T,check,zflag>::FGH() {
     for (int i = 0; i < nphi; i++) { // 1/2 ...
         for (int k = z1; k <= zn; k++) {
             for (int j = 1; j <= nr; j++) {
-                double r = r0+dr*j-dr/2;
-                double r2 = (r+0.5*dr)/r;
-                double r1 = (r-0.5*dr)/r;
-                double rr = r*r;
-
-                H[i][k][j] = w[i][k][j] + dt*(
-                    (r2*w[i][k][j+1]-2*w[i][k][j]+r1*w[i][k][j-1])/Re/dr2+
-                    (   w[i][k+1][j]-2*w[i][k][j]+   w[i][k-1][j])/Re/dz2+
-                    (   w[i+1][k][j]-2*w[i][k][j]+   w[i-1][k][j])/Re/dphi2/rr-
-                    (sq(0.5*(w[i+1][k][j]+w[i][k][j]))-sq(0.5*(w[i-1][k][j]+w[i][k][j])))/dphi/r-
-
-                    // TODO: check
-                    0.25*(r2*(u[i+1][k][j]+  u[i][k][j])*  (w[i][k][j+1]+w[i][k][j])-
-                          r1*(u[i+1][k][j-1]+u[i][k][j-1])*(w[i][k][j]  +w[i][k][j-1])
-                        )/dr-
-
-                    0.25*((w[i][k][j]+  w[i][k+1][j])*(v[i][k]  [j]+v[i+1][k]  [j])-
-                          (w[i][k-1][j]+w[i][k]  [j])*(v[i][k-1][j]+v[i+1][k-1][j])
-                        )/dz
-
-                    // TODO: check
-
-                    -w[i][k][j]*0.5*(u[i+1][k][j]+u[i][k][j])/r-w[i][k][j]/rr/Re
-                    +2*( 0.5*(u[i+1][k][j]+u[i]  [k][j])
-                         -0.5*(u[i]  [k][j]+u[i-1][k][j]))/rr/dphi/Re
-                    );
+                ns_cyl_h_node(u, v, w, H, i, k, j, params);
             }
         }
     }
