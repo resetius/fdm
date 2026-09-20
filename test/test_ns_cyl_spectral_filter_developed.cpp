@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -280,16 +281,55 @@ struct SampleResult {
     double decay_rate = std::numeric_limits<double>::quiet_NaN();
 };
 
+struct SampleTimings {
+    double boundary_seconds = 0;
+    double filter_seconds = 0;
+    double taylor_norm_seconds = 0;
+    double divergence_seconds = 0;
+    double boundary_residual_seconds = 0;
+    double torque_seconds = 0;
+    double csv_seconds = 0;
+
+    double total_seconds() const {
+        return boundary_seconds+filter_seconds+taylor_norm_seconds
+            +divergence_seconds+boundary_residual_seconds+torque_seconds
+            +csv_seconds;
+    }
+};
+
+using WallClock = std::chrono::steady_clock;
+
+double wall_seconds_since(WallClock::time_point begin) {
+    return std::chrono::duration<double>(WallClock::now()-begin).count();
+}
+
+void wait_for_state(Task& state) {
+#ifdef FDM_NS_CYL_SPECTRAL_FILTER_SYCL
+    state.wait();
+#else
+    (void)state;
+#endif
+}
+
 SampleResult sample(Task& state, Filter& filter,
                     const std::vector<T>& reference, bool apply_filter,
                     const std::string& branch, int local_step,
-                    DecayRate& decay, CsvOutput& csv) {
+                    DecayRate& decay, CsvOutput& csv,
+                    SampleTimings* timings = nullptr) {
     // step() applies wall ghosts at the beginning of a step. Refresh them
     // before reporting boundary residuals for the newly updated interior.
+    auto begin = WallClock::now();
     state.apply_boundary_conditions();
+    if (timings) {
+        timings->boundary_seconds += wall_seconds_since(begin);
+    }
+    begin = WallClock::now();
     const auto modal = apply_filter
         ? filter.remove(state, reference)
         : filter.measure(state, reference);
+    if (timings) {
+        timings->filter_seconds += wall_seconds_since(begin);
+    }
     SampleResult result;
     result.velocity_norm = apply_filter
         ? modal.filtered_velocity_norm
@@ -299,17 +339,38 @@ SampleResult sample(Task& state, Filter& filter,
         : modal.removed_norm;
     result.unstable_norm_before = modal.removed_norm;
     result.unstable_norm_after = modal.remaining_unstable_norm;
+    begin = WallClock::now();
     result.taylor_norm = taylor_vortex_norm(state);
+    if (timings) {
+        timings->taylor_norm_seconds += wall_seconds_since(begin);
+    }
+    begin = WallClock::now();
     result.divergence = maximum_interior_divergence(state);
+    if (timings) {
+        timings->divergence_seconds += wall_seconds_since(begin);
+    }
+    begin = WallClock::now();
     result.boundary_residual = maximum_radial_boundary_residual(state);
+    if (timings) {
+        timings->boundary_residual_seconds += wall_seconds_since(begin);
+    }
     result.removed_velocity_norm = modal.removed_velocity_norm;
     const double time = state.time_index*state.dt;
     const double alpha = decay.update(time, result.velocity_norm);
     result.decay_rate = alpha;
+    begin = WallClock::now();
+    const auto torque = viscous_torque_flux(state);
+    if (timings) {
+        timings->torque_seconds += wall_seconds_since(begin);
+    }
+    begin = WallClock::now();
     csv.write(branch, local_step, time, modal, apply_filter,
               result.velocity_norm, result.taylor_norm, alpha,
               result.divergence, result.boundary_residual,
-              viscous_torque_flux(state));
+              torque);
+    if (timings) {
+        timings->csv_seconds += wall_seconds_since(begin);
+    }
     return result;
 }
 
@@ -318,13 +379,17 @@ struct BranchResult {
     SampleResult final;
     double maximum_divergence = 0;
     double maximum_boundary_residual = 0;
+    double wall_seconds = 0;
+    double step_submit_seconds = 0;
+    double step_wait_seconds = 0;
+    SampleTimings sample_timings;
 };
 
 BranchResult run_branch(
     const Config& config, Filter& filter, const std::vector<T>& reference,
     const std::vector<T>& checkpoint, int checkpoint_step,
     const std::string& name, int steps, int log_interval,
-    int periodic_interval, CsvOutput& csv) {
+    int periodic_interval, CsvOutput& csv, bool timing) {
     Task state(config);
     const Layout layout(state);
     layout.unpack(state, checkpoint.data());
@@ -338,9 +403,15 @@ BranchResult run_branch(
         const bool log = step == 0 || step == steps
             || step%log_interval == 0 || apply_filter;
         if (log) {
+            if (timing) {
+                const auto begin = WallClock::now();
+                wait_for_state(state);
+                result.step_wait_seconds += wall_seconds_since(begin);
+            }
             const SampleResult current = sample(
                 state, filter, reference, apply_filter,
-                name, step, decay, csv);
+                name, step, decay, csv,
+                timing ? &result.sample_timings : nullptr);
             if (apply_filter && step == 0) {
                 result.immediate_ratio = current.unstable_norm_after/std::max(
                     current.unstable_norm_before,
@@ -355,7 +426,11 @@ BranchResult run_branch(
             }
         }
         if (step != steps) {
+            const auto begin = WallClock::now();
             state.step();
+            if (timing) {
+                result.step_submit_seconds += wall_seconds_since(begin);
+            }
         }
     }
     return result;
@@ -384,6 +459,13 @@ int run(const Config& config) {
         "developed", "branch_log_interval", 100);
     const int periodic_interval = config.get(
         "developed", "periodic_interval", 250);
+    const bool timing = config.get("developed", "timing", 0) != 0;
+    const int sycl_profile_steps = config.get(
+        "developed", "sycl_profile_steps", 0);
+    const int sycl_profile_warmup_steps = config.get(
+        "developed", "sycl_profile_warmup_steps", 2);
+    const int sycl_profile_batch_repeats = config.get(
+        "developed", "sycl_profile_batch_repeats", 0);
     const double minimum_remainder_fraction = config.get(
         "developed", "minimum_remainder_fraction", 1e-3);
     const double filter_tolerance = config.get(
@@ -406,6 +488,8 @@ int run(const Config& config) {
         || develop_log_interval <= 0 || branch_steps <= 0
         || branch_log_interval <= 0 || periodic_interval <= 0
         || branch_steps%periodic_interval != 0
+        || sycl_profile_steps < 0 || sycl_profile_warmup_steps < 0
+        || sycl_profile_batch_repeats < 0
         || minimum_remainder_fraction < 0 || filter_tolerance < 0
         || divergence_tolerance < 0 || boundary_tolerance < 0
         || maximum_final_decay_rate < 0 || minimum_taylor_norm < 0
@@ -540,18 +624,140 @@ int run(const Config& config) {
            checkpoint_modal.filtered_velocity_norm, remainder_fraction,
            checkpoint_output.c_str());
 
-    const auto unfiltered = run_branch(
-        config, filter, reference, reloaded, reloaded_metadata.time_index,
-        "unfiltered", branch_steps, branch_log_interval,
-        periodic_interval, csv);
-    const auto once = run_branch(
-        config, filter, reference, reloaded, reloaded_metadata.time_index,
-        "once", branch_steps, branch_log_interval,
-        periodic_interval, csv);
-    const auto periodic = run_branch(
-        config, filter, reference, reloaded, reloaded_metadata.time_index,
-        "periodic", branch_steps, branch_log_interval,
-        periodic_interval, csv);
+#ifdef FDM_NS_CYL_SPECTRAL_FILTER_SYCL
+    if (sycl_profile_steps > 0) {
+        Task profiled_state(config);
+        layout.unpack(profiled_state, reloaded.data());
+        profiled_state.time_index = reloaded_metadata.time_index;
+        for (int step = 0; step < sycl_profile_warmup_steps; ++step) {
+            profiled_state.step();
+        }
+        profiled_state.wait();
+
+        typename Task::StepProfile profile;
+        for (int step = 0; step < sycl_profile_steps; ++step) {
+            profile += profiled_state.step_profiled();
+        }
+        const double divisor = static_cast<double>(sycl_profile_steps);
+        const double total = profile.total_ms()/divisor;
+        const auto percent = [total](double value) {
+            return total > 0 ? 100*value/total : 0;
+        };
+        const auto mean = [divisor](double value) {
+            return value/divisor;
+        };
+        printf("PROFILE NS_STEP samples=%d warmup=%d mean_ms=%.6f "
+               "barrier_mode=per_stage\n",
+               sycl_profile_steps, sycl_profile_warmup_steps, total);
+        printf("PROFILE NS_STAGE boundary_ms=%.6f boundary_pct=%.2f "
+               "fgh_ms=%.6f fgh_pct=%.2f rhs_ms=%.6f rhs_pct=%.2f "
+               "poisson_ms=%.6f poisson_pct=%.2f update_pressure_ms=%.6f "
+               "update_pressure_pct=%.2f outer_commit_ms=%.6f "
+               "outer_commit_pct=%.2f\n",
+               mean(profile.boundary_ms),
+               percent(mean(profile.boundary_ms)),
+               mean(profile.fgh_ms), percent(mean(profile.fgh_ms)),
+               mean(profile.rhs_ms), percent(mean(profile.rhs_ms)),
+               mean(profile.poisson.total_ms()),
+               percent(mean(profile.poisson.total_ms())),
+               mean(profile.update_ms), percent(mean(profile.update_ms)),
+               mean(profile.outer_boundary_commit_ms),
+               percent(mean(profile.outer_boundary_commit_ms)));
+        printf("PROFILE POISSON_STAGE phi_fwd_ms=%.6f z_fwd_ms=%.6f "
+               "gauge_ms=%.6f cr_init_ms=%.6f cr_fwd_ms=%.6f "
+               "cr_bwd_ms=%.6f cr_local_ms=%.6f z_inv_ms=%.6f "
+               "phi_inv_ms=%.6f\n",
+               mean(profile.poisson.phi_forward_ms),
+               mean(profile.poisson.z_forward_ms),
+               mean(profile.poisson.gauge_ms),
+               mean(profile.poisson.cr_init_ms),
+               mean(profile.poisson.cr_forward_ms),
+               mean(profile.poisson.cr_backward_ms),
+               mean(profile.poisson.cr_local_ms),
+               mean(profile.poisson.z_inverse_ms),
+               mean(profile.poisson.phi_inverse_ms));
+        printf("PROFILE NOTE per-stage queue fences intentionally perturb "
+               "batching; use branch timing for throughput\n");
+    }
+    if (sycl_profile_batch_repeats > 0) {
+        Task batch_state(config);
+        layout.unpack(batch_state, reloaded.data());
+        batch_state.time_index = reloaded_metadata.time_index;
+        for (int step = 0; step < sycl_profile_warmup_steps; ++step) {
+            batch_state.step();
+        }
+        batch_state.wait();
+        const auto profile = batch_state.profile_stages_batched(
+            sycl_profile_batch_repeats);
+        const double divisor = static_cast<double>(
+            sycl_profile_batch_repeats);
+        const double total = profile.total_ms()/divisor;
+        const auto mean = [divisor](double value) {
+            return value/divisor;
+        };
+        const auto percent = [total](double value) {
+            return total > 0 ? 100*value/total : 0;
+        };
+        printf("PROFILE NS_BATCH repeats=%d summed_stage_mean_ms=%.6f "
+               "fence_mode=per_batch\n",
+               sycl_profile_batch_repeats, total);
+        printf("PROFILE NS_BATCH_STAGE boundary_ms=%.6f boundary_pct=%.2f "
+               "fgh_ms=%.6f fgh_pct=%.2f rhs_ms=%.6f rhs_pct=%.2f "
+               "poisson_ms=%.6f poisson_pct=%.2f "
+               "update_pressure_ms=%.6f update_pressure_pct=%.2f\n",
+               mean(profile.boundary_ms),
+               percent(mean(profile.boundary_ms)),
+               mean(profile.fgh_ms), percent(mean(profile.fgh_ms)),
+               mean(profile.rhs_ms), percent(mean(profile.rhs_ms)),
+               mean(profile.poisson_ms), percent(mean(profile.poisson_ms)),
+               mean(profile.update_pressure_ms),
+               percent(mean(profile.update_pressure_ms)));
+        printf("PROFILE NOTE stage batches measure throughput but change "
+               "inter-stage cache behavior\n");
+    }
+#else
+    if (sycl_profile_steps > 0 || sycl_profile_batch_repeats > 0) {
+        throw std::invalid_argument(
+            "SYCL profiling requires the SYCL executable");
+    }
+#endif
+
+    const auto timed_branch = [&](const char* name) {
+        const auto begin = WallClock::now();
+        auto result = run_branch(
+            config, filter, reference, reloaded,
+            reloaded_metadata.time_index, name, branch_steps,
+            branch_log_interval, periodic_interval, csv, timing);
+        result.wall_seconds = wall_seconds_since(begin);
+        return result;
+    };
+    const auto unfiltered = timed_branch("unfiltered");
+    const auto once = timed_branch("once");
+    const auto periodic = timed_branch("periodic");
+
+    if (timing) {
+        const auto print_timing = [](const char* name,
+                                     const BranchResult& result) {
+            const auto& sample = result.sample_timings;
+            const double accounted = result.step_submit_seconds
+                +result.step_wait_seconds+sample.total_seconds();
+            printf("TIMING BRANCH name=%s wall_s=%.6f step_submit_s=%.6f "
+                   "step_wait_s=%.6f sample_s=%.6f other_s=%.6f\n",
+                   name, result.wall_seconds, result.step_submit_seconds,
+                   result.step_wait_seconds, sample.total_seconds(),
+                   result.wall_seconds-accounted);
+            printf("TIMING SAMPLE name=%s boundary_s=%.6f filter_s=%.6f "
+                   "taylor_norm_s=%.6f divergence_s=%.6f "
+                   "boundary_residual_s=%.6f torque_s=%.6f csv_s=%.6f\n",
+                   name, sample.boundary_seconds, sample.filter_seconds,
+                   sample.taylor_norm_seconds, sample.divergence_seconds,
+                   sample.boundary_residual_seconds, sample.torque_seconds,
+                   sample.csv_seconds);
+        };
+        print_timing("unfiltered", unfiltered);
+        print_timing("once", once);
+        print_timing("periodic", periodic);
+    }
 
     printf("BRANCH unfiltered velocity=%.9e unstable=%.9e taylor=%.9e\n",
            unfiltered.final.velocity_norm, unfiltered.final.unstable_norm,

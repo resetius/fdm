@@ -36,6 +36,9 @@ class NSCylSyclTask {
     }
 
 public:
+    using StepProfile = typename NSCylSycl<T>::StepProfile;
+    using StageBatchProfile = typename NSCylSycl<T>::StageBatchProfile;
+
     NSCylSyclTask(sycl::queue& queue, const Config& config)
         : nr(config.get("ns", "nr", 32))
         , nz(config.get("ns", "nz", 31))
@@ -61,6 +64,16 @@ public:
     void step() {
         ns_.step();
         ++time_index;
+    }
+
+    StepProfile step_profiled() {
+        auto profile = ns_.step_profiled();
+        ++time_index;
+        return profile;
+    }
+
+    StageBatchProfile profile_stages_batched(int repetitions) {
+        return ns_.profile_stages_batched(repetitions);
     }
 
     void wait() {

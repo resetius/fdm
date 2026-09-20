@@ -7,6 +7,7 @@
 #include "lapl_cyl_sycl.h"
 #include "ns_cyl_state.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
@@ -39,6 +40,43 @@ struct CylAcc {
 template<typename T>
 class NSCylSycl {
 public:
+    struct StepProfile {
+        double boundary_ms = 0;
+        double fgh_ms = 0;
+        double rhs_ms = 0;
+        typename LaplCylSycl<T>::Profile poisson;
+        double update_ms = 0;
+        double outer_boundary_commit_ms = 0;
+
+        double total_ms() const {
+            return boundary_ms+fgh_ms+rhs_ms+poisson.total_ms()+update_ms
+                +outer_boundary_commit_ms;
+        }
+
+        StepProfile& operator+=(const StepProfile& other) {
+            boundary_ms += other.boundary_ms;
+            fgh_ms += other.fgh_ms;
+            rhs_ms += other.rhs_ms;
+            poisson += other.poisson;
+            update_ms += other.update_ms;
+            outer_boundary_commit_ms += other.outer_boundary_commit_ms;
+            return *this;
+        }
+    };
+
+    struct StageBatchProfile {
+        double boundary_ms = 0;
+        double fgh_ms = 0;
+        double rhs_ms = 0;
+        double poisson_ms = 0;
+        double update_pressure_ms = 0;
+
+        double total_ms() const {
+            return boundary_ms+fgh_ms+rhs_ms+poisson_ms
+                +update_pressure_ms;
+        }
+    };
+
     const int   nr, nz, nphi;
     const T     r0, R, lz;
     const T     dr, dz, dphi;
@@ -284,8 +322,67 @@ public:
         kernel_poisson_rhs();
         lapl_solver.solve(x_mem, RHS_mem);
         kernel_update_uvwp();
-        kernel_pressure_bound();
         commit_outer_boundary_step_data();
+    }
+
+    // Diagnostic path with a fence after each logical stage.  This is useful
+    // for locating backend-dependent costs, but the fences deliberately make
+    // it different from the asynchronous production step().
+    StepProfile step_profiled() {
+        using Clock = std::chrono::steady_clock;
+        StepProfile profile;
+        q.wait_and_throw();
+        const auto timed = [&](auto&& operation) {
+            const auto begin = Clock::now();
+            operation();
+            q.wait_and_throw();
+            return std::chrono::duration<double, std::milli>(
+                Clock::now()-begin).count();
+        };
+
+        profile.boundary_ms = timed([&] { kernel_init_bound(U0); });
+        profile.fgh_ms = timed([&] { kernel_FGH(); });
+        profile.rhs_ms = timed([&] { kernel_poisson_rhs(); });
+        profile.poisson = lapl_solver.solve_profiled(x_mem, RHS_mem);
+        profile.update_ms = timed([&] { kernel_update_uvwp(); });
+        if (outer_boundary_step_data_enabled) {
+            profile.outer_boundary_commit_ms = timed([&] {
+                commit_outer_boundary_step_data();
+            });
+        }
+        return profile;
+    }
+
+    // Throughput-oriented companion to step_profiled().  Each logical stage
+    // is submitted repeatedly and fenced only once, so AdaptiveCpp can retain
+    // its normal coarse-grained command batching.  It is run on a disposable
+    // state because repeated updates do not represent physical timesteps.
+    StageBatchProfile profile_stages_batched(int repetitions) {
+        if (repetitions <= 0) {
+            throw std::invalid_argument(
+                "SYCL stage batch repetitions must be positive");
+        }
+        using Clock = std::chrono::steady_clock;
+        StageBatchProfile profile;
+        q.wait_and_throw();
+        const auto timed = [&](auto&& operation) {
+            const auto begin = Clock::now();
+            for (int repeat = 0; repeat < repetitions; ++repeat) {
+                operation();
+            }
+            q.wait_and_throw();
+            return std::chrono::duration<double, std::milli>(
+                Clock::now()-begin).count();
+        };
+
+        profile.boundary_ms = timed([&] { kernel_init_bound(U0); });
+        profile.fgh_ms = timed([&] { kernel_FGH(); });
+        profile.rhs_ms = timed([&] { kernel_poisson_rhs(); });
+        profile.poisson_ms = timed([&] {
+            lapl_solver.solve(x_mem, RHS_mem);
+        });
+        profile.update_pressure_ms = timed([&] { kernel_update_uvwp(); });
+        return profile;
     }
 
     void apply_boundary_conditions() {
@@ -735,32 +832,6 @@ private:
             });
     }
 
-    // Pressure ghosts at the new time level.  During the Poisson solve the
-    // unknown adjacent pressure is part of the boundary matrix diagonal;
-    // these values are reconstructed only after the interior solution exists.
-    void kernel_pressure_bound() {
-        auto pa_=pa(), xa_=xa(), Fa_=Fa();
-        const int nr_=nr;
-        const T dt_=dt, dr_=dr;
-        const bool outer_enabled = outer_boundary_velocity_enabled;
-        const bool step_data = outer_boundary_step_data_enabled;
-        const T* outer_radial = outer_radial_mem;
-        const T* outer_radial_next = outer_radial_next_mem;
-        const int nz_=nz;
-
-        q.parallel_for(sycl::range<2>((size_t)nphi, (size_t)nz),
-            [=](sycl::id<2> id) {
-                int i=(int)id[0], k=(int)id[1];
-                const int boundary_index = i*nz_+k;
-                const T radial_next = !outer_enabled ? T(0)
-                    : step_data ? outer_radial_next[boundary_index]
-                    : outer_radial[boundary_index];
-                pa_(i,k,0) = xa_(i,k,1)-dr_*Fa_(i,k,0)/dt_;
-                pa_(i,k,nr_+1) = xa_(i,k,nr_)
-                    +dr_*(Fa_(i,k,nr_)-radial_next)/dt_;
-            });
-    }
-
     // ── FGH (momentum tendency) ───────────────────────────────────────────────
     void kernel_FGH() {
         auto ua_=ua(), va_=va(), wa_=wa();
@@ -770,79 +841,64 @@ private:
         const T dr_=dr, dz_=dz, dphi_=dphi;
         const T dr2_=dr2, dz2_=dz2, dphi2_=dphi2;
 
-        // F (radial velocity tendency), staggered at r-faces j=0..nr
+        // F uses radial faces j=0..nr, while G and H use cell centers
+        // j=1..nr.  Map all three equations to one range by pairing face j
+        // with center j+1.  The last work-item computes only F.
         q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)(nr_+1)),
             [=](sycl::id<3> id) {
-                int i=(int)id[0], k=(int)id[1], j=(int)id[2];
-                T r  = r0_ + dr_*T(j);
-                T r2 = (r + T(0.5)*dr_)/r;
-                T r1 = (r - T(0.5)*dr_)/r;
-                T rr = r*r;
+                const int i=(int)id[0], k=(int)id[1];
+                const int face=(int)id[2];
                 auto sq=[](T x){return x*x;};
+                {
+                    const int j=face;
+                    const T r=r0_+dr_*T(j);
+                    const T r2=(r+T(0.5)*dr_)/r;
+                    const T r1=(r-T(0.5)*dr_)/r;
+                    const T rr=r*r;
+                    Fa_(i,k,j) = ua_(i,k,j) + dt_*(
+                        (r2*ua_(i,k,j+1)-T(2)*ua_(i,k,j)+r1*ua_(i,k,j-1))/Re_/dr2_+
+                        (ua_(i,k+1,j)-T(2)*ua_(i,k,j)+ua_(i,k-1,j))/Re_/dz2_+
+                        (ua_(i+1,k,j)-T(2)*ua_(i,k,j)+ua_(i-1,k,j))/Re_/dphi2_/rr-
+                        (r2*sq(T(0.5)*(ua_(i,k,j)+ua_(i,k,j+1)))-
+                         r1*sq(T(0.5)*(ua_(i,k,j-1)+ua_(i,k,j))))/dr_-
+                        T(0.25)*((ua_(i,k,j)+ua_(i,k+1,j))*(va_(i,k,j+1)+va_(i,k,j))-
+                                 (ua_(i,k-1,j)+ua_(i,k,j))*(va_(i,k-1,j+1)+va_(i,k-1,j)))/dz_-
+                        T(0.25)*((ua_(i,k,j)+ua_(i+1,k,j))*(wa_(i,k,j+1)+wa_(i,k,j))-
+                                 (ua_(i-1,k,j)+ua_(i,k,j))*(wa_(i-1,k,j+1)+wa_(i-1,k,j)))/dphi_/r+
+                        sq(T(0.5)*(wa_(i,k,j+1)+wa_(i,k,j)))/r-ua_(i,k,j)/rr/Re_-
+                        T(2)*(T(0.5)*(wa_(i,k,j+1)+wa_(i,k,j))-
+                              T(0.5)*(wa_(i-1,k,j+1)+wa_(i-1,k,j)))/rr/dphi_/Re_);
+                }
+                if (face == nr_) { return; }
 
-                Fa_(i,k,j) = ua_(i,k,j) + dt_*(
-                    (r2*ua_(i,k,j+1) - T(2)*ua_(i,k,j) + r1*ua_(i,k,j-1))/Re_/dr2_ +
-                    (ua_(i,k+1,j)    - T(2)*ua_(i,k,j) + ua_(i,k-1,j)   )/Re_/dz2_ +
-                    (ua_(i+1,k,j)    - T(2)*ua_(i,k,j) + ua_(i-1,k,j)   )/Re_/dphi2_/rr -
-                    (r2*sq(T(0.5)*(ua_(i,k,j)+ua_(i,k,j+1))) -
-                     r1*sq(T(0.5)*(ua_(i,k,j-1)+ua_(i,k,j))))/dr_ -
-                    T(0.25)*((ua_(i,k,j)+ua_(i,k+1,j))*(va_(i,k,j+1)+va_(i,k,j)) -
-                             (ua_(i,k-1,j)+ua_(i,k,j))*(va_(i,k-1,j+1)+va_(i,k-1,j)))/dz_ -
-                    T(0.25)*((ua_(i,k,j)+ua_(i+1,k,j))*(wa_(i,k,j+1)+wa_(i,k,j)) -
-                             (ua_(i-1,k,j)+ua_(i,k,j))*(wa_(i-1,k,j+1)+wa_(i-1,k,j)))/dphi_/r +
-                    sq(T(0.5)*(wa_(i,k,j+1)+wa_(i,k,j)))/r - ua_(i,k,j)/rr/Re_ -
-                    T(2)*(T(0.5)*(wa_(i,k,j+1)+wa_(i,k,j)) -
-                          T(0.5)*(wa_(i-1,k,j+1)+wa_(i-1,k,j)))/rr/dphi_/Re_
-                );
-            });
-
-        // G (axial velocity tendency), at cell centers j=1..nr
-        q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)nr_),
-            [=](sycl::id<3> id) {
-                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
-                T r  = r0_ + dr_*T(j) - dr_*T(0.5);
-                T r2 = (r + T(0.5)*dr_)/r;
-                T r1 = (r - T(0.5)*dr_)/r;
-                T rr = r*r;
-                auto sq=[](T x){return x*x;};
-
+                const int j=face+1;
+                const T r=r0_+dr_*T(j)-dr_*T(0.5);
+                const T r2=(r+T(0.5)*dr_)/r;
+                const T r1=(r-T(0.5)*dr_)/r;
+                const T rr=r*r;
                 Ga_(i,k,j) = va_(i,k,j) + dt_*(
-                    (r2*va_(i,k,j+1) - T(2)*va_(i,k,j) + r1*va_(i,k,j-1))/Re_/dr2_ +
-                    (va_(i,k+1,j)    - T(2)*va_(i,k,j) + va_(i,k-1,j)   )/Re_/dz2_ +
-                    (va_(i+1,k,j)    - T(2)*va_(i,k,j) + va_(i-1,k,j)   )/Re_/dphi2_/rr -
-                    (sq(T(0.5)*(va_(i,k,j)+va_(i,k+1,j))) -
-                     sq(T(0.5)*(va_(i,k-1,j)+va_(i,k,j))))/dz_ -
-                    T(0.25)*(r2*(ua_(i,k,j)+ua_(i,k+1,j))*(va_(i,k,j+1)+va_(i,k,j)) -
-                             r1*(ua_(i,k,j-1)+ua_(i,k+1,j-1))*(va_(i,k,j)+va_(i,k,j-1)))/dr_ -
-                    T(0.25)*((wa_(i,k,j)+wa_(i,k+1,j))*(va_(i,k,j)+va_(i+1,k,j)) -
-                             (wa_(i-1,k,j)+wa_(i-1,k+1,j))*(va_(i-1,k,j)+va_(i,k,j)))/dphi_/r
-                );
-            });
-
-        // H (azimuthal velocity tendency), at cell centers j=1..nr
-        q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)nr_),
-            [=](sycl::id<3> id) {
-                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
-                T r  = r0_ + dr_*T(j) - dr_*T(0.5);
-                T r2 = (r + T(0.5)*dr_)/r;
-                T r1 = (r - T(0.5)*dr_)/r;
-                T rr = r*r;
-                auto sq=[](T x){return x*x;};
-
+                    (r2*va_(i,k,j+1)-T(2)*va_(i,k,j)+r1*va_(i,k,j-1))/Re_/dr2_+
+                    (va_(i,k+1,j)-T(2)*va_(i,k,j)+va_(i,k-1,j))/Re_/dz2_+
+                    (va_(i+1,k,j)-T(2)*va_(i,k,j)+va_(i-1,k,j))/Re_/dphi2_/rr-
+                    (sq(T(0.5)*(va_(i,k,j)+va_(i,k+1,j)))-
+                     sq(T(0.5)*(va_(i,k-1,j)+va_(i,k,j))))/dz_-
+                    T(0.25)*(r2*(ua_(i,k,j)+ua_(i,k+1,j))*(va_(i,k,j+1)+va_(i,k,j))-
+                             r1*(ua_(i,k,j-1)+ua_(i,k+1,j-1))*(va_(i,k,j)+va_(i,k,j-1)))/dr_-
+                    T(0.25)*((wa_(i,k,j)+wa_(i,k+1,j))*(va_(i,k,j)+va_(i+1,k,j))-
+                             (wa_(i-1,k,j)+wa_(i-1,k+1,j))*(va_(i-1,k,j)+va_(i,k,j)))/dphi_/r);
                 Ha_(i,k,j) = wa_(i,k,j) + dt_*(
-                    (r2*wa_(i,k,j+1) - T(2)*wa_(i,k,j) + r1*wa_(i,k,j-1))/Re_/dr2_ +
-                    (wa_(i,k+1,j)    - T(2)*wa_(i,k,j) + wa_(i,k-1,j)   )/Re_/dz2_ +
-                    (wa_(i+1,k,j)    - T(2)*wa_(i,k,j) + wa_(i-1,k,j)   )/Re_/dphi2_/rr -
-                    (sq(T(0.5)*(wa_(i+1,k,j)+wa_(i,k,j))) -
-                     sq(T(0.5)*(wa_(i-1,k,j)+wa_(i,k,j))))/dphi_/r -
-                    T(0.25)*(r2*(ua_(i+1,k,j)+ua_(i,k,j))*(wa_(i,k,j+1)+wa_(i,k,j)) -
-                             r1*(ua_(i+1,k,j-1)+ua_(i,k,j-1))*(wa_(i,k,j)+wa_(i,k,j-1)))/dr_ -
-                    T(0.25)*((wa_(i,k,j)+wa_(i,k+1,j))*(va_(i,k,j)+va_(i+1,k,j)) -
-                             (wa_(i,k-1,j)+wa_(i,k,j))*(va_(i,k-1,j)+va_(i+1,k-1,j)))/dz_ -
-                    wa_(i,k,j)*T(0.5)*(ua_(i+1,k,j)+ua_(i,k,j))/r - wa_(i,k,j)/rr/Re_ +
-                    T(2)*(T(0.5)*(ua_(i+1,k,j)+ua_(i,k,j)) -
-                          T(0.5)*(ua_(i,k,j)+ua_(i-1,k,j)))/rr/dphi_/Re_
-                );
+                    (r2*wa_(i,k,j+1)-T(2)*wa_(i,k,j)+r1*wa_(i,k,j-1))/Re_/dr2_+
+                    (wa_(i,k+1,j)-T(2)*wa_(i,k,j)+wa_(i,k-1,j))/Re_/dz2_+
+                    (wa_(i+1,k,j)-T(2)*wa_(i,k,j)+wa_(i-1,k,j))/Re_/dphi2_/rr-
+                    (sq(T(0.5)*(wa_(i+1,k,j)+wa_(i,k,j)))-
+                     sq(T(0.5)*(wa_(i-1,k,j)+wa_(i,k,j))))/dphi_/r-
+                    T(0.25)*(r2*(ua_(i+1,k,j)+ua_(i,k,j))*(wa_(i,k,j+1)+wa_(i,k,j))-
+                             r1*(ua_(i+1,k,j-1)+ua_(i,k,j-1))*(wa_(i,k,j)+wa_(i,k,j-1)))/dr_-
+                    T(0.25)*((wa_(i,k,j)+wa_(i,k+1,j))*(va_(i,k,j)+va_(i+1,k,j))-
+                             (wa_(i,k-1,j)+wa_(i,k,j))*(va_(i,k-1,j)+va_(i+1,k-1,j)))/dz_-
+                    wa_(i,k,j)*T(0.5)*(ua_(i+1,k,j)+ua_(i,k,j))/r-wa_(i,k,j)/rr/Re_+
+                    T(2)*(T(0.5)*(ua_(i+1,k,j)+ua_(i,k,j))-
+                          T(0.5)*(ua_(i,k,j)+ua_(i-1,k,j)))/rr/dphi_/Re_);
             });
     }
 
@@ -882,42 +938,43 @@ private:
             });
     }
 
-    // ── Update u, v, w, p ─────────────────────────────────────────────────────
+    // ── Update u, v, w, p and reconstruct the two pressure ghosts ─────────────
     void kernel_update_uvwp() {
         auto ua_=ua(), va_=va(), wa_=wa(), pa_=pa();
         auto xa_=xa(), Fa_=Fa(), Ga_=Ga(), Ha_=Ha();
         const int nr_=nr, nz_=nz;
         const T dt_=dt, r0_=r0, dr_=dr, dz_=dz, dphi_=dphi;
+        const bool outer_enabled = outer_boundary_velocity_enabled;
+        const bool step_data = outer_boundary_step_data_enabled;
+        const T* outer_radial = outer_radial_mem;
+        const T* outer_radial_next = outer_radial_next_mem;
 
-        // u: interior radial faces j=1..nr-1
-        q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)(nr_-1)),
-            [=](sycl::id<3> id) {
-                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
-                ua_(i,k,j) = Fa_(i,k,j) - dt_/dr_*(xa_(i,k,j+1) - xa_(i,k,j));
-            });
-
-        // v: axial faces k=0..nz-1, j=1..nr.  z is periodic, so every one of
-        // the nz faces is an unknown -- there is no wall face to leave alone.
-        q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)nz_, (size_t)nr_),
-            [=](sycl::id<3> id) {
-                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
-                va_(i,k,j) = Ga_(i,k,j) - dt_/dz_*(xa_(i,k+1,j) - xa_(i,k,j));
-            });
-
-        // w: azimuthal, j=1..nr
+        // All four interior writes have the same (phi,z,r) geometry.  The
+        // radial velocity omits the outer face, and one radial plane also
+        // reconstructs both pressure ghosts.  Keeping them in one kernel
+        // removes four launches without introducing an inter-item dependency.
         q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)nr_),
             [=](sycl::id<3> id) {
                 int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
-                T r = r0_ + dr_*T(j) - dr_*T(0.5);
+                if (j < nr_) {
+                    ua_(i,k,j) = Fa_(i,k,j)
+                        -dt_/dr_*(xa_(i,k,j+1)-xa_(i,k,j));
+                }
+                va_(i,k,j) = Ga_(i,k,j)
+                    -dt_/dz_*(xa_(i,k+1,j)-xa_(i,k,j));
+                const T r = r0_+dr_*T(j)-dr_*T(0.5);
                 wa_(i,k,j) = Ha_(i,k,j)
-                    - dt_/dphi_/r*(xa_(i+1,k,j) - xa_(i,k,j));
-            });
-
-        // p = x (spectral pressure from Poisson solve)
-        q.parallel_for(sycl::range<3>((size_t)nphi, (size_t)nz, (size_t)nr_),
-            [=](sycl::id<3> id) {
-                int i=(int)id[0], k=(int)id[1], j=(int)id[2]+1;
+                    -dt_/dphi_/r*(xa_(i+1,k,j)-xa_(i,k,j));
                 pa_(i,k,j) = xa_(i,k,j);
+                if (j == 1) {
+                    const int boundary_index = i*nz_+k;
+                    const T radial_next = !outer_enabled ? T(0)
+                        : step_data ? outer_radial_next[boundary_index]
+                        : outer_radial[boundary_index];
+                    pa_(i,k,0) = xa_(i,k,1)-dr_*Fa_(i,k,0)/dt_;
+                    pa_(i,k,nr_+1) = xa_(i,k,nr_)
+                        +dr_*(Fa_(i,k,nr_)-radial_next)/dt_;
+                }
             });
     }
 };

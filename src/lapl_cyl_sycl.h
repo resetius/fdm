@@ -6,6 +6,7 @@
 // Compatible with LaplCyl3FFT2<T,false,tensor_flag::periodic> interface.
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <stdexcept>
 #include <sycl/sycl.hpp>
@@ -17,6 +18,37 @@ namespace fdm {
 template<typename T>
 class LaplCylSycl {
 public:
+    struct Profile {
+        double phi_forward_ms = 0;
+        double z_forward_ms = 0;
+        double gauge_ms = 0;
+        double cr_init_ms = 0;
+        double cr_forward_ms = 0;
+        double cr_backward_ms = 0;
+        double cr_local_ms = 0;
+        double z_inverse_ms = 0;
+        double phi_inverse_ms = 0;
+
+        double total_ms() const {
+            return phi_forward_ms+z_forward_ms+gauge_ms+cr_init_ms
+                +cr_forward_ms+cr_backward_ms+cr_local_ms
+                +z_inverse_ms+phi_inverse_ms;
+        }
+
+        Profile& operator+=(const Profile& other) {
+            phi_forward_ms += other.phi_forward_ms;
+            z_forward_ms += other.z_forward_ms;
+            gauge_ms += other.gauge_ms;
+            cr_init_ms += other.cr_init_ms;
+            cr_forward_ms += other.cr_forward_ms;
+            cr_backward_ms += other.cr_backward_ms;
+            cr_local_ms += other.cr_local_ms;
+            z_inverse_ms += other.z_inverse_ms;
+            phi_inverse_ms += other.phi_inverse_ms;
+            return *this;
+        }
+    };
+
     const int nr, nz, nphi;
     const int nrq;           // ceil(log2(nr+1))
     const T   r0, dr, dz, dphi;
@@ -58,6 +90,8 @@ private:
     // A power-of-two axis gets the register FFT; anything else falls back to
     // the direct transform, which has no such restriction.
     bool fft_phi = false, fft_z = false;
+    int cr_local_size = 1;
+    bool use_local_cr = false;
     T* tw_phi = nullptr;
     T* tw_z   = nullptr;
 
@@ -123,6 +157,12 @@ private:
     }
 
     static T sq(T x) { return x*x; }
+
+    static int next_power_of_two(int value) {
+        int result = 1;
+        while (result < value) { result *= 2; }
+        return result;
+    }
 
     // ── Forward DFT in phi ────────────────────────────────────────────────────
     // in [phi][z][r]  →  out [phi_mode][z][r]  packed pFFT_1 format
@@ -211,7 +251,7 @@ private:
         const bool radial_neumann_=radial_neumann;
         const T* lp=lm_phi, *lz_=lm_z;
         const T* Lb=L_base,  *Ub=U_base;
-        T* Dcr=D_cr, *Lcr=L_cr, *Ucr=U_cr;
+        T* Dcr=D_cr, *Lcr=L_cr, *Ucr=U_cr, *bc=b_cr;
         q.parallel_for(sycl::range<3>((size_t)nphi_, (size_t)nz_, (size_t)nr_),
             [=](sycl::id<3> id) {
                 int mi=(int)id[0], mk=(int)id[1], j=(int)id[2];
@@ -230,6 +270,7 @@ private:
                     && mi == 0 && mk == 0 && j == nr_-1) {
                     Dcr[idx] = T(1);
                     Lcr[idx] = T(0);
+                    bc[idx] = T(0);
                 }
             });
     }
@@ -238,6 +279,7 @@ private:
     void cr_fwd(int l) {
         const int nphi_=nphi, nz_=nz, nr_=nr;
         const int s = 1<<l, h = 1<<(l-1);
+        const bool solve_apex = l == nrq-1;
         // number of j positions at this level: floor((nr+1)/s)
         const int cnt = (nr+1) >> l;
         if (cnt == 0) return;
@@ -261,18 +303,9 @@ private:
                 } else {
                     Ucr[base+j] = T(0);
                 }
-            });
-    }
-
-    // ── CR mid step: divide apex element by its diagonal ─────────────────────
-    void cr_mid() {
-        const int nphi_=nphi, nz_=nz, nr_=nr, nrq_=nrq;
-        T* Dcr=D_cr, *bc=b_cr;
-        const int jmid = std::min((1<<(nrq_-1))-1, nr_-1);
-        q.parallel_for(sycl::range<1>((size_t)(nphi_*nz_)),
-            [=](sycl::id<1> id) {
-                int mode = (int)id[0];
-                bc[mode*nr_ + jmid] /= Dcr[mode*nr_ + jmid];
+                if (solve_apex) {
+                    bc[base+j] /= Dcr[base+j];
+                }
             });
     }
 
@@ -299,6 +332,128 @@ private:
                 if (has_right) v -= Ucr[base+j] * bc[base+j+h];
                 bc[base+j] = v / Dcr[base+j];
             });
+    }
+
+    // One independent radial system per work-group.  All cyclic-reduction
+    // levels stay in local memory and therefore need only work-group barriers,
+    // rather than a separate globally synchronized kernel for every level.
+    void solve_cr_local() {
+        const int nr_=nr, nz_=nz, nrq_=nrq;
+        const int local_size=cr_local_size;
+        const int mode_count=nphi*nz;
+        const T r0_=r0, dr_=dr, dr2_=dr2;
+        const bool radial_neumann_=radial_neumann;
+        const T* lambda_phi=lm_phi;
+        const T* lambda_z=lm_z;
+        const T* lower_base=L_base;
+        const T* upper_base=U_base;
+        T* coefficients=b_cr;
+
+        q.submit([&](sycl::handler& handler) {
+            sycl::local_accessor<T, 1> diagonal(
+                sycl::range<1>(local_size), handler);
+            sycl::local_accessor<T, 1> lower(
+                sycl::range<1>(local_size), handler);
+            sycl::local_accessor<T, 1> upper(
+                sycl::range<1>(local_size), handler);
+            sycl::local_accessor<T, 1> rhs(
+                sycl::range<1>(local_size), handler);
+            handler.parallel_for(
+                sycl::nd_range<1>(
+                    sycl::range<1>(
+                        static_cast<std::size_t>(mode_count)*local_size),
+                    sycl::range<1>(local_size)),
+                [=](sycl::nd_item<1> item) {
+                    const int mode=static_cast<int>(item.get_group(0));
+                    const int j=static_cast<int>(item.get_local_id(0));
+                    const int phi_mode=mode/nz_;
+                    const int z_mode=mode%nz_;
+
+                    if (j < nr_) {
+                        const int index=mode*nr_+j;
+                        const T radius=r0_+T(j+1)*dr_;
+                        T d=-T(2)/dr2_
+                            -lambda_phi[phi_mode]/(radius*radius)
+                            -lambda_z[z_mode];
+                        T lo=lower_base[j];
+                        const T up=upper_base[j];
+                        T value=coefficients[index];
+                        if (radial_neumann_ && j == 0) {
+                            d += (radius-T(0.5)*dr_)/(dr2_*radius);
+                        }
+                        if (radial_neumann_ && j == nr_-1) {
+                            d += (radius+T(0.5)*dr_)/(dr2_*radius);
+                        }
+                        if (radial_neumann_ && mode == 0 && j == nr_-1) {
+                            d=T(1);
+                            lo=T(0);
+                            value=T(0);
+                        }
+                        diagonal[j]=d;
+                        lower[j]=lo;
+                        upper[j]=up;
+                        rhs[j]=value;
+                    } else {
+                        diagonal[j]=T(1);
+                        lower[j]=T(0);
+                        upper[j]=T(0);
+                        rhs[j]=T(0);
+                    }
+                    item.barrier(sycl::access::fence_space::local_space);
+
+                    for (int level=1; level < nrq_; ++level) {
+                        const int stride=1<<level;
+                        const int half=stride>>1;
+                        const bool active=j < nr_
+                            && (j+1)%stride == 0;
+                        if (active) {
+                            const T alpha=-lower[j]/diagonal[j-half];
+                            diagonal[j] += alpha*upper[j-half];
+                            rhs[j] += alpha*rhs[j-half];
+                            lower[j] = alpha*lower[j-half];
+                            if (j+half < nr_) {
+                                const T gamma=-upper[j]/diagonal[j+half];
+                                diagonal[j] += gamma*lower[j+half];
+                                rhs[j] += gamma*rhs[j+half];
+                                upper[j] = gamma*upper[j+half];
+                            } else {
+                                upper[j]=T(0);
+                            }
+                            if (level == nrq_-1) {
+                                rhs[j] /= diagonal[j];
+                            }
+                        }
+                        item.barrier(sycl::access::fence_space::local_space);
+                    }
+
+                    if (nrq_ == 1 && j == 0) {
+                        rhs[j] /= diagonal[j];
+                    }
+                    item.barrier(sycl::access::fence_space::local_space);
+
+                    for (int level=nrq_-1; level >= 1; --level) {
+                        const int stride=1<<level;
+                        const int half=stride>>1;
+                        const bool active=j < nr_
+                            && j%stride == half-1;
+                        if (active) {
+                            T value=rhs[j];
+                            if (j >= half) {
+                                value -= lower[j]*rhs[j-half];
+                            }
+                            if (j+half < nr_) {
+                                value -= upper[j]*rhs[j+half];
+                            }
+                            rhs[j]=value/diagonal[j];
+                        }
+                        item.barrier(sycl::access::fence_space::local_space);
+                    }
+
+                    if (j < nr_) {
+                        coefficients[mode*nr_+j]=rhs[j];
+                    }
+                });
+        });
     }
 
 public:
@@ -330,6 +485,8 @@ public:
                   && nphi_ >= 8 && nphi_ <= 256)
         , fft_z  (fft_sycl::is_power_of_two(nz_)
                   && nz_ >= 8 && nz_ <= 256)
+        , cr_local_size(next_power_of_two(nr_))
+        , use_local_cr(false)
         , tw_phi (fft_phi ? sha(q_, 2*(nphi_/2) + 2*(nphi_/2+1)) : nullptr)
         , tw_z   (fft_z   ? sha(q_, 2*(nz_/2)   + 2*(nz_/2+1))   : nullptr)
         // Scale factors:  fwd*inv*N/2 = 1
@@ -339,6 +496,15 @@ public:
         , sc_z_i  (std::sqrt(T(2)/lz_))
     {
         init_tables();
+        const auto device=q.get_device();
+        const auto maximum_work_group_size=device.get_info<
+            sycl::info::device::max_work_group_size>();
+        const auto local_memory_size=device.get_info<
+            sycl::info::device::local_mem_size>();
+        use_local_cr = static_cast<std::size_t>(cr_local_size)
+                <= maximum_work_group_size
+            && static_cast<std::size_t>(4)*cr_local_size*sizeof(T)
+                <= local_memory_size;
     }
 
     ~LaplCylSycl() {
@@ -415,23 +581,61 @@ public:
         transform_phi_fwd(tmp,  rhs);   // rhs → tmp (phi modes)
         transform_z_fwd  (b_cr, tmp);   // tmp → b_cr (z modes)
 
-        if (radial_neumann) {
-            T* coefficients=b_cr;
-            const int nr_=nr;
-            q.single_task([=]() {
-                coefficients[nr_-1] = T(0);
-            });
+        if (use_local_cr) {
+            solve_cr_local();
+        } else {
+            // Fallback when one radial system does not fit in a work-group or
+            // in device local memory.
+            init_cr();
+            for (int l = 1; l < nrq; l++) cr_fwd(l);
+            for (int l = nrq-1; l >= 1; l--) cr_bwd(l);
         }
-
-        // Set up per-mode tridiagonal D, L, U and forward-sweep CR
-        init_cr();
-        for (int l = 1; l < nrq; l++) cr_fwd(l);
-        cr_mid();
-        for (int l = nrq-1; l >= 1; l--) cr_bwd(l);
 
         // Inverse FFTs: b_cr → ans
         transform_z_inv  (tmp, b_cr);
         transform_phi_inv(ans, tmp);
+    }
+
+    // Diagnostic path.  A queue fence after every logical stage makes the
+    // numbers portable across backends that do not expose event timestamps.
+    // It intentionally changes command batching and must not be used as a
+    // throughput benchmark.
+    Profile solve_profiled(T* ans, T* rhs) {
+        using Clock = std::chrono::steady_clock;
+        Profile profile;
+        q.wait_and_throw();
+        const auto timed = [&](auto&& operation) {
+            const auto begin = Clock::now();
+            operation();
+            q.wait_and_throw();
+            return std::chrono::duration<double, std::milli>(
+                Clock::now()-begin).count();
+        };
+
+        profile.phi_forward_ms = timed([&] {
+            transform_phi_fwd(tmp, rhs);
+        });
+        profile.z_forward_ms = timed([&] {
+            transform_z_fwd(b_cr, tmp);
+        });
+        if (use_local_cr) {
+            profile.cr_local_ms = timed([&] { solve_cr_local(); });
+        } else {
+            profile.cr_init_ms = timed([&] { init_cr(); });
+            profile.cr_forward_ms = timed([&] {
+                for (int l = 1; l < nrq; ++l) { cr_fwd(l); }
+            });
+            profile.cr_backward_ms = timed([&] {
+                for (int l = nrq-1; l >= 1; --l) { cr_bwd(l); }
+            });
+        }
+        profile.z_inverse_ms = timed([&] {
+            transform_z_inv(tmp, b_cr);
+        });
+        profile.phi_inverse_ms = timed([&] {
+            transform_phi_inv(ans, tmp);
+        });
+        return profile;
     }
 
     void solve_fourier_block(T* ans, const T* rhs, int m, int l) {
